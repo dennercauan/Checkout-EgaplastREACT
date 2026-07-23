@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
-import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+// Adicionamos o CheckCircle aqui:
+import { Mail, Lock, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import '../css/Login.css';
 
@@ -14,20 +15,22 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  // NOVOS ESTADOS PARA A SPLASH SCREEN
+  // Estados da Splash Inicial
   const [splashActive, setSplashActive] = useState(true);
   const [splashFading, setSplashFading] = useState(false);
+
+  // NOVOS ESTADOS: Tela de Sucesso Pós-Login
+  const [showSuccessScreen, setShowSuccessScreen] = useState(false);
+  const [userName, setUserName] = useState('');
 
   const navigate = useNavigate();
 
   // Efeito que controla o tempo da tela de abertura
   useEffect(() => {
-    // Aos 2 segundos, começa a esmaecer (fade out) a splash screen
     const fadeTimer = setTimeout(() => {
       setSplashFading(true);
     }, 2000);
 
-    // Aos 2.8 segundos, remove a splash da tela e carrega o login
     const removeTimer = setTimeout(() => {
       setSplashActive(false);
     }, 2800); 
@@ -55,7 +58,6 @@ export default function Login() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      // Salva ou remove o e-mail do localStorage dependendo do checkbox
       if (rememberMe) {
         localStorage.setItem('egaplast_saved_email', email);
       } else {
@@ -67,27 +69,24 @@ export default function Login() {
           targetUrl = "/dashboard-viewer"; 
       }
 
+      // Formata o nome para a tela de boas vindas
       const namePart = user.email.split('@')[0];
       const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-
-      // Dispara a notificação de sucesso
-      toast.success(`Bem-vindo de volta, ${formattedName}!`, {
-        duration: 2000,
-        position: 'top-center',
-      });
-
+      
+      // Ativa a tela de sucesso e guarda o nome
+      setUserName(formattedName);
+      setShowSuccessScreen(true);
       sessionStorage.setItem('justLoggedIn', 'true');
 
-      // Aguarda o toast aparecer antes de trocar de tela
+      // Aguarda 2.5 segundos (fake loading) visualizando a tela de sucesso antes de navegar
       setTimeout(() => {
         navigate(targetUrl);
-      }, 1500); 
+      }, 2500); 
 
     } catch (error) {
       console.error(error);
       setIsLoading(false);
       
-      // Dispara a notificação de erro (Toasts)
       if(error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
           toast.error("Senha incorreta. Tente novamente.");
       } else if(error.code === 'auth/user-not-found') {
@@ -98,28 +97,36 @@ export default function Login() {
     }
   };
 
-  // Se a splash screen estiver ativa, renderiza ela e ignora o resto
   if (splashActive) {
     return (
       <div className={`splash-container ${splashFading ? 'splash-fade-out' : ''}`}>
-        {/* Reutilizamos a sua logo branca aqui */}
         <img src="/src/img/egaplast.png" alt="Logo Sistema" className="splash-logo-center" />
       </div>
     );
   }
 
-  // O seu return original do login começa aqui
   return (
     <div className="login-wrapper">
-      {/* Container de notificações do react-hot-toast */}
       <Toaster />
 
-      {/* Lado Esquerdo - Branding (Oculto no Mobile) */}
+      {/* --- NOVA TELA DE SUCESSO PÓS-LOGIN --- */}
+      {showSuccessScreen && (
+        <div className="success-splash-container">
+          <div className="success-content">
+            <div className="success-icon-wrapper">
+              <CheckCircle size={52} />
+            </div>
+            <h2>Bem-vindo(a), {userName}!</h2>
+            <p>Preparando o seu dashboard...</p>
+            <Loader2 className="spinner success-spinner" size={40} />
+          </div>
+        </div>
+      )}
+
+      {/* Lado Esquerdo - Branding */}
       <div className="brand-side">
         <div className="brand-content">
-          {/* Trocamos o <h1> pela imagem */}
-          <img src="src/img/egaplast.png" alt="Logo Sistema Checkout" className="brand-logo" />
-          
+          <img src="/src/img/egaplast.png" alt="Logo Sistema Checkout" className="brand-logo" />
           <p>Gestão ágil e inteligente de pedidos.</p>
           <div className="brand-decoration"></div>
         </div>
@@ -139,14 +146,13 @@ export default function Login() {
 
           <form onSubmit={handleLogin}>
             
-            {/* Input Email - Floating Label */}
             <div className="input-group">
               <Mail className="input-icon" size={20} />
               <input 
                 type="email" 
                 id="email"
                 className="floating-input"
-                placeholder=" " /* O espaço vazio é obrigatório para o CSS funcionar */
+                placeholder=" "
                 required 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -154,7 +160,6 @@ export default function Login() {
               <label htmlFor="email" className="floating-label">Seu e-mail</label>
             </div>
             
-            {/* Input Senha - Floating Label com Olhinho */}
             <div className="input-group">
               <Lock className="input-icon" size={20} />
               <input 
@@ -177,7 +182,6 @@ export default function Login() {
               </button>
             </div>
 
-            {/* Lembrar e-mail */}
             <div className="form-options">
               <label className="remember-me">
                 <input 

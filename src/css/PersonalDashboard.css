@@ -1,0 +1,173 @@
+/* src/css/PersonalDashboard.css */
+
+.mosaic-dashboard-container {
+  max-width: 1300px;
+  margin: 0 auto;
+  padding: 0 15px;
+  animation: fadeInScreen 0.5s ease-out forwards;
+}
+
+.mosaic-header {
+  margin-bottom: 25px;
+}
+
+.mosaic-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--primary);
+}
+
+.mosaic-title h3 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+/* =======================================
+   O MOSAICO (CSS GRID)
+   ======================================= */
+.mosaic-grid {
+  display: grid;
+  /* Cria colunas flexíveis. No PC, cabem umas 4 ou 5. No celular, 1. */
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-auto-rows: 180px; /* Altura fixa para alinhar as peças */
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+/* --- SUPER CARD (HOJE/DESTAQUE) --- */
+.hero-card {
+  grid-column: span 2; /* Ocupa 2 colunas */
+  grid-row: span 2;    /* Ocupa 2 linhas (equivale a 4 cards pequenos) */
+  background: linear-gradient(135deg, var(--primary) 0%, #061833 100%);
+  color: white;
+  border-radius: 20px;
+  padding: 30px;
+  position: relative;
+  box-shadow: 0 15px 35px rgba(13, 50, 105, 0.2);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s;
+}
+
+.hero-card:hover { transform: translateY(-5px); }
+
+.hero-badge {
+  background: rgba(242, 101, 34, 0.2);
+  color: #ff9466;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: inline-block;
+  margin-bottom: 15px;
+}
+
+.hero-title {
+  font-size: 2.8rem;
+  font-weight: 800;
+  margin: 0 0 20px 0;
+  line-height: 1.1;
+}
+
+.hero-stats { margin-bottom: auto; }
+.stat-box { display: flex; flex-direction: column; }
+.stat-number { font-size: 3.5rem; font-weight: 800; line-height: 1; color: var(--secondary); }
+.stat-label { font-size: 0.9rem; color: #a6cbf3; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-top: 5px; }
+
+.hero-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 20px;
+}
+
+.hero-date { display: flex; align-items: center; gap: 8px; color: #a6cbf3; font-size: 0.9rem; }
+
+.hero-btn {
+  background: var(--secondary);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 30px;
+  font-weight: 700;
+  font-size: 1rem;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 5px 15px rgba(242, 101, 34, 0.3);
+  transition: 0.2s;
+}
+.hero-btn:hover { background: #d9561a; transform: scale(1.05); }
+
+/* --- CARDS SECUNDÁRIOS --- */
+.standard-card {
+  background: #ffffff;
+  border: 1px solid #eef2f8;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+  transition: all 0.3s;
+  position: relative;
+}
+
+.standard-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(13, 50, 105, 0.08);
+  border-color: #dbe4f0;
+}
+
+.card-top { display: flex; flex-direction: column; gap: 10px; }
+.card-icon { color: #a0aec0; }
+.card-title { font-size: 1.3rem; font-weight: 700; margin: 0; color: var(--text-main); }
+
+.mini-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(13, 50, 105, 0.05);
+  color: var(--primary);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.card-bottom { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0f2f5; padding-top: 12px; }
+.card-date { color: var(--text-muted); font-size: 0.85rem; }
+.small-btn { background: #f0f2f5; border: none; padding: 8px; border-radius: 50%; color: var(--primary); cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+.standard-card:hover .small-btn { background: var(--primary); color: white; }
+
+/* --- AÇÕES (EDITAR/EXCLUIR) OCULTAS --- */
+.mosaic-actions { position: absolute; top: 15px; right: 15px; display: flex; gap: 5px; opacity: 0; transition: opacity 0.2s; }
+.mosaic-card:hover .mosaic-actions { opacity: 1; }
+.action-btn { background: rgba(255,255,255,0.9); border: none; padding: 6px; border-radius: 6px; cursor: pointer; color: #666; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+.hero-card .action-btn { background: rgba(0,0,0,0.3); color: white; }
+.action-btn.edit:hover { color: var(--primary); }
+.action-btn.delete:hover { color: #dc3545; }
+
+/* --- SEÇÃO DE HISTÓRICO --- */
+.history-section { border-top: 1px solid #eef2f8; padding-top: 20px; }
+.btn-toggle-history { background: transparent; border: 1px solid #dbe4f0; padding: 10px 20px; border-radius: 20px; color: var(--text-muted); font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; transition: 0.2s; }
+.btn-toggle-history:hover { background: #f7f9fc; color: var(--primary); border-color: var(--primary); }
+.history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 20px; animation: fadeInScreen 0.3s; }
+.history-item { background: #f7f9fc; padding: 12px 15px; border-radius: 10px; display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text-main); font-size: 0.9rem; border: 1px solid transparent; cursor: pointer; transition: 0.2s; }
+.history-item:hover { border-color: #dbe4f0; background: #fff; }
+.history-docs { margin-left: auto; background: rgba(0,0,0,0.05); padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; color: var(--text-muted); }
+
+/* --- RESPONSIVIDADE --- */
+@media (max-width: 768px) {
+  .hero-card { grid-column: span 1; grid-row: span 1; padding: 20px; }
+  .hero-title { font-size: 2rem; }
+  .stat-number { font-size: 2.5rem; }
+  .hero-footer { flex-direction: column; align-items: flex-start; gap: 15px; }
+  .mosaic-actions { opacity: 1; } /* No mobile não tem hover, então os botões ficam visíveis */
+}

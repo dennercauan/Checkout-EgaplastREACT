@@ -1,15 +1,20 @@
+// src/App.jsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Login from './pages/Login';
+import Dashboard from './pages/Dashboard'; // Importando o novo painel
+
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Rota principal: Quando o usuário entrar no site, vê o Login */}
+        {/* Rota inicial de Login */}
         <Route path="/" element={<Login />} />
+        s
+        {/* Rota do Dashboard Operacional (agora apontando para o arquivo real) */}
+        <Route path="/dashboard" element={<Dashboard />} />
         
-        {/* Rotas futuras */}
-        <Route path="/dashboard" element={<h2>Página do Dashboard (Em construção)</h2>} />
+        {/* Rota do Dashboard Comercial (manteremos em construção por enquanto) */}
         <Route path="/dashboard-viewer" element={<h2>Dashboard Comercial (Em construção)</h2>} />
       </Routes>
     </BrowserRouter>

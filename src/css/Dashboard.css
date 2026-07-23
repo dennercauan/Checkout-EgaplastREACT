@@ -1,0 +1,77 @@
+/* src/css/Dashboard.css */
+
+/* --- VARIÁVEIS GLOBAIS --- */
+:root {
+  --primary: #0d3269;
+  --secondary: #f26522;
+  --bg-base: #f0f2f5;
+  --text-main: #333333;
+  --text-muted: #666666;
+  --shadow-card: 0 10px 25px rgba(0,0,0,0.05);
+  --shadow-hover: 0 20px 45px rgba(13, 50, 105, 0.1);
+}
+
+/* Fundo padrão do Dashboard */
+.dashboard-layout {
+  background: linear-gradient(135deg, #eef2f8 0%, #fff8f5 100%);
+  background-attachment: fixed;
+  color: var(--text-main);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.app-container { 
+  width: 95%; 
+  max-width: 1600px; 
+  margin: 0 auto; 
+  padding: 20px 0; 
+}
+
+/* --- NAVBAR MODERNIZADA --- */
+.modern-navbar {
+  background: rgba(255, 255, 255, 0.7); 
+  backdrop-filter: blur(15px); 
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(255,255,255,0.8); 
+  border-radius: 20px; 
+  padding: 12px 30px; 
+  display: flex; 
+  justify-content: space-between;
+  align-items: center; 
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04); 
+  position: sticky; 
+  top: 20px; 
+  z-index: 100; 
+  margin-bottom: 40px;
+}
+
+.nav-brand { display: flex; align-items: center; gap: 15px; }
+.nav-logo { height: 42px; width: auto; transition: transform 0.3s ease; cursor: pointer; }
+.nav-logo:hover { transform: scale(1.08); }
+.nav-title { color: var(--primary); font-size: 16px; font-weight: 700; border-left: 2px solid #ddd; padding-left: 15px; line-height: 1.2; }
+.nav-title small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; letter-spacing: 0.5px; }
+
+.nav-actions { display: flex; align-items: center; gap: 15px; }
+
+/* --- BUSCA EXPANSÍVEL --- */
+.search-container { position: relative; height: 40px; display: flex; align-items: center; }
+.search-expandable { 
+  background: #ffffff; border: 1px solid #d1d1d1; padding: 0; width: 40px; height: 40px; border-radius: 40px; 
+  font-size: 14px; color: var(--text-main); transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); cursor: pointer; 
+  padding-left: 45px !important; padding-right: 15px; 
+}
+.search-icon-overlay { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #666; pointer-events: none; z-index: 5; transition: color 0.3s; }
+.search-container:hover .search-expandable, .search-expandable:focus, .search-expandable:not(:placeholder-shown) { width: 300px; background: #fff; border-color: var(--primary); box-shadow: 0 4px 15px rgba(13, 50, 105, 0.1); cursor: text; }
+.search-expandable:focus { outline: none; }
+.search-expandable:focus + .search-icon-overlay { color: var(--secondary); }
+.search-expandable::placeholder { color: transparent; } 
+.search-container:hover .search-expandable::placeholder, .search-expandable:focus::placeholder { color: #999; }
+
+/* --- BOTÕES DA NAVBAR --- */
+.btn-nav { background: #fff; color: var(--text-main); border: 1px solid #eee; padding: 8px 18px; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.btn-nav:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.08); border-color: #ddd; }
+.btn-primary { background: var(--primary); color: #fff; border: none; box-shadow: 0 4px 12px rgba(13, 50, 105, 0.2); }
+.btn-primary:hover { background: #163d75; box-shadow: 0 6px 18px rgba(13, 50, 105, 0.3); }
+.btn-logout { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; color: #dc3545; border-color: rgba(220, 53, 69, 0.1); background: rgba(220, 53, 69, 0.05); }
+.btn-logout:hover { background: #dc3545; color: white; }

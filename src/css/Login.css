@@ -25,7 +25,6 @@ html, body, #root {
 }
 
 /* --- ESTRUTURA SPLIT SCREEN E MOBILE --- */
-/* --- ESTRUTURA SPLIT SCREEN E MOBILE --- */
 .login-wrapper {
   display: flex;
   height: 100vh;
@@ -398,4 +397,63 @@ html, body, #root {
     opacity: 1; 
     transform: scale(1); 
   }
+}
+
+/* =============================
+   SUCCESS SPLASH SCREEN (PÓS-LOGIN)
+   ============================= */
+
+.success-splash-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  /* Utiliza um gradiente elegante com a cor primária para um visual premium */
+  background: linear-gradient(135deg, var(--primary) 0%, #061833 100%);
+  z-index: 9999999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  
+  /* Surge suavemente por cima do formulário */
+  animation: fadeInScreen 0.5s ease-out forwards;
+}
+
+.success-content {
+  text-align: center;
+  /* Reutiliza a animação de salto da tela de abertura */
+  animation: popInSplash 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.success-icon-wrapper {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 25px auto;
+  color: #48bb78; /* Verde sucesso */
+}
+
+.success-content h2 {
+  font-size: 2.2rem;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.success-content p {
+  color: #a0aec0;
+  font-size: 1.1rem;
+  margin-bottom: 35px;
+}
+
+.success-spinner {
+  margin: 0 auto;
+  color: var(--secondary); /* Usa o Laranja Egaplast para o loader */
 }
