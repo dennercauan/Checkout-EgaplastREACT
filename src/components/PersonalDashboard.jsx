@@ -1,7 +1,7 @@
 // src/components/PersonalDashboard.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, collectionGroup, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Folder, Calendar, ChevronRight, LayoutDashboard, Clock, TrendingUp, Package, Award, BarChart2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -9,19 +9,20 @@ import '../css/PersonalDashboard.css';
 
 export default function PersonalDashboard({ user }) {
   const [elements, setElements] = useState([]);
+  const [pedidosGlobais, setPedidosGlobais] = useState([]);
+  const [ordensGlobais, setOrdensGlobais] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   
-  // Datas de controle
+  // Controle de Datas
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  
   const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
   
   const navigate = useNavigate();
 
-  // 1. BUSCA DOS DIAS DE OPERAÇÃO
+  // 1. BUSCA DAS PASTAS PESSOAIS (Para o Card de Hoje e Volume Mensal)
   useEffect(() => {
     if (!user) return;
     const elementsRef = collection(db, 'usuarios', user.uid, 'elementos');
@@ -30,50 +31,132 @@ export default function PersonalDashboard({ user }) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setElements(data);
-      setLoading(false);
     });
-
     return () => unsubscribe();
   }, [user]);
 
-  // ==========================================
-  // INTELIGÊNCIA DE DADOS (CÁLCULOS EM TEMPO REAL)
-  // ==========================================
+  // 2. BUSCA GLOBAL DE PEDIDOS E ORDENS (Para Ranking e Maiores Pedidos)
+  useEffect(() => {
+    if (!startDate || !endDate) return;
 
-  // Filtra as pastas (elementos) de acordo com as datas selecionadas nos inputs
-  const elementosNoPeriodo = useMemo(() => {
-    return elements.filter(el => {
-      if (!el.createdAt) return false;
-      const elDate = new Date(el.createdAt.seconds * 1000).toISOString().split('T')[0];
-      return elDate >= startDate && elDate <= endDate;
+    const startTs = Timestamp.fromDate(new Date(`${startDate}T00:00:00`));
+    const endTs = Timestamp.fromDate(new Date(`${endDate}T23:59:59`));
+
+    setLoading(true);
+
+    const qPedidos = query(
+      collectionGroup(db, 'pedidosMultiDocumento'),
+      where('createdAt', '>=', startTs),
+      where('createdAt', '<=', endTs)
+    );
+
+    const unsubPedidos = onSnapshot(qPedidos, (snap) => {
+      const p = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPedidosGlobais(p);
+      setLoading(false);
+    }, (error) => {
+      console.error("Erro na busca de pedidos:", error);
+      setLoading(false);
     });
-  }, [elements, startDate, endDate]);
 
-  // Função para calcular os dias úteis (Seg-Sex) entre duas datas
-  const calcularDiasUteis = (start, end) => {
+    const qOrdens = query(
+      collectionGroup(db, 'ordens'),
+      where('createdAt', '>=', startTs),
+      where('createdAt', '<=', endTs)
+    );
+
+    const unsubOrdens = onSnapshot(qOrdens, (snap) => {
+      const o = snap.docs.map(doc => {
+        const path = doc.ref.path.split('/');
+        return { id: doc.id, criadorUid: path[1], ...doc.data() };
+      });
+      setOrdensGlobais(o);
+    });
+
+    return () => {
+      unsubPedidos();
+      unsubOrdens();
+    };
+  }, [startDate, endDate]);
+
+
+  // ==========================================
+  // INTELIGÊNCIA MATEMÁTICA
+  // ==========================================
+
+  // Média Diária Útil (Segunda a Sexta)
+  const mediaDiaria = useMemo(() => {
+    const totalPedidos = pedidosGlobais.length;
     let count = 0;
-    let curDate = new Date(start);
-    const limiteDate = new Date(end);
-    
-    // Se a data final for no futuro, limitamos até hoje para não jogar a média lá pra baixo
-    const actualEnd = limiteDate > today ? today : limiteDate;
+    let curDate = new Date(`${startDate}T12:00:00`);
+    const limitDate = new Date(`${endDate}T12:00:00`);
+    const actualEnd = limitDate > today ? today : limitDate;
 
     while (curDate <= actualEnd) {
-      const dayOfWeek = curDate.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) count++; // Ignora Domingo (0) e Sábado (6)
+      const day = curDate.getDay();
+      if (day !== 0 && day !== 6) count++; 
       curDate.setDate(curDate.getDate() + 1);
     }
-    return count === 0 ? 1 : count; // Evita divisão por zero
-  };
-
-  // Cálculo da Média Diária
-  const mediaDiaria = useMemo(() => {
-    const totalPedidos = elementosNoPeriodo.reduce((acc, el) => acc + (el.contagemDocumentos || 0), 0);
-    const diasUteis = calcularDiasUteis(startDate, endDate);
+    const diasUteis = count === 0 ? 1 : count;
     return Math.round(totalPedidos / diasUteis);
-  }, [elementosNoPeriodo, startDate, endDate]);
+  }, [pedidosGlobais, startDate, endDate]);
 
-  // Cálculo do Gráfico de Volume Mensal (Últimos 4 meses)
+  // Ranking Híbrido (Fracionamento SKUs + OPs)
+  const rankingData = useMemo(() => {
+    const mapa = {};
+
+    // SKUs dos Pedidos
+    pedidosGlobais.forEach(p => {
+      (p.documentos || []).forEach(doc => {
+        if (doc.tipo === 'Nota Fiscal' || doc.tipo === 'Minuta') {
+          const resps = doc.responsaveis && doc.responsaveis.length > 0 ? doc.responsaveis : (doc.responsavel ? [doc.responsavel] : []);
+          const divisoes = resps.length || 1;
+          
+          let skus = 0;
+          (doc.caixas || []).forEach(cx => {
+            (cx.produtos || []).forEach(prod => skus += (parseInt(prod.quantidade) || 0));
+          });
+
+          resps.forEach(r => {
+            const nome = r.split('@')[0].toUpperCase();
+            if (!mapa[nome]) mapa[nome] = 0;
+            mapa[nome] += (skus / divisoes);
+          });
+        }
+      });
+    });
+
+    // Ordens (100 pts cada)
+    ordensGlobais.forEach(o => {
+      // Como não temos o e-mail na Ordem, precisamos usar o criadorEmail do usuário logado se for ele
+      // Para múltiplos usuários, ideal seria gravar o email na Ordem. Simulando pelo criadorUid:
+      const nome = o.criadorEmail ? o.criadorEmail.split('@')[0].toUpperCase() : 'CONFERENTE';
+      if (!mapa[nome]) mapa[nome] = 0;
+      mapa[nome] += 100;
+    });
+
+    return Object.keys(mapa)
+      .map(nome => ({ nome, pontos: mapa[nome] }))
+      .sort((a, b) => b.pontos - a.pontos)
+      .slice(0, 5); // Top 5
+  }, [pedidosGlobais, ordensGlobais]);
+
+  // Maiores Pedidos (Por total de itens)
+  const topOrdersData = useMemo(() => {
+    const list = pedidosGlobais.map(p => {
+      let totalItens = 0;
+      (p.documentos || []).forEach(d => {
+        (d.caixas || []).forEach(c => {
+          (c.produtos || []).forEach(prod => totalItens += (parseInt(prod.quantidade) || 0));
+        });
+      });
+      return { pedido: p.romaneio || 'S/N', itens: totalItens };
+    });
+
+    return list.sort((a, b) => b.itens - a.itens).slice(0, 5);
+  }, [pedidosGlobais]);
+
+  // Gráfico de Volume (Últimos 4 meses) - Usa as pastas pessoais para não sobrecarregar
   const volumeData = useMemo(() => {
     const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     const historico = {};
@@ -81,23 +164,17 @@ export default function PersonalDashboard({ user }) {
     elements.forEach(el => {
       if (!el.createdAt) return;
       const dataStr = new Date(el.createdAt.seconds * 1000);
-      const chaveMes = `${meses[dataStr.getMonth()]} ${dataStr.getFullYear().toString().substring(2)}`;
-      
-      if (!historico[chaveMes]) historico[chaveMes] = 0;
-      historico[chaveMes] += (el.contagemDocumentos || 0);
+      const chave = `${meses[dataStr.getMonth()]} ${dataStr.getFullYear().toString().substring(2)}`;
+      if (!historico[chave]) historico[chave] = 0;
+      historico[chave] += (el.contagemDocumentos || 0);
     });
 
-    // Pega os 4 últimos meses que tiveram movimento
-    return Object.keys(historico)
-      .slice(-4)
-      .map(chave => ({
-        mes: chave.split(' ')[0],
-        pedidos: historico[chave]
-      }));
+    const chaves = Object.keys(historico).reverse().slice(0, 4).reverse();
+    return chaves.map(c => ({ mes: c.split(' ')[0], pedidos: historico[c] }));
   }, [elements]);
 
   // ==========================================
-  // LÓGICA DO CARD DE HOJE
+  // CARD DE HOJE
   // ==========================================
   const todayTitle = today.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   const existingTodayElement = elements.find(el => el.titulo === todayTitle);
@@ -125,13 +202,6 @@ export default function PersonalDashboard({ user }) {
     return dias[today.getDay()];
   };
 
-  // Mock provisório até conectarmos os SKUs e OPs reais
-  const topOrdersData = [
-    { pedido: 'OP-1042', itens: 450 },
-    { pedido: 'OP-1055', itens: 380 },
-    { pedido: 'OP-1021', itens: 310 }
-  ];
-
   return (
     <div className="dashboard-wrapper">
       
@@ -144,21 +214,10 @@ export default function PersonalDashboard({ user }) {
         <div className="dash-actions-area">
           <div className="dash-period-filter">
             <Calendar size={16} className="filter-icon" />
-            <input 
-              type="date" 
-              value={startDate} 
-              onChange={(e) => setStartDate(e.target.value)} 
-              className="date-input"
-            />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="date-input" />
             <span className="date-separator">até</span>
-            <input 
-              type="date" 
-              value={endDate} 
-              onChange={(e) => setEndDate(e.target.value)} 
-              className="date-input"
-            />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="date-input" />
           </div>
-
           <button className="btn-history" onClick={() => setShowHistoryModal(true)}>
             <Clock size={16} /> Ver Datas Passadas
           </button>
@@ -166,7 +225,9 @@ export default function PersonalDashboard({ user }) {
       </div>
 
       {loading ? (
-        <div className="loading-state">Calculando indicadores...</div>
+        <div className="loading-state">
+           <i className="fa-solid fa-circle-notch fa-spin"></i> Processando inteligência de dados...
+        </div>
       ) : (
         <div className="dashboard-free-layout">
           
@@ -174,18 +235,14 @@ export default function PersonalDashboard({ user }) {
             <div className="hero-content">
               <div className="hero-badge">HOJE</div>
               <h2 className="hero-title">{getDayOfWeek()}</h2>
-              
               <div className="hero-stats">
                 <div className="stat-box">
                   <span className="stat-number">{heroElement.contagemDocumentos || 0}</span>
                   <span className="stat-label">Pedidos em Separação</span>
                 </div>
               </div>
-
               <div className="hero-footer">
-                <div className="hero-date">
-                  {todayTitle}/{today.getFullYear()}
-                </div>
+                <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
                 <button className="btn-access hero-btn" onClick={handleAccessToday}>
                   Acessar Operação <ChevronRight size={18} />
                 </button>
@@ -198,7 +255,7 @@ export default function PersonalDashboard({ user }) {
               <Package size={20} className="kpi-icon blue" />
               <div>
                 <h4>Volume Mensal</h4>
-                <span className="kpi-trend positive"><TrendingUp size={12} /> Atualizado agora</span>
+                <span className="kpi-trend positive"><TrendingUp size={12} /> Desempenho base</span>
               </div>
             </div>
             <div style={{ height: '120px', width: '100%', marginTop: '10px' }}>
@@ -222,9 +279,7 @@ export default function PersonalDashboard({ user }) {
               <h4>Média Diária (Seg-Sex)</h4>
             </div>
             <div className="kpi-value large-value">{mediaDiaria}</div>
-            <div className="kpi-trend neutral" style={{ marginTop: '5px' }}>
-              Pedidos processados / dia
-            </div>
+            <div className="kpi-trend neutral" style={{ marginTop: '5px' }}>Pedidos processados / dia</div>
           </div>
 
           <div className="free-block ranking-zone">
@@ -233,11 +288,17 @@ export default function PersonalDashboard({ user }) {
               <h4>Ranking do Período (SKUs + O.P.s)</h4>
             </div>
             <div className="ranking-list free-list">
-              <div className="ranking-row first shadow-sm">
-                <span className="rank-pos">1º</span>
-                <span className="rank-name">Wanderson</span>
-                <span className="rank-points">Aguardando dados...</span>
-              </div>
+              {rankingData.length === 0 ? (
+                <div style={{color: '#999', fontSize: '13px'}}>Nenhum dado no período.</div>
+              ) : (
+                rankingData.map((user, index) => (
+                  <div key={user.nome} className={`ranking-row ${index === 0 ? 'first' : 'shadow-sm'}`}>
+                    <span className="rank-pos">{index + 1}º</span>
+                    <span className="rank-name">{user.nome}</span>
+                    <span className="rank-points">{user.pontos.toFixed(0)} pts</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -250,7 +311,7 @@ export default function PersonalDashboard({ user }) {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={topOrdersData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
                   <XAxis type="number" hide />
-                  <YAxis dataKey="pedido" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#4a5568', fontWeight: 600}} width={80} />
+                  <YAxis dataKey="pedido" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#4a5568', fontWeight: 600}} width={100} />
                   <Tooltip cursor={{fill: 'rgba(242, 101, 34, 0.05)'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
                   <Bar dataKey="itens" fill="var(--secondary)" radius={[0, 6, 6, 0]} barSize={24}>
                      {topOrdersData.map((entry, index) => (

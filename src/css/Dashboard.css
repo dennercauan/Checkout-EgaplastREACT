@@ -28,50 +28,154 @@
   padding: 20px 0; 
 }
 
-/* --- NAVBAR MODERNIZADA --- */
+/* =======================================
+   NAVBAR FLUTUANTE (Borderless)
+   ======================================= */
 .modern-navbar {
-  background: rgba(255, 255, 255, 0.7); 
-  backdrop-filter: blur(15px); 
-  -webkit-backdrop-filter: blur(15px);
-  border: 1px solid rgba(255,255,255,0.8); 
-  border-radius: 20px; 
-  padding: 12px 30px; 
-  display: flex; 
+  display: flex;
   justify-content: space-between;
-  align-items: center; 
-  box-shadow: 0 8px 30px rgba(0,0,0,0.04); 
-  position: sticky; 
-  top: 20px; 
-  z-index: 100; 
-  margin-bottom: 40px;
+  align-items: center;
+  max-width: 1400px; /* Trava na mesma largura do Dashboard */
+  margin: 0 auto;
+  padding: 30px 20px 10px 20px; 
+  background: transparent; /* Removemos o fundo rígido */
+  box-shadow: none; /* Sem sombras dividindo a tela */
+  border: none;
 }
 
-.nav-brand { display: flex; align-items: center; gap: 15px; }
-.nav-logo { height: 42px; width: auto; transition: transform 0.3s ease; cursor: pointer; }
-.nav-logo:hover { transform: scale(1.08); }
-.nav-title { color: var(--primary); font-size: 16px; font-weight: 700; border-left: 2px solid #ddd; padding-left: 15px; line-height: 1.2; }
-.nav-title small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; letter-spacing: 0.5px; }
-
-.nav-actions { display: flex; align-items: center; gap: 15px; }
-
-/* --- BUSCA EXPANSÍVEL --- */
-.search-container { position: relative; height: 40px; display: flex; align-items: center; }
-.search-expandable { 
-  background: #ffffff; border: 1px solid #d1d1d1; padding: 0; width: 40px; height: 40px; border-radius: 40px; 
-  font-size: 14px; color: var(--text-main); transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); cursor: pointer; 
-  padding-left: 45px !important; padding-right: 15px; 
+/* Área da Logo e Título (Lado Esquerdo) */
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 15px;
 }
-.search-icon-overlay { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #666; pointer-events: none; z-index: 5; transition: color 0.3s; }
-.search-container:hover .search-expandable, .search-expandable:focus, .search-expandable:not(:placeholder-shown) { width: 300px; background: #fff; border-color: var(--primary); box-shadow: 0 4px 15px rgba(13, 50, 105, 0.1); cursor: text; }
-.search-expandable:focus { outline: none; }
-.search-expandable:focus + .search-icon-overlay { color: var(--secondary); }
-.search-expandable::placeholder { color: transparent; } 
-.search-container:hover .search-expandable::placeholder, .search-expandable:focus::placeholder { color: #999; }
 
-/* --- BOTÕES DA NAVBAR --- */
-.btn-nav { background: #fff; color: var(--text-main); border: 1px solid #eee; padding: 8px 18px; border-radius: 30px; cursor: pointer; transition: all 0.2s; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
-.btn-nav:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.08); border-color: #ddd; }
-.btn-primary { background: var(--primary); color: #fff; border: none; box-shadow: 0 4px 12px rgba(13, 50, 105, 0.2); }
-.btn-primary:hover { background: #163d75; box-shadow: 0 6px 18px rgba(13, 50, 105, 0.3); }
-.btn-logout { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; color: #dc3545; border-color: rgba(220, 53, 69, 0.1); background: rgba(220, 53, 69, 0.05); }
-.btn-logout:hover { background: #dc3545; color: white; }
+.nav-logo {
+  height: 40px; /* Ajuste conforme necessário para a sua logo */
+  cursor: pointer;
+}
+
+.nav-title {
+  display: flex;
+  flex-direction: column;
+  color: var(--primary);
+  font-weight: 800;
+  font-size: 1.1rem;
+  line-height: 1.2;
+  border-left: 2px solid #eef2f8; /* Linha sutil separando a logo do texto */
+  padding-left: 15px;
+}
+
+.nav-title small {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a0aec0;
+}
+
+/* Área de Botões (Lado Direito) */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+/* Os botões ganham um destaque elegante já que estão flutuando soltos */
+.btn-nav.btn-primary {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 30px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 15px rgba(13, 50, 105, 0.15);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-nav.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(13, 50, 105, 0.25);
+}
+
+.btn-nav.btn-logout {
+  background: #fff;
+  color: #dc3545; 
+  border: 1px solid #ffebeb;
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.02);
+  transition: all 0.2s;
+}
+
+.btn-nav.btn-logout:hover {
+  background: #dc3545;
+  color: white;
+  border-color: #dc3545;
+}
+
+/* =======================================
+   BUSCA EXPANSÍVEL (Navbar Flutuante)
+   ======================================= */
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-expandable {
+  width: 42px; /* Inicia como um botão redondo */
+  height: 42px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 30px;
+  background: #f7f9fc;
+  font-size: 0.9rem;
+  color: var(--text-main);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  outline: none;
+}
+
+/* Oculta o texto do placeholder enquanto estiver recolhido */
+.search-expandable::placeholder {
+  color: transparent;
+  transition: color 0.3s;
+}
+
+/* Ícone centralizado inicialmente */
+.search-icon-overlay {
+  position: absolute;
+  left: 13px; 
+  color: #a0aec0;
+  pointer-events: none; /* Permite que o clique passe para o input abaixo dele */
+  transition: all 0.3s;
+}
+
+/* --- ESTADO EXPANDIDO (Ao clicar ou ao ter algo digitado) --- */
+.search-expandable:focus,
+.search-expandable:not(:placeholder-shown) {
+  width: 280px;
+  padding: 10px 15px 10px 40px; /* Abre o espaço lateral para o ícone */
+  background: #ffffff;
+  border-color: #ccd7e6;
+  box-shadow: 0 4px 20px rgba(13, 50, 105, 0.08);
+  cursor: text;
+}
+
+.search-expandable:focus::placeholder {
+  color: #a0aec0; /* Revela o texto de dica suavemente */
+}
+
+/* Destaca o ícone quando o campo está ativo */
+.search-expandable:focus + .search-icon-overlay,
+.search-expandable:not(:placeholder-shown) + .search-icon-overlay {
+  color: var(--primary); 
+}
