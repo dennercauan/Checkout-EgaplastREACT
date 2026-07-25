@@ -1,173 +1,170 @@
 /* src/css/PersonalDashboard.css */
 
-.mosaic-dashboard-container {
-  max-width: 1300px;
+.dashboard-wrapper {
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 15px;
+  padding: 20px;
   animation: fadeInScreen 0.5s ease-out forwards;
 }
 
-.mosaic-header {
-  margin-bottom: 25px;
+/* =======================================
+   CABEÇALHO E CONTROLES (Integrados)
+   ======================================= */
+.dash-header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  margin-top: 10px;
 }
 
-.mosaic-title {
+.dash-title-area { display: flex; align-items: center; gap: 12px; color: var(--primary); }
+.dash-title-area h2 { font-size: 1.8rem; font-weight: 800; margin: 0; }
+.title-icon { color: var(--primary); }
+
+.dash-actions-area {
   display: flex;
   align-items: center;
-  gap: 12px;
-  color: var(--primary);
+  gap: 15px;
 }
 
-.mosaic-title h3 {
-  font-size: 1.4rem;
-  font-weight: 800;
-  margin: 0;
+/* Estilo unificado "Pílula" para os controles flutuarem soltos */
+.dash-period-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  padding: 10px 18px;
+  border-radius: 30px;
+  border: 1px solid #eef2f8;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
 }
+
+.filter-icon { color: var(--primary); }
+
+.date-input {
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+  outline: none;
+  cursor: pointer;
+}
+
+.date-separator { color: #a0aec0; font-size: 0.85rem; font-weight: 600; }
+
+.dash-search { position: relative; width: 280px; }
+.dash-search input {
+  width: 100%;
+  padding: 10px 15px 10px 36px;
+  border: 1px solid #eef2f8;
+  border-radius: 30px;
+  background: #ffffff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+  transition: all 0.2s;
+}
+.dash-search input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(13, 50, 105, 0.1); }
+.search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #a0aec0; }
+
+.btn-history {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #eef2f8;
+  padding: 10px 18px;
+  border-radius: 30px;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+}
+.btn-history:hover { background: #f7f9fc; color: var(--primary); border-color: #dbe4f0; }
 
 /* =======================================
-   O MOSAICO (CSS GRID)
+   LAYOUT LIVRE (Data-Ink Ratio)
    ======================================= */
-.mosaic-grid {
+.dashboard-free-layout {
   display: grid;
-  /* Cria colunas flexíveis. No PC, cabem umas 4 ou 5. No celular, 1. */
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  grid-auto-rows: 180px; /* Altura fixa para alinhar as peças */
-  gap: 20px;
-  margin-bottom: 40px;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  grid-template-areas:
+    "hero volume media"
+    "hero ranking ranking"
+    "bottom bottom bottom";
+  gap: 35px;
+  margin-top: 10px;
 }
 
-/* --- SUPER CARD (HOJE/DESTAQUE) --- */
+/* O Hero Card firmemente travado na área "hero" */
 .hero-card {
-  grid-column: span 2; /* Ocupa 2 colunas */
-  grid-row: span 2;    /* Ocupa 2 linhas (equivale a 4 cards pequenos) */
+  grid-area: hero;
   background: linear-gradient(135deg, var(--primary) 0%, #061833 100%);
   color: white;
-  border-radius: 20px;
-  padding: 30px;
+  border-radius: 24px;
+  padding: 35px;
   position: relative;
   box-shadow: 0 15px 35px rgba(13, 50, 105, 0.2);
   display: flex;
   flex-direction: column;
-  transition: transform 0.3s;
 }
 
-.hero-card:hover { transform: translateY(-5px); }
-
-.hero-badge {
-  background: rgba(242, 101, 34, 0.2);
-  color: #ff9466;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  display: inline-block;
-  margin-bottom: 15px;
-}
-
-.hero-title {
-  font-size: 2.8rem;
-  font-weight: 800;
-  margin: 0 0 20px 0;
-  line-height: 1.1;
-}
-
+.hero-badge { background: rgba(242, 101, 34, 0.2); color: #ff9466; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 700; display: inline-block; margin-bottom: 15px; width: fit-content; }
+.hero-title { font-size: 2.8rem; font-weight: 800; margin: 0 0 25px 0; letter-spacing: -1px; }
 .hero-stats { margin-bottom: auto; }
 .stat-box { display: flex; flex-direction: column; }
-.stat-number { font-size: 3.5rem; font-weight: 800; line-height: 1; color: var(--secondary); }
-.stat-label { font-size: 0.9rem; color: #a6cbf3; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-top: 5px; }
+.stat-number { font-size: 4rem; font-weight: 800; line-height: 1; color: var(--secondary); }
+.stat-label { font-size: 0.95rem; color: #a6cbf3; text-transform: uppercase; font-weight: 600; margin-top: 5px; letter-spacing: 0.5px; }
 
-.hero-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  border-top: 1px solid rgba(255,255,255,0.1);
-  padding-top: 20px;
-}
+.hero-footer { display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 25px; margin-top: 30px; }
+.hero-date { color: #a6cbf3; font-weight: 600; }
+.hero-btn { background: var(--secondary); color: white; padding: 14px 28px; border-radius: 30px; font-weight: 700; border: none; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.2s; box-shadow: 0 4px 15px rgba(242, 101, 34, 0.3); }
+.hero-btn:hover { background: #d9561a; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(242, 101, 34, 0.4); }
 
-.hero-date { display: flex; align-items: center; gap: 8px; color: #a6cbf3; font-size: 0.9rem; }
-
-.hero-btn {
-  background: var(--secondary);
-  color: white;
-  padding: 12px 24px;
-  border-radius: 30px;
-  font-weight: 700;
-  font-size: 1rem;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  box-shadow: 0 5px 15px rgba(242, 101, 34, 0.3);
-  transition: 0.2s;
-}
-.hero-btn:hover { background: #d9561a; transform: scale(1.05); }
-
-/* --- CARDS SECUNDÁRIOS --- */
-.standard-card {
-  background: #ffffff;
-  border: 1px solid #eef2f8;
-  border-radius: 16px;
-  padding: 20px;
+/* Blocos Livres travados em suas respectivas áreas */
+.free-block {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.03);
-  transition: all 0.3s;
-  position: relative;
 }
 
-.standard-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 25px rgba(13, 50, 105, 0.08);
-  border-color: #dbe4f0;
-}
+.volume-zone { grid-area: volume; }
+.media-zone { grid-area: media; }
+.ranking-zone { grid-area: ranking; align-self: end; }
+.bottom-zone { grid-area: bottom; margin-top: 20px; border-top: 1px dashed #dbe4f0; padding-top: 30px; }
 
-.card-top { display: flex; flex-direction: column; gap: 10px; }
-.card-icon { color: #a0aec0; }
-.card-title { font-size: 1.3rem; font-weight: 700; margin: 0; color: var(--text-main); }
+/* Tipografia dos blocos livres */
+.free-header { display: flex; align-items: center; gap: 12px; margin-bottom: 5px; }
+.free-header h4 { margin: 0; font-size: 1.1rem; color: var(--primary); font-weight: 700; }
+.free-header div { display: flex; flex-direction: column; gap: 2px; }
 
-.mini-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(13, 50, 105, 0.05);
-  color: var(--primary);
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
+.kpi-icon { padding: 10px; border-radius: 10px; box-sizing: content-box; }
+.kpi-icon.blue { background: rgba(13, 50, 105, 0.08); color: var(--primary); }
+.kpi-icon.orange { background: rgba(242, 101, 34, 0.08); color: var(--secondary); }
+.kpi-icon.gold { background: rgba(255, 193, 7, 0.15); color: #d4a017; }
+.kpi-icon.green { background: rgba(40, 167, 69, 0.08); color: #28a745; }
 
-.card-bottom { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0f2f5; padding-top: 12px; }
-.card-date { color: var(--text-muted); font-size: 0.85rem; }
-.small-btn { background: #f0f2f5; border: none; padding: 8px; border-radius: 50%; color: var(--primary); cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
-.standard-card:hover .small-btn { background: var(--primary); color: white; }
+.large-value { font-size: 3.5rem; font-weight: 800; color: var(--text-main); line-height: 1.1; margin-top: 10px; }
+.kpi-trend { font-size: 0.9rem; display: flex; align-items: center; gap: 5px; font-weight: 600; }
+.kpi-trend.positive { color: #28a745; }
+.kpi-trend.neutral { color: var(--text-muted); }
 
-/* --- AÇÕES (EDITAR/EXCLUIR) OCULTAS --- */
-.mosaic-actions { position: absolute; top: 15px; right: 15px; display: flex; gap: 5px; opacity: 0; transition: opacity 0.2s; }
-.mosaic-card:hover .mosaic-actions { opacity: 1; }
-.action-btn { background: rgba(255,255,255,0.9); border: none; padding: 6px; border-radius: 6px; cursor: pointer; color: #666; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-.hero-card .action-btn { background: rgba(0,0,0,0.3); color: white; }
-.action-btn.edit:hover { color: var(--primary); }
-.action-btn.delete:hover { color: #dc3545; }
+/* Ranking Livres (Pílulas flutuantes) */
+.free-list { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; }
+.ranking-row { display: flex; align-items: center; padding: 14px 20px; border-radius: 12px; font-size: 1rem; font-weight: 600; transition: transform 0.2s; }
+.ranking-row:hover { transform: translateX(5px); }
+.ranking-row.shadow-sm { background: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.04); border: 1px solid #f0f2f5; }
+.ranking-row.first { background: linear-gradient(to right, rgba(255, 193, 7, 0.05), #ffffff); border: 1px solid rgba(255, 193, 7, 0.3); color: #b78a0d; box-shadow: 0 4px 15px rgba(212, 160, 23, 0.1); }
+.rank-pos { width: 35px; font-weight: 800; font-size: 1.1rem; }
+.rank-name { flex-grow: 1; color: var(--text-main); }
+.rank-points { color: var(--primary); font-weight: 800; }
 
-/* --- SEÇÃO DE HISTÓRICO --- */
-.history-section { border-top: 1px solid #eef2f8; padding-top: 20px; }
-.btn-toggle-history { background: transparent; border: 1px solid #dbe4f0; padding: 10px 20px; border-radius: 20px; color: var(--text-muted); font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; transition: 0.2s; }
-.btn-toggle-history:hover { background: #f7f9fc; color: var(--primary); border-color: var(--primary); }
-.history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 20px; animation: fadeInScreen 0.3s; }
-.history-item { background: #f7f9fc; padding: 12px 15px; border-radius: 10px; display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text-main); font-size: 0.9rem; border: 1px solid transparent; cursor: pointer; transition: 0.2s; }
-.history-item:hover { border-color: #dbe4f0; background: #fff; }
-.history-docs { margin-left: auto; background: rgba(0,0,0,0.05); padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; color: var(--text-muted); }
-
-/* --- RESPONSIVIDADE --- */
-@media (max-width: 768px) {
-  .hero-card { grid-column: span 1; grid-row: span 1; padding: 20px; }
-  .hero-title { font-size: 2rem; }
-  .stat-number { font-size: 2.5rem; }
-  .hero-footer { flex-direction: column; align-items: flex-start; gap: 15px; }
-  .mosaic-actions { opacity: 1; } /* No mobile não tem hover, então os botões ficam visíveis */
-}
+/* Modal Básico */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-content { background: white; padding: 30px; border-radius: 20px; width: 600px; max-width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #f0f2f5; padding-bottom: 15px; }
+.modal-header h3 { margin: 0; color: var(--primary); font-size: 1.3rem; }
+.btn-close { background: transparent; border: none; font-size: 1.5rem; color: #a0aec0; cursor: pointer; }
+.btn-close:hover { color: #dc3545; }
