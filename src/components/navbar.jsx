@@ -5,12 +5,14 @@ import { auth, db } from '../firebase';
 import { collectionGroup, query, where, getDocs } from 'firebase/firestore';
 import { Search, Power, Loader2, FileText, MapPin, CheckCircle, Clock, ExternalLink, ShieldAlert, AlertTriangle, SearchX } from 'lucide-react';
 
+
 import logoEgaplast from '../img/egaplast.png';
 
-export default function Navbar({ user }) {
+export default function Navbar({ user, isAdmin }) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  
   
   // ==========================================
   // ESTADOS DOS MODAIS 
@@ -304,11 +306,12 @@ export default function Navbar({ user }) {
                   <button 
                     className="btn-access-search" 
                     onClick={() => {
-                      // TRAVA DE SEGURANÇA NA HORA DO CLIQUE
-                      // Aqui, se você tirou a variável isAdmin do componente raiz, deixamos apenas a validação por usuário
+                      // TRAVA DE SEGURANÇA COM BYPASS PARA ADMIN
                       const isOwner = searchResult.criadorUid === user.uid;
                       const isLinked = searchResult.uidsVinculados && searchResult.uidsVinculados.includes(user.uid);
-                      const canAccess = isOwner || isLinked;
+                      
+                      // O Admin ignora as amarras e pode acessar qualquer documento
+                      const canAccess = isAdmin || isOwner || isLinked;
 
                       if (!canAccess) {
                         setShowAccessDenied(true); 

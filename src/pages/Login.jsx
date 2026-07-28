@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
-// Adicionamos o CheckCircle aqui:
 import { Mail, Lock, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import '../css/Login.css';
@@ -15,17 +14,14 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  // Estados da Splash Inicial
   const [splashActive, setSplashActive] = useState(true);
   const [splashFading, setSplashFading] = useState(false);
 
-  // NOVOS ESTADOS: Tela de Sucesso Pós-Login
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [userName, setUserName] = useState('');
 
   const navigate = useNavigate();
 
-  // Efeito que controla o tempo da tela de abertura
   useEffect(() => {
     const fadeTimer = setTimeout(() => {
       setSplashFading(true);
@@ -41,7 +37,6 @@ export default function Login() {
     };
   }, []);
 
-  // Verifica se há e-mail salvo
   useEffect(() => {
     const savedEmail = localStorage.getItem('egaplast_saved_email');
     if (savedEmail) {
@@ -69,16 +64,14 @@ export default function Login() {
           targetUrl = "/dashboard-viewer"; 
       }
 
-      // Formata o nome para a tela de boas vindas
       const namePart = user.email.split('@')[0];
       const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
       
-      // Ativa a tela de sucesso e guarda o nome
       setUserName(formattedName);
       setShowSuccessScreen(true);
       sessionStorage.setItem('justLoggedIn', 'true');
 
-      // Aguarda 2.5 segundos (fake loading) visualizando a tela de sucesso antes de navegar
+      // SEM FADE OUT: Segura a tela escura e redireciona direto após 2.5s
       setTimeout(() => {
         navigate(targetUrl);
       }, 2500); 
@@ -105,11 +98,11 @@ export default function Login() {
     );
   }
 
+  // Removida a classe isExiting do wrapper
   return (
     <div className="login-wrapper">
       <Toaster />
 
-      {/* --- NOVA TELA DE SUCESSO PÓS-LOGIN --- */}
       {showSuccessScreen && (
         <div className="success-splash-container">
           <div className="success-content">
@@ -123,7 +116,6 @@ export default function Login() {
         </div>
       )}
 
-      {/* Lado Esquerdo - Branding */}
       <div className="brand-side">
         <div className="brand-content">
           <img src="/src/img/egaplast.png" alt="Logo Sistema Checkout" className="brand-logo" />
@@ -132,7 +124,6 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Lado Direito - Formulário */}
       <div className="form-side">
         <div className="form-content">
           <div className="logo-container">

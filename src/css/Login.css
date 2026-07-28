@@ -457,3 +457,12 @@ html, body, #root {
   margin: 0 auto;
   color: var(--secondary); /* Usa o Laranja Egaplast para o loader */
 }
+
+/* =============================
+   TRANSIÇÃO DE SAÍDA (PÓS-LOGIN)
+   ============================= */
+.page-exit {
+  opacity: 0 !important;
+  visibility: hidden;
+  transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out;
+}
