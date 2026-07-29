@@ -10,7 +10,7 @@ import { auth, db } from '../firebase';
 import { 
   ArrowLeft, Plus, FileText, CheckCircle2, 
   Clock, MoreVertical, Search, Boxes, X, User, Trash2, PackagePlus, Loader2, Edit, Check, Pause, Play, AlertCircle, MapPin, UploadCloud,
-  Trophy, Medal, Factory, Package // <-- Novos ícones importados
+  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree
 } from 'lucide-react';
 import '../css/Operacao.css';
 
@@ -33,7 +33,9 @@ export default function Operacao({ isAdmin }) {
   const [isSaving, setIsSaving] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(null); 
   
-  const [showCaixasModal, setShowCaixasModal] = useState(false);
+  // ESTADOS DO MODAL UNIFICADO (DETALHES + WMS)
+  const [showDetalhesModal, setShowDetalhesModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('resumo'); // Controle das abas ('resumo' ou 'caixas')
   const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
   const [docIndexSelecionado, setDocIndexSelecionado] = useState(0);
   const [caixasPrevia, setCaixasPrevia] = useState([]);
@@ -42,6 +44,16 @@ export default function Operacao({ isAdmin }) {
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [pauseReason, setPauseReason] = useState('');
   const [pedidoToPause, setPedidoToPause] = useState(null);
+
+  const [showOpModal, setShowOpModal] = useState(false);
+  const [opsDoDia, setOpsDoDia] = useState([]);
+  const [opForm, setOpForm] = useState({ numero: '', responsavelEmail: '' });
+  const [isSavingOp, setIsSavingOp] = useState(false);
+
+  const [showMasterModal, setShowMasterModal] = useState(false);
+  const [caixasMaster, setCaixasMaster] = useState([]);
+  const [buscaMaster, setBuscaMaster] = useState('');
+  const [copiedEan, setCopiedEan] = useState(null);
 
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -59,9 +71,6 @@ export default function Operacao({ isAdmin }) {
   const [docResponsavel, setDocResponsavel] = useState(''); 
   const [docsTemporarios, setDocsTemporarios] = useState([]);
 
-  // ==========================================
-  // DADOS FICTÍCIOS PARA O ESBOÇO DO RANKING
-  // ==========================================
   const rankingMock = [
     { posicao: 1, nome: 'Wanderson', skus: 3450, op: 12, pontos: 15420 },
     { posicao: 2, nome: 'Denner', skus: 3120, op: 9, pontos: 12890 },
@@ -79,6 +88,7 @@ export default function Operacao({ isAdmin }) {
       if (currentUser) {
         setLocalUser(currentUser);
         setDocResponsavel(String(currentUser.email).toLowerCase().trim());
+        setOpForm(prev => ({ ...prev, responsavelEmail: String(currentUser.email).toLowerCase().trim() }));
       } else {
         navigate('/');
       }
@@ -105,6 +115,16 @@ export default function Operacao({ isAdmin }) {
   }, [dataOperacaoAtiva]);
 
   useEffect(() => {
+    const unsubMaster = onSnapshot(collection(db, 'caixasMaster'), (snap) => {
+      const masters = [];
+      snap.forEach(doc => { masters.push({ id: doc.id, ...doc.data() }); });
+      masters.sort((a, b) => String(a.ref || '').localeCompare(String(b.ref || '')));
+      setCaixasMaster(masters);
+    });
+    return () => unsubMaster();
+  }, []);
+
+  useEffect(() => {
     if (!localUser?.uid) return;
 
     const [ano, mes, dia] = dataOperacaoAtiva.split('-');
@@ -112,9 +132,7 @@ export default function Operacao({ isAdmin }) {
     const endOfDay = new Date(ano, mes - 1, dia, 23, 59, 59);
 
     const qNovo = query(collection(db, 'pedidos'), where('dataOperacao', '==', dataOperacaoAtiva), where('uidsVinculados', 'array-contains', localUser.uid));
-    const unsubNovo = onSnapshot(qNovo, (snap) => {
-      setPedidosNovos(snap.docs.map(doc => ({ id: doc.id, _isLegacy: false, ...doc.data() })));
-    });
+    const unsubNovo = onSnapshot(qNovo, (snap) => setPedidosNovos(snap.docs.map(doc => ({ id: doc.id, _isLegacy: false, ...doc.data() }))));
 
     const qLegado = query(collectionGroup(db, 'pedidosMultiDocumento'), where('createdAt', '>=', Timestamp.fromDate(startOfDay)), where('createdAt', '<=', Timestamp.fromDate(endOfDay)));
     const unsubLegado = onSnapshot(qLegado, (snap) => {
@@ -130,7 +148,14 @@ export default function Operacao({ isAdmin }) {
       setPedidosLegados(legados);
     });
 
-    return () => { unsubNovo(); unsubLegado(); };
+    const qOp = query(collection(db, 'ordensProducao'), where('dataOperacao', '==', dataOperacaoAtiva));
+    const unsubOp = onSnapshot(qOp, (snap) => {
+      const ops = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      ops.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+      setOpsDoDia(ops);
+    });
+
+    return () => { unsubNovo(); unsubLegado(); unsubOp(); };
   }, [localUser, dataOperacaoAtiva, isAdmin]);
 
   const pedidosProcessados = useMemo(() => {
@@ -140,6 +165,11 @@ export default function Operacao({ isAdmin }) {
       return timeB - timeA;
     });
   }, [pedidosNovos, pedidosLegados]);
+
+  const pedidoModal = useMemo(() => {
+    if (!pedidoSelecionado) return null;
+    return pedidosProcessados.find(p => p.id === pedidoSelecionado.id) || pedidoSelecionado;
+  }, [pedidoSelecionado, pedidosProcessados]);
 
   const totalCaixasHoje = useMemo(() => {
     let count = 0;
@@ -157,6 +187,16 @@ export default function Operacao({ isAdmin }) {
     return { ...pendente, totalSkus: skus };
   }, [pedidosProcessados]);
 
+  const caixasMasterFiltradas = useMemo(() => {
+    if (!buscaMaster.trim()) return caixasMaster;
+    const term = buscaMaster.toLowerCase();
+    return caixasMaster.filter(m => 
+      String(m.ref || '').toLowerCase().includes(term) ||
+      String(m.nome || '').toLowerCase().includes(term) ||
+      (m.variacoes && m.variacoes.some(v => String(v.caixa || '').toLowerCase().includes(term) || String(v.codigoBarras || '').toLowerCase().includes(term)))
+    );
+  }, [caixasMaster, buscaMaster]);
+
   useEffect(() => {
     const closeMenu = () => setDropdownOpen(null);
     document.addEventListener("click", closeMenu);
@@ -167,7 +207,6 @@ export default function Operacao({ isAdmin }) {
     if (!pedido.createdAt) return "00:00:00";
     const start = pedido.createdAt.toMillis ? pedido.createdAt.toMillis() : pedido.createdAt;
     const totalPaused = pedido.totalPausedTime || 0;
-    
     let end;
     if (pedido.efetivado && pedido.completedAt) {
       end = pedido.completedAt.toMillis ? pedido.completedAt.toMillis() : pedido.completedAt;
@@ -176,7 +215,6 @@ export default function Operacao({ isAdmin }) {
     } else {
       end = currentTime; 
     }
-
     const diff = Math.max(0, end - start - totalPaused);
     const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
     const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
@@ -206,81 +244,127 @@ export default function Operacao({ isAdmin }) {
     await deleteDoc(ref);
   };
 
-  const handleAbrirCaixas = (pedido) => {
+  // ==========================================
+  // FUNÇÕES DO MODAL UNIFICADO
+  // ==========================================
+  const handleAbrirDetalhes = (pedido) => {
     setPedidoSelecionado(pedido);
-    setDocIndexSelecionado(0); 
-    const caixasExistentes = pedido.documentos?.[0]?.caixas || [];
-    setCaixasPrevia(caixasExistentes);
-    setShowCaixasModal(true);
+    setDocIndexSelecionado(0);
+    setCaixasPrevia([]); 
+    setActiveTab('resumo'); // Sempre abre na aba resumo
+    setShowDetalhesModal(true);
   };
 
   const handleDocSelectionChange = (e) => {
     const idx = parseInt(e.target.value);
     setDocIndexSelecionado(idx);
-    setCaixasPrevia(pedidoSelecionado.documentos?.[idx]?.caixas || []);
+    setCaixasPrevia([]); 
   };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     setIsUploading(true);
+    
     const reader = new FileReader();
     
     reader.onload = (event) => {
       try {
         const text = event.target.result;
-        const lines = text.split('\n').filter(line => line.trim() !== '');
-        if (lines.length <= 1) { alert("Arquivo vazio."); setIsUploading(false); return; }
+        // Divide por linhas e remove linhas vazias
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
+        
+        if (lines.length <= 1) { 
+          alert("Arquivo vazio ou formato desconhecido."); 
+          setIsUploading(false); 
+          return; 
+        }
 
-        const headers = lines[0].split(';').map(h => h.trim().toUpperCase());
-        const idxCaixa = headers.findIndex(h => h.includes('CAIXA') || h.includes('EMBALAGEM'));
-        const idxSKU = headers.findIndex(h => h.includes('SKU') || h.includes('CÓDIGO') || h.includes('COD'));
-        const idxQtd = headers.findIndex(h => h.includes('QTD') || h.includes('QUANTIDADE'));
-        const idxPeso = headers.findIndex(h => h.includes('PESO'));
+        const headers = lines[0].split(';').map(h => h.trim().toUpperCase().replace(/"/g, ''));
+        
+        // Mapeamento Inteligente baseado no CSV enviado
+        const idxCaixa = headers.findIndex(h => h.includes('TIPO EMBALAGEM') || h.includes('CAIXA') || h === 'DESCRIÇÃO TIPO EMBALAGEM EXPEDIÇÃO');
+        const idxSKU = headers.findIndex(h => h === 'PRODUTO' || h.includes('SKU') || h.includes('CÓDIGO') || h === 'COD');
+        const idxQtd = headers.findIndex(h => h === 'QUANTIDADE' || h.includes('QTD'));
+        const idxPeso = headers.findIndex(h => h === 'PESO EMBALAGEM' || h.includes('PESO'));
 
         if (idxCaixa === -1 || idxSKU === -1 || idxQtd === -1) {
-           alert("Formato inválido. Precisa de Caixa, SKU e Quantidade (por ponto e vírgula).");
+           alert("Formato inválido. Não localizamos as colunas de PRODUTO, QUANTIDADE ou DESCRIÇÃO TIPO EMBALAGEM.");
            setIsUploading(false); return;
         }
 
         const mapaCaixas = {};
-
+        
         for (let i = 1; i < lines.length; i++) {
           const colunas = lines[i].split(';');
           if (colunas.length < 3) continue;
-
-          const numCaixa = colunas[idxCaixa]?.trim();
-          const sku = colunas[idxSKU]?.trim();
-          const qtd = parseInt(colunas[idxQtd]?.trim()) || 0;
-          const pesoStr = idxPeso !== -1 ? colunas[idxPeso]?.trim().replace(',', '.') : "0";
-          const peso = parseFloat(pesoStr) || 0;
+          
+          let numCaixa = colunas[idxCaixa]?.trim() || '';
+          numCaixa = numCaixa.replace(/"/g, '');
+          
+          let sku = colunas[idxSKU]?.trim() || '';
+          sku = sku.replace(/"/g, '');
+          
+          const qtdStr = colunas[idxQtd]?.trim().replace(/"/g, '');
+          const qtd = parseInt(qtdStr) || 0;
+          
+          let peso = 0;
+          if (idxPeso !== -1 && colunas[idxPeso]) {
+             // Aceita vírgula ou ponto no peso e remove aspas
+             const pesoStr = colunas[idxPeso].trim().replace(/"/g, '').replace(',', '.');
+             peso = parseFloat(pesoStr) || 0;
+          }
 
           if (!numCaixa || !sku || qtd === 0) continue;
-
-          if (!mapaCaixas[numCaixa]) { mapaCaixas[numCaixa] = { num: numCaixa, peso: 0, produtos: [] }; }
-          mapaCaixas[numCaixa].produtos.push({ sku, quantidade: qtd });
-          mapaCaixas[numCaixa].peso += peso;
+          
+          if (!mapaCaixas[numCaixa]) { 
+            mapaCaixas[numCaixa] = { num: numCaixa, peso: peso, produtos: [] }; 
+          }
+          
+          // O peso no seu CSV é o peso total da caixa que vem repetido por linha.
+          // Pegamos sempre o maior valor registrado para não somar itens indevidamente
+          mapaCaixas[numCaixa].peso = Math.max(mapaCaixas[numCaixa].peso, peso);
+          
+          // Agrupador de SKU: Se a caixa já tem esse produto, apenas soma a quantidade
+          const prodExistente = mapaCaixas[numCaixa].produtos.find(p => p.sku === sku);
+          if (prodExistente) {
+             prodExistente.quantidade += qtd;
+          } else {
+             mapaCaixas[numCaixa].produtos.push({ sku, quantidade: qtd });
+          }
         }
 
-        const arrayCaixasFormatadas = Object.values(mapaCaixas).map(cx => ({ ...cx, peso: cx.peso.toFixed(2) }));
-        setCaixasPrevia(arrayCaixasFormatadas);
+        // Converte para o array final
+        const arrayCaixasFormatadas = Object.values(mapaCaixas).map(cx => ({ 
+          ...cx, 
+          peso: cx.peso.toFixed(2) 
+        }));
         
-      } catch (error) { alert("Ocorreu um erro ao ler o arquivo."); } finally { setIsUploading(false); }
+        setCaixasPrevia(arrayCaixasFormatadas);
+      } catch (error) { 
+        alert("Ocorreu um erro ao ler o arquivo CSV. Verifique a formatação."); 
+        console.error(error);
+      } finally { 
+        setIsUploading(false); 
+      }
     };
-    reader.readAsText(file);
+    
+    // ISO-8859-1 garante que acentos fiquem corretos caso o WMS exporte nesse formato
+    reader.readAsText(file, 'ISO-8859-1');
     e.target.value = null; 
   };
 
   const handleSalvarCaixasFirebase = async () => {
-    if (!pedidoSelecionado) return;
+    if (!pedidoModal) return;
     setIsSaving(true);
     try {
-      const ref = obterReferenciaDocumento(pedidoSelecionado);
-      const novosDocs = [...pedidoSelecionado.documentos];
+      const ref = obterReferenciaDocumento(pedidoModal);
+      const novosDocs = [...pedidoModal.documentos];
       novosDocs[docIndexSelecionado] = { ...novosDocs[docIndexSelecionado], caixas: caixasPrevia };
       await updateDoc(ref, { documentos: novosDocs });
-      setShowCaixasModal(false);
+      setCaixasPrevia([]); 
+      alert("Caixas importadas com sucesso!");
+      setActiveTab('resumo'); // Joga o usuário de volta para a tela inicial para ver o resultado
     } catch (error) { alert("Erro ao sincronizar caixas."); } finally { setIsSaving(false); }
   };
 
@@ -342,7 +426,6 @@ export default function Operacao({ isAdmin }) {
     if (!romaneio) return alert("Informe o Nº do Romaneio.");
     if (docsTemporarios.length === 0) return alert("Adicione pelo menos um documento.");
     if (!localUser) return alert("Usuário não logado.");
-
     setIsSaving(true);
     try {
       const documentosLimpos = docsTemporarios.map(({ idTemp, ...rest }) => rest);
@@ -369,6 +452,43 @@ export default function Operacao({ isAdmin }) {
     } catch (error) { alert("Houve um erro ao salvar o pedido."); } finally { setIsSaving(false); }
   };
 
+  const handleSaveOp = async () => {
+    if (!opForm.numero || !opForm.responsavelEmail) { return alert("Preencha o Nº do Romaneio e o Responsável."); }
+    setIsSavingOp(true);
+    try {
+      const targetUser = usuarios.find(u => u.email === opForm.responsavelEmail);
+      const responsavelUid = targetUser ? targetUser.uid : null;
+      const novaOp = { numero: opForm.numero, responsavelEmail: opForm.responsavelEmail, responsavelUid: responsavelUid, dataOperacao: dataOperacaoAtiva, criadorUid: localUser.uid, createdAt: serverTimestamp() };
+      await addDoc(collection(db, 'ordensProducao'), novaOp);
+      setOpForm({ ...opForm, numero: '' }); 
+    } catch (error) { alert("Houve um erro ao registrar a Ordem de Produção."); } finally { setIsSavingOp(false); }
+  };
+
+  const handleDeleteOp = async (op) => {
+    if (!window.confirm("Deseja realmente excluir esta Ordem de Produção?")) return;
+    try { await deleteDoc(doc(db, 'ordensProducao', op.id)); } catch (error) { alert("Erro ao excluir O.P."); }
+  };
+
+  const handleCopyEan = (ean) => {
+    if (!ean) return;
+    navigator.clipboard.writeText(ean);
+    setCopiedEan(ean);
+    setTimeout(() => setCopiedEan(null), 2000);
+  };
+
+  let detalheSkus = 0;
+  const cxMapDetalhe = {};
+  if (pedidoModal) {
+    (pedidoModal.documentos || []).forEach(d => {
+      (d.caixas || []).forEach(cx => {
+         (cx.produtos || []).forEach(p => detalheSkus += parseInt(p.quantidade) || 0);
+         let n = cx.num || "CX";
+         if(!cxMapDetalhe[n]) cxMapDetalhe[n] = { qtd: 0, peso: 0 };
+         cxMapDetalhe[n].qtd++; cxMapDetalhe[n].peso += parseFloat(cx.peso) || 0;
+      });
+    });
+  }
+
   return (
     <div className="op-wrapper">
       <header className="op-header">
@@ -383,9 +503,9 @@ export default function Operacao({ isAdmin }) {
       </header>
 
       <main className="op-main-content">
-        <section className="op-live-section">
+        <section className="op-live-section" style={{ display: 'flex', flexDirection: 'column' }}>
           {atividadeAtual ? (
-            <div className={`live-tracker-card ${atividadeAtual.isPaused ? 'paused' : ''}`}>
+            <div className={`live-tracker-card ${atividadeAtual.isPaused ? 'paused' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div className="live-badge">
                 {atividadeAtual.isPaused ? <><AlertCircle size={14}/> PAUSADO</> : <><div className="pulse-dot"></div> EM SEPARAÇÃO</>}
               </div>
@@ -403,14 +523,14 @@ export default function Operacao({ isAdmin }) {
                 ) : (
                   <>
                     <button className="btn-live-pause" onClick={() => handleOpenPauseModal(atividadeAtual)}><Pause size={18}/> Pausar</button>
-                    <button className="btn-live-caixas" onClick={() => handleAbrirCaixas(atividadeAtual)}><Boxes size={18}/> Caixas</button>
+                    <button className="btn-live-caixas" onClick={() => handleAbrirDetalhes(atividadeAtual)}><Boxes size={18}/> WMS</button>
                     <button className="btn-live-finish" onClick={() => handleToggleEfetivado(atividadeAtual)}><CheckCircle2 size={18}/> Finalizar</button>
                   </>
                 )}
               </div>
             </div>
           ) : (
-            <div className="live-tracker-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '350px', background: '#f8fafc', borderStyle: 'dashed' }}>
+            <div className="live-tracker-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '350px', background: '#f8fafc', borderStyle: 'dashed', flex: 1 }}>
                <CheckCircle2 size={48} color="#94a3b8" style={{ marginBottom: '15px' }} />
                <h3 style={{ color: '#475569', margin: '0 0 5px 0' }}>Tudo Limpo!</h3>
                <p style={{ color: '#94a3b8', fontSize: '0.9rem', textAlign: 'center' }}>Não há nenhum pedido em<br/>andamento no momento.</p>
@@ -429,34 +549,28 @@ export default function Operacao({ isAdmin }) {
             <span className="history-count">{pedidosProcessados.filter(p => p.efetivado).length} finalizados</span>
           </div>
           
-          {/* TABELA COM SCROLL FIXO */}
           <div className="op-table-wrapper scrollable-table-wrapper">
-            <table className="op-table" style={{ width: '100%', tableLayout: 'auto' }}>
+            <table className="op-table" style={{ width: '100%', tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ minWidth: '100px' }}>Romaneio</th>
-                  <th style={{ minWidth: '160px' }}>Destino / UF</th>
-                  <th style={{ minWidth: '180px' }}>Documentos</th>
-                  <th style={{ minWidth: '200px' }}>Observações</th>
-                  <th style={{ minWidth: '220px' }}>Resumo Caixas</th>
-                  <th style={{ textAlign: 'right', minWidth: '80px' }}>Ações</th>
+                  <th style={{ width: '15%' }}>Romaneio</th>
+                  <th style={{ width: '25%' }}>Destino / UF</th>
+                  <th style={{ width: '25%' }}>Observações</th>
+                  <th style={{ width: '25%' }}>Resumo Rápido</th>
+                  <th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {pedidosProcessados.length === 0 ? (
-                  <tr><td colSpan="6" style={{textAlign: 'center', padding: '30px', color: '#94a3b8'}}>Nenhum pedido processado hoje.</td></tr>
+                  <tr><td colSpan="5" style={{textAlign: 'center', padding: '30px', color: '#94a3b8'}}>Nenhum pedido processado hoje.</td></tr>
                 ) : (
                   pedidosProcessados.map(pedido => {
-                    let totalSkus = 0;
-                    const cxMap = {};
-
+                    let docsCount = pedido.documentos?.length || 0;
+                    let caixasCount = 0;
+                    let skusCount = 0;
                     (pedido.documentos || []).forEach(d => {
-                      (d.caixas || []).forEach(cx => {
-                         (cx.produtos || []).forEach(p => totalSkus += parseInt(p.quantidade) || 0);
-                         let n = cx.num || "CX";
-                         if(!cxMap[n]) cxMap[n] = { qtd: 0, peso: 0 };
-                         cxMap[n].qtd++; cxMap[n].peso += parseFloat(cx.peso) || 0;
-                      });
+                      caixasCount += (d.caixas || []).length;
+                      (d.caixas || []).forEach(cx => { (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); });
                     });
 
                     const temPermissao = isAdmin || pedido.criadorUid === localUser?.uid;
@@ -471,7 +585,13 @@ export default function Operacao({ isAdmin }) {
                     }
 
                     return (
-                      <tr key={pedido.id} className={pedido.efetivado ? "efetivado" : ""} style={{ verticalAlign: 'middle' }}>
+                      <tr 
+                        key={pedido.id} 
+                        className={`clickable-row ${pedido.efetivado ? "efetivado" : ""}`} 
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => handleAbrirDetalhes(pedido)}
+                        title="Clique para ver Detalhes"
+                      >
                         <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start' }}>
                             <div>
@@ -489,85 +609,53 @@ export default function Operacao({ isAdmin }) {
                             {pedido.local || 'DF'} {pedido.uf ? `- ${pedido.uf}` : ''}
                           </div>
                         </td>
-                        
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
-                            {(pedido.documentos || []).map((d, i) => (
-                              <div key={i} style={{ 
-                                background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#475569', fontSize: '11px', 
-                                padding: '3px 6px', borderRadius: '4px', display: 'flex', 
-                                justifyContent: 'space-between', alignItems: 'center', gap: '8px', lineHeight: '1.2'
-                              }}>
-                                <span style={{ fontWeight: 600 }}>{d.tipo}</span>
-                                <span style={{ opacity: 0.7 }}>{d.responsavel?.split('@')[0]}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
 
                         <td style={{ verticalAlign: 'middle', padding: '16px 12px', whiteSpace: 'normal', fontSize: '12px', color: '#64748b' }}>
                            {pedido.observacoes ? pedido.observacoes : <span style={{opacity: 0.4, fontStyle: 'italic'}}>Nenhuma observação...</span>}
                         </td>
                         
                         <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{ marginBottom: '6px' }}>
-                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px' }}>
-                              {totalSkus} SKUs Mapeados
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                            {Object.keys(cxMap).length === 0 ? (
-                              <span style={{color: '#94a3b8', fontSize: '11px', fontStyle: 'italic'}}>Sem caixas finalizadas</span>
-                            ) : (
-                              Object.keys(cxMap).map((k, idx) => (
-                                <div key={idx} style={{ 
-                                  fontSize: '11px', color: '#475569', display: 'flex', justifyContent: 'space-between', 
-                                  alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '2px 6px', 
-                                  borderRadius: '4px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap', lineHeight: '1.2'
-                                }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <strong style={{color: 'var(--primary)'}}>{k}</strong> 
-                                    <span style={{color: '#94a3b8', fontSize: '10px'}}>({cxMap[k].peso.toFixed(1)}kg)</span>
-                                  </div>
-                                  <span style={{fontWeight: 700, color: '#334155'}}>{cxMap[k].qtd} Un</span>
-                                </div>
-                              ))
-                            )}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px' }}>{docsCount} Docs</span>
+                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{caixasCount} Caixas</span>
+                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{skusCount} SKUs</span>
                           </div>
                         </td>
 
-                        <td className="actions-cell" style={{ verticalAlign: 'middle', padding: '16px 12px', position: 'relative' }}>
-                          <button className="action-btn btn-caixas" title="Abrir Caixas" onClick={() => handleAbrirCaixas(pedido)}><Boxes size={16}/></button>
-                          
-                          <div style={{position: 'relative', display: 'inline-block'}}>
-                            <button className="action-btn btn-edit" title="Ações" onClick={(e) => { e.stopPropagation(); setDropdownOpen(dropdownOpen === pedido.id ? null : pedido.id); }}>
-                              <MoreVertical size={16}/>
+                        <td className="actions-cell" style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
+                          <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                            <button className="action-btn btn-caixas" title="Painel do Romaneio" onClick={() => handleAbrirDetalhes(pedido)}>
+                              <Info size={16}/>
                             </button>
-                            
-                            {dropdownOpen === pedido.id && (
-                              <div className="table-dropdown-menu">
-                                {!pedido.efetivado && (
-                                  <>
-                                    {pedido.isPaused ? (
-                                      <button className="dropdown-item" style={{color: '#10b981'}} onClick={() => handleResumePedido(pedido)}><Play size={14}/> Retomar</button>
-                                    ) : (
-                                      <button className="dropdown-item" style={{color: '#f59e0b'}} onClick={() => handleOpenPauseModal(pedido)}><Pause size={14}/> Pausar Timer</button>
-                                    )}
-                                    <div className="dropdown-divider"></div>
-                                  </>
-                                )}
-                                <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
-                                  {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
-                                </button>
-                                {temPermissao && (
-                                  <>
-                                    <button className="dropdown-item" onClick={(e) => { e.stopPropagation(); handleEditPedido(pedido); }}><Edit size={14}/> Editar Dados</button>
-                                    <div className="dropdown-divider"></div>
-                                    <button className="dropdown-item text-danger" onClick={() => handleDeletePedido(pedido)}><Trash2 size={14}/> Excluir Pedido</button>
-                                  </>
-                                )}
-                              </div>
-                            )}
+                            <div style={{position: 'relative'}}>
+                              <button className="action-btn btn-edit" title="Ações" onClick={() => setDropdownOpen(dropdownOpen === pedido.id ? null : pedido.id)}>
+                                <MoreVertical size={16}/>
+                              </button>
+                              {dropdownOpen === pedido.id && (
+                                <div className="table-dropdown-menu" style={{ right: 0, left: 'auto' }}>
+                                  {!pedido.efetivado && (
+                                    <>
+                                      {pedido.isPaused ? (
+                                        <button className="dropdown-item" style={{color: '#10b981'}} onClick={() => handleResumePedido(pedido)}><Play size={14}/> Retomar</button>
+                                      ) : (
+                                        <button className="dropdown-item" style={{color: '#f59e0b'}} onClick={() => handleOpenPauseModal(pedido)}><Pause size={14}/> Pausar Timer</button>
+                                      )}
+                                      <div className="dropdown-divider"></div>
+                                    </>
+                                  )}
+                                  <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
+                                    {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
+                                  </button>
+                                  {temPermissao && (
+                                    <>
+                                      <button className="dropdown-item" onClick={() => handleEditPedido(pedido)}><Edit size={14}/> Editar Dados</button>
+                                      <div className="dropdown-divider"></div>
+                                      <button className="dropdown-item text-danger" onClick={() => handleDeletePedido(pedido)}><Trash2 size={14}/> Excluir Pedido</button>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -579,81 +667,399 @@ export default function Operacao({ isAdmin }) {
           </div>
         </section>
 
-        {/* ==========================================
-            ZONA INFERIOR: RANKING E INDICADORES (NOVO)
-            ========================================== */}
         <section className="op-bottom-zone">
-            
-            {/* RANKING DIÁRIO (Destaque Principal) */}
             <div className="op-ranking-container">
               <div className="ranking-header">
                 <h3><Trophy size={20} color="#eab308" style={{marginRight: '8px'}}/> Ranking Diário - Produtividade</h3>
                 <span className="ranking-subtitle">Top Conferentes do Dia</span>
               </div>
-              
               <div className="ranking-list">
                 {rankingMock.map((user, idx) => (
                   <div key={idx} className={`ranking-item ${idx === 0 ? 'first-place' : ''}`}>
-                    <div className="ranking-pos">
-                      {idx === 0 ? <Medal size={24} color="#eab308" /> : 
-                       idx === 1 ? <Medal size={20} color="#94a3b8" /> : 
-                       idx === 2 ? <Medal size={20} color="#b45309" /> : 
-                       <span className="pos-number">{user.posicao}º</span>}
-                    </div>
-                    
-                    <div className="ranking-avatar">
-                      <div className="avatar-circle">{user.nome.charAt(0)}</div>
-                    </div>
-                    
-                    <div className="ranking-info">
-                      <strong className="ranking-name">{user.nome}</strong>
-                      <div className="ranking-metrics">
-                         <span><CheckCircle2 size={12}/> {user.skus} SKUs</span>
-                         <span><Factory size={12}/> {user.op} O.P.s</span>
-                      </div>
-                    </div>
-                    
-                    <div className="ranking-score">
-                      <div className="score-value">{user.pontos.toLocaleString()} pts</div>
-                      <div className="score-bar"><div className="score-fill" style={{width: `${(user.pontos / rankingMock[0].pontos) * 100}%`}}></div></div>
-                    </div>
+                    <div className="ranking-pos">{idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}</div>
+                    <div className="ranking-avatar"><div className="avatar-circle">{user.nome.charAt(0)}</div></div>
+                    <div className="ranking-info"><strong className="ranking-name">{user.nome}</strong><div className="ranking-metrics"><span><CheckCircle2 size={12}/> {user.skus} SKUs</span><span><Factory size={12}/> {user.op} O.P.s</span></div></div>
+                    <div className="ranking-score"><div className="score-value">{user.pontos.toLocaleString()} pts</div><div className="score-bar"><div className="score-fill" style={{width: `${(user.pontos / rankingMock[0].pontos) * 100}%`}}></div></div></div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* CARDS LATERAIS (O.P. e Master) */}
             <div className="op-side-indicators">
-                
                 <div className="indicator-card op-card">
                   <div className="indicator-icon" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
-                  <div className="indicator-content">
-                    <h4>Ordens de Produção</h4>
-                    <span className="indicator-value">Em breve</span>
-                    <p>Controle e pesagem de O.P.s</p>
-                  </div>
-                  <button className="indicator-btn">Gerenciar</button>
+                  <div className="indicator-content"><h4>Ordens de Produção</h4><span className="indicator-value">{opsDoDia.length} Registros</span><p>Controle de O.P.s hoje</p></div>
+                  <button className="indicator-btn" onClick={() => setShowOpModal(true)}>Gerenciar O.P.s</button>
                 </div>
 
                 <div className="indicator-card master-card">
                   <div className="indicator-icon" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
-                  <div className="indicator-content">
-                    <h4>Caixas Master</h4>
-                    <span className="indicator-value">Em breve</span>
-                    <p>Agrupamento e logística</p>
-                  </div>
-                  <button className="indicator-btn">Detalhes</button>
+                  <div className="indicator-content"><h4>Caixas Master</h4><span className="indicator-value">{caixasMaster.length} Padrões</span><p>Dicionário de embalagens</p></div>
+                  <button className="indicator-btn" onClick={() => setShowMasterModal(true)}>Consultar Base</button>
                 </div>
-
             </div>
         </section>
 
       </main>
 
       {/* ==========================================
-          MODAIS GERAIS (PAUSA, NOVO PEDIDO, WMS)
+          MODAL ÚNICO: PAINEL DO ROMANEIO (DETALHES + WMS)
+          COM SISTEMA DE ABAS (TABS)
           ========================================== */}
-      
+      {showDetalhesModal && pedidoModal && (
+        <div className="op-modal-overlay" onClick={() => !isSaving && setShowDetalhesModal(false)}>
+          <div className="op-modal-content" style={{maxWidth: '1100px', padding: '0', display: 'flex', flexDirection: 'column', maxHeight: '95vh', overflow: 'hidden'}} onClick={(e) => e.stopPropagation()}>
+            
+            {/* Header Fixo */}
+            <div className="op-modal-header" style={{flexShrink: 0, padding: '20px 25px', borderBottom: 'none'}}>
+              <div className="op-modal-title">
+                <div className="icon-wrap" style={{background: 'var(--primary)', color: '#fff'}}><Info size={24}/></div>
+                <div>
+                  <h2>Painel do Romaneio: {pedidoModal.romaneio}</h2>
+                  <p>{pedidoModal.loja || 'Destino Padrão'} {pedidoModal.uf ? `- ${pedidoModal.uf}` : ''}</p>
+                </div>
+              </div>
+              <button className="btn-close-modal" onClick={() => setShowDetalhesModal(false)} disabled={isSaving || isUploading}><X size={24}/></button>
+            </div>
+            
+            {/* Sistema de Abas */}
+            <div className="modal-tabs-container" style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', padding: '0 25px' }}>
+              <button 
+                className={`modal-tab-btn ${activeTab === 'resumo' ? 'active' : ''}`}
+                onClick={() => setActiveTab('resumo')}
+                style={{ padding: '12px 20px', background: 'none', border: 'none', borderBottom: `3px solid ${activeTab === 'resumo' ? 'var(--primary)' : 'transparent'}`, color: activeTab === 'resumo' ? 'var(--primary)' : '#64748b', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.2s ease' }}
+              >
+                Resumo Geral
+              </button>
+              <button 
+                className={`modal-tab-btn ${activeTab === 'caixas' ? 'active' : ''}`}
+                onClick={() => setActiveTab('caixas')}
+                style={{ padding: '12px 20px', background: 'none', border: 'none', borderBottom: `3px solid ${activeTab === 'caixas' ? 'var(--primary)' : 'transparent'}`, color: activeTab === 'caixas' ? 'var(--primary)' : '#64748b', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.2s ease' }}
+              >
+                Detalhamento Completo & WMS
+              </button>
+            </div>
+            
+            {/* Corpo do Modal Rulável */}
+            <div className="op-modal-body" style={{ flex: 1, padding: '25px', overflowY: 'auto', background: '#f8fafc' }}>
+              
+              {/* ABA 1: RESUMO GERAL */}
+              {activeTab === 'resumo' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#475569', marginBottom: '8px' }}><AlignLeft size={16}/> Observações do Romaneio</strong>
+                    <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>{pedidoModal.observacoes || <span style={{fontStyle: 'italic', opacity: 0.6}}>Nenhuma observação informada.</span>}</p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px' }}>
+                      <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#475569', marginBottom: '10px' }}><FileText size={16}/> Documentos Vinculados</strong>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {(pedidoModal.documentos || []).length === 0 ? (
+                          <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Nenhum documento.</span>
+                        ) : (
+                          (pedidoModal.documentos || []).map((d, i) => (
+                            <div key={i} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.8rem', padding: '8px 10px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 600 }}>{d.tipo}</span>
+                              <span style={{ opacity: 0.8 }}><User size={12} style={{display:'inline', marginRight:'2px'}}/> {d.responsavel?.split('@')[0]}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px' }}>
+                      <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#475569', marginBottom: '10px' }}>
+                        <CheckCircle2 size={16} color="#10b981"/> Resumo de Caixas 
+                        <span className="sku-badge" style={{ marginLeft: 'auto', fontSize: '0.75rem', background: '#ecfdf5', color: '#10b981', borderColor: '#a7f3d0' }}>{detalheSkus} SKUs processados</span>
+                      </strong>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '150px', overflowY: 'auto', paddingRight: '5px' }}>
+                        {Object.keys(cxMapDetalhe).length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '20px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                            Nenhuma caixa importada do WMS.
+                          </div>
+                        ) : (
+                          Object.keys(cxMapDetalhe).map((k, idx) => (
+                            <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <strong style={{color: 'var(--primary)'}}>{k}</strong> 
+                                <span style={{color: '#94a3b8', fontSize: '0.75rem'}}>({cxMapDetalhe[k].peso.toFixed(1)}kg)</span>
+                              </div>
+                              <span style={{fontWeight: 700, color: '#334155'}}>{cxMapDetalhe[k].qtd} Un</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ABA 2: CAIXAS COMPLETAS E WMS */}
+              {activeTab === 'caixas' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  {/* MÓDULO DE IMPORTAÇÃO WMS */}
+                  <div style={{ background: '#fff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '20px' }}>
+                    <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '1rem', color: '#0ea5e9', marginBottom: '15px' }}><UploadCloud size={20}/> Módulo de Importação WMS</strong>
+                    
+                    <div style={{ display: 'flex', gap: '20px' }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div>
+                          <label style={{display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px'}}>1. Vincular caixas a qual documento?</label>
+                          <select 
+                              value={docIndexSelecionado} 
+                              onChange={handleDocSelectionChange} 
+                              disabled={isSaving || isUploading}
+                              style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', fontSize: '0.9rem', outline: 'none', color: '#334155' }}
+                          >
+                            {pedidoModal.documentos?.map((doc, idx) => (<option key={idx} value={idx}>{doc.tipo} (Resp: {doc.responsavel?.split('@')[0]})</option>))}
+                          </select>
+                        </div>
+
+                        <div className="wms-upload-zone" style={{ flex: 1 }}>
+                          <input type="file" accept=".csv" onChange={handleFileUpload} id="csv-upload" disabled={isSaving || isUploading}/>
+                          <label htmlFor="csv-upload" className={`upload-label ${isUploading ? 'uploading' : ''}`} style={{ height: '100%', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                              {isUploading ? (<><Loader2 size={36} className="fa-spin" style={{ color: 'var(--primary)' }} /> <p style={{fontSize: '0.9rem', margin: '8px 0 0 0'}}>Lendo arquivo...</p></>) : (<><UploadCloud size={36} color="#94a3b8" /> <p style={{fontSize: '0.9rem', margin: '8px 0 0 0'}}>Clique para buscar o <strong>CSV do WMS</strong></p></>)}
+                          </label>
+                        </div>
+                      </div>
+
+                      <div style={{ flex: 1.5, borderLeft: '1px solid #e2e8f0', paddingLeft: '20px', display: 'flex', flexDirection: 'column' }}>
+                        <label style={{display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px'}}>2. Prévia de Importação</label>
+                        <div style={{ flex: 1, maxHeight: '200px', overflowY: 'auto', paddingRight: '5px', display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                            {caixasPrevia.length === 0 ? (
+                              <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '0.9rem' }}>Aguardando arquivo CSV...</div>
+                            ) : (
+                              caixasPrevia.map((cx, idx) => { 
+                                const tSkus = cx.produtos?.reduce((acc, p) => acc + (p.quantidade || 0), 0) || 0; 
+                                return (
+                                  <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <strong style={{color: 'var(--primary)', fontSize: '0.95rem'}}>{cx.num} <span style={{color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'normal'}}>({cx.peso}kg)</span></strong>
+                                      <span style={{fontSize: '0.75rem', color: '#64748b'}}>{cx.produtos?.length || 0} Itens únicos</span>
+                                    </div>
+                                    <span style={{fontWeight: 700, color: '#334155', fontSize: '0.95rem'}}>{tSkus} Un</span>
+                                  </div>
+                                ); 
+                              })
+                            )}
+                        </div>
+                        {caixasPrevia.length > 0 && (
+                          <button 
+                            style={{ width: '100%', marginTop: '10px', background: '#0ea5e9', color: '#fff', padding: '12px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: '0.95rem' }}
+                            onClick={handleSalvarCaixasFirebase} 
+                            disabled={isSaving || isUploading}
+                          >
+                            {isSaving ? <Loader2 size={18} className="fa-spin" /> : <Boxes size={18}/>} 
+                            {isSaving ? 'Sincronizando...' : 'Confirmar Importação para o Banco'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CAIXAS COMPLETAS POR DOCUMENTO */}
+                  <div>
+                    <h3 style={{ fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px', margin: '10px 0 20px 0' }}><ListTree size={20}/> Caixas Registradas no Sistema</h3>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {(pedidoModal.documentos || []).map((doc, dIdx) => (
+                        <div key={dIdx} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+                          <div style={{ background: '#f1f5f9', padding: '12px 15px', borderBottom: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <strong style={{ color: '#334155', fontSize: '0.95rem' }}>{doc.tipo}</strong>
+                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Responsável: {doc.responsavel?.split('@')[0]}</span>
+                          </div>
+                          
+                          <div style={{ padding: '15px' }}>
+                            {(!doc.caixas || doc.caixas.length === 0) ? (
+                              <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma caixa vinculada a este documento.</span>
+                            ) : (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
+                                {doc.caixas.map((cx, cxIdx) => (
+                                  <div key={cxIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
+                                      <strong style={{ color: 'var(--primary)' }}>{cx.num}</strong>
+                                      <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{cx.peso} kg</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '120px', overflowY: 'auto', paddingRight: '4px' }}>
+                                      {cx.produtos?.map((p, pIdx) => (
+                                        <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', background: '#fff', padding: '4px 6px', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
+                                          <span style={{fontWeight: 600}}>{p.sku}</span>
+                                          <span style={{color: '#0ea5e9', fontWeight: 'bold'}}>{p.quantidade} un</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          RESTANTE DOS MODAIS (O.P., MASTER)
+          ========================================== */}
+
+      {showOpModal && (
+        <div className="op-modal-overlay" onClick={() => !isSavingOp && setShowOpModal(false)}>
+          <div className="op-modal-content" style={{maxWidth: '650px', padding: '25px', boxSizing: 'border-box'}} onClick={(e) => e.stopPropagation()}>
+            <div className="op-modal-header">
+              <div className="op-modal-title">
+                <div className="icon-wrap" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
+                <div><h2>Ordens de Produção (O.P.)</h2><p>Controle de montagem e produção do dia.</p></div>
+              </div>
+              <button className="btn-close-modal" onClick={() => setShowOpModal(false)}><X size={24}/></button>
+            </div>
+            
+            <div className="op-modal-body" style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px' }}>
+              
+              <div className="op-card-form" style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px', boxSizing: 'border-box' }}>
+                <h4 style={{ margin: '0 0 10px 0', color: '#334155', fontSize: '0.95rem' }}>Registrar Nova O.P.</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'end' }}>
+                  <div className="input-group-op" style={{ margin: 0 }}>
+                    <label>Nº do Romaneio</label>
+                    <input type="text" placeholder="Ex: 20162" value={opForm.numero} onChange={(e) => setOpForm({...opForm, numero: e.target.value})} disabled={isSavingOp}/>
+                  </div>
+                  <div className="input-group-op" style={{ margin: 0 }}>
+                    <label>Responsável</label>
+                    <select value={opForm.responsavelEmail} onChange={(e) => setOpForm({...opForm, responsavelEmail: e.target.value})} disabled={isSavingOp}>
+                      {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
+                    </select>
+                  </div>
+                </div>
+                
+                <button 
+                  style={{ width: '100%', marginTop: '15px', background: '#4f46e5', color: '#fff', padding: '10px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+                  onClick={handleSaveOp}
+                  disabled={isSavingOp}
+                >
+                  {isSavingOp ? <Loader2 size={16} className="fa-spin" /> : <Plus size={16}/>} 
+                  {isSavingOp ? 'Salvando...' : 'Lançar O.P.'}
+                </button>
+              </div>
+
+              <h4 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase' }}>O.P.s Registradas Hoje</h4>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '5px' }}>
+                {opsDoDia.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>Nenhuma O.P. lançada hoje.</div>
+                ) : (
+                  opsDoDia.map(op => (
+                    <div key={op.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '10px 15px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ background: '#e0e7ff', color: '#4f46e5', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.85rem' }}>{op.numero}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ color: '#64748b', fontSize: '0.75rem' }}><User size={10} style={{ display: 'inline', marginRight: '2px' }}/> {op.responsavelEmail?.split('@')[0]}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <button onClick={() => handleDeleteOp(op)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }} title="Excluir O.P."><Trash2 size={16}/></button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMasterModal && (
+        <div className="op-modal-overlay" onClick={() => setShowMasterModal(false)}>
+          <div className="op-modal-content" style={{maxWidth: '900px', padding: '25px', boxSizing: 'border-box'}} onClick={(e) => e.stopPropagation()}>
+            <div className="op-modal-header">
+              <div className="op-modal-title">
+                <div className="icon-wrap" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
+                <div><h2>Dicionário de Caixas Master</h2><p>Padrões de embalagem, quantidade e EAN por Produto.</p></div>
+              </div>
+              <button className="btn-close-modal" onClick={() => setShowMasterModal(false)}><X size={24}/></button>
+            </div>
+            
+            <div className="op-modal-body" style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 12px' }}>
+                <Search size={18} color="#94a3b8" />
+                <input 
+                  type="text" 
+                  placeholder="Pesquisar por Cód. REF, Nome do Produto ou Tipo de Caixa..." 
+                  value={buscaMaster}
+                  onChange={(e) => setBuscaMaster(e.target.value)}
+                  style={{ flex: 1, padding: '12px 10px', border: 'none', background: 'transparent', outline: 'none', color: '#334155' }}
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ maxHeight: '450px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', paddingRight: '5px' }}>
+                {caixasMasterFiltradas.length === 0 ? (
+                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
+                    {buscaMaster ? 'Nenhum produto ou variação encontrada para essa busca.' : 'O dicionário de Caixas Master está vazio.'}
+                  </div>
+                ) : (
+                  caixasMasterFiltradas.map(master => (
+                    <div key={master.id} style={{ display: 'flex', flexDirection: 'column', background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                      
+                      <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '8px', marginBottom: '10px' }}>
+                        <strong style={{ color: '#db2777', fontSize: '1rem', display: 'block' }}>
+                          REF: {master.ref || 'S/N'}
+                        </strong>
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginTop: '4px', lineHeight: '1.2' }}>
+                          {master.nome || 'Produto sem nome'}
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {master.variacoes && master.variacoes.length > 0 ? (
+                          master.variacoes.map((v, vIdx) => (
+                            <div key={vIdx} style={{ background: '#f8fafc', padding: '8px', borderRadius: '6px', border: '1px solid #f1f5f9', fontSize: '0.8rem', color: '#475569' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                <strong style={{ color: '#334155' }}>{v.caixa || 'CX Padrão'}</strong>
+                                <span style={{ fontWeight: 600, color: '#0ea5e9' }}>{v.quantidade || 'N/A'}</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  EAN: {v.codigoBarras || 'N/A'}
+                                  {v.codigoBarras && (
+                                    <button 
+                                      onClick={() => handleCopyEan(v.codigoBarras)}
+                                      title="Copiar EAN"
+                                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedEan === v.codigoBarras ? '#10b981' : '#94a3b8', display: 'flex', alignItems: 'center', padding: 0 }}
+                                    >
+                                      {copiedEan === v.codigoBarras ? <Check size={14} /> : <Copy size={14} />}
+                                    </button>
+                                  )}
+                                </span>
+                                <span>{v.peso || 0} kg</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma variação cadastrada.</span>
+                        )}
+                      </div>
+
+                    </div>
+                  ))
+                )}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPauseModal && (
         <div className="op-modal-overlay">
           <div className="op-modal-content" style={{maxWidth: '400px'}} onClick={(e) => e.stopPropagation()}>
@@ -690,23 +1096,6 @@ export default function Operacao({ isAdmin }) {
               </div>
             </div>
             <div className="op-modal-footer"><button className="btn-cancel-op" onClick={handleCloseModal} disabled={isSaving}>Cancelar</button><button className="btn-save-op" onClick={handleSavePedido} disabled={isSaving}>{isSaving ? <><Loader2 size={18} className="fa-spin" style={{ animation: 'spin 1s linear infinite' }} /> Salvando...</> : (editingId ? 'Salvar Alterações' : 'Criar Pedido')}</button></div>
-          </div>
-        </div>
-      )}
-
-      {showCaixasModal && (
-        <div className="op-modal-overlay">
-          <div className="op-modal-content wms-modal-content" style={{maxWidth: '900px', height: 'auto', maxHeight: '90vh'}} onClick={(e) => e.stopPropagation()}>
-            <div className="op-modal-header">
-              <div className="op-modal-title"><div className="icon-wrap" style={{background: 'var(--primary)'}}><Boxes size={24} color="#fff"/></div><div><h2>Painel de Conferência WMS</h2><p>Importe o CSV do sistema para o Romaneio: <strong>{pedidoSelecionado?.romaneio}</strong></p></div></div>
-              <button className="btn-close-modal" onClick={() => setShowCaixasModal(false)} disabled={isSaving}><X size={24}/></button>
-            </div>
-            <div className="op-modal-body wms-modal-body">
-              <div className="wms-doc-selector"><label>Vincular arquivo CSV a qual documento?</label><select value={docIndexSelecionado} onChange={handleDocSelectionChange} disabled={isSaving || isUploading}>{pedidoSelecionado?.documentos?.map((doc, idx) => (<option key={idx} value={idx}>{doc.tipo} (Resp: {doc.responsavel?.split('@')[0]})</option>))}</select></div>
-              <div className="wms-upload-zone"><input type="file" accept=".csv" onChange={handleFileUpload} id="csv-upload" disabled={isSaving || isUploading}/><label htmlFor="csv-upload" className={`upload-label ${isUploading ? 'uploading' : ''}`}>{isUploading ? (<><Loader2 size={48} className="fa-spin" style={{ color: 'var(--primary)' }} /> <p>Lendo arquivo...</p></>) : (<><UploadCloud size={48} color="#94a3b8" /> <p>Clique para importar o <strong>CSV do WMS</strong><br/><small>(Separado por ponto e vírgula)</small></p></>)}</label></div>
-              <div className="wms-preview-area"><h4><CheckCircle2 size={16}/> Prévia das Caixas Importadas</h4><div className="wms-caixas-grid">{caixasPrevia.length === 0 ? (<div className="wms-empty-state">Nenhuma caixa vinculada a este documento ainda. Importe o CSV acima.</div>) : (caixasPrevia.map((cx, idx) => { const totalSkus = cx.produtos?.reduce((acc, p) => acc + (p.quantidade || 0), 0) || 0; return (<div key={idx} className="wms-caixa-card"><div className="wms-caixa-header"><strong>{cx.num}</strong><span className="wms-peso-badge">{cx.peso} kg</span></div><div className="wms-caixa-body"><span><strong>{cx.produtos?.length || 0}</strong> Itens Únicos</span><span><strong>{totalSkus}</strong> Unid. Totais</span></div></div>); }))}</div></div>
-            </div>
-            <div className="op-modal-footer"><button className="btn-cancel-op" onClick={() => setShowCaixasModal(false)} disabled={isSaving || isUploading}>Cancelar</button><button className="btn-save-op" onClick={handleSalvarCaixasFirebase} disabled={isSaving || isUploading || caixasPrevia.length === 0}>{isSaving ? <><Loader2 size={18} className="fa-spin" style={{ animation: 'spin 1s linear infinite' }} /> Sincronizando...</> : 'Salvar Importação WMS'}</button></div>
           </div>
         </div>
       )}
