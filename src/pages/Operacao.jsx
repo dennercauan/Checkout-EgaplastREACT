@@ -702,13 +702,15 @@ export default function Operacao({ isAdmin }) {
 
       </main>
 
+
       {/* ==========================================
           MODAL ÚNICO: PAINEL DO ROMANEIO (DETALHES + WMS)
           COM SISTEMA DE ABAS (TABS)
           ========================================== */}
       {showDetalhesModal && pedidoModal && (
         <div className="op-modal-overlay" onClick={() => !isSaving && setShowDetalhesModal(false)}>
-          <div className="op-modal-content" style={{maxWidth: '1100px', padding: '0', display: 'flex', flexDirection: 'column', maxHeight: '95vh', overflow: 'hidden'}} onClick={(e) => e.stopPropagation()}>
+          {/* 👇 AQUI: Largura de 95vw e Altura de 90vh para ocupar a tela toda */}
+          <div className="op-modal-content" style={{width: '95vw', height: '90vh', maxWidth: '1400px', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden'}} onClick={(e) => e.stopPropagation()}>
             
             {/* Header Fixo */}
             <div className="op-modal-header" style={{flexShrink: 0, padding: '20px 25px', borderBottom: 'none'}}>
@@ -769,29 +771,57 @@ export default function Operacao({ isAdmin }) {
                       </div>
                     </div>
 
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px' }}>
-                      <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#475569', marginBottom: '10px' }}>
-                        <CheckCircle2 size={16} color="#10b981"/> Resumo de Caixas 
-                        <span className="sku-badge" style={{ marginLeft: 'auto', fontSize: '0.75rem', background: '#ecfdf5', color: '#10b981', borderColor: '#a7f3d0' }}>{detalheSkus} SKUs processados</span>
-                      </strong>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '150px', overflowY: 'auto', paddingRight: '5px' }}>
-                        {Object.keys(cxMapDetalhe).length === 0 ? (
-                          <div style={{ textAlign: 'center', padding: '20px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', color: '#94a3b8', fontSize: '0.85rem' }}>
-                            Nenhuma caixa importada do WMS.
-                          </div>
-                        ) : (
-                          Object.keys(cxMapDetalhe).map((k, idx) => (
-                            <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <strong style={{color: 'var(--primary)'}}>{k}</strong> 
-                                <span style={{color: '#94a3b8', fontSize: '0.75rem'}}>({cxMapDetalhe[k].peso.toFixed(1)}kg)</span>
-                              </div>
-                              <span style={{fontWeight: 700, color: '#334155'}}>{cxMapDetalhe[k].qtd} Un</span>
-                            </div>
-                          ))
-                        )}
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', color: '#475569' }}>
+                      <CheckCircle2 size={16} color="#10b981"/> Resumo de Caixas 
+                      <span className="sku-badge" style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#ecfdf5', color: '#10b981', borderColor: '#a7f3d0' }}>{detalheSkus} SKUs processados</span>
+                    </strong>
+                    
+                    {/* 👇 NOVO BOTÃO DE COPIAR */}
+                    {Object.keys(cxMapDetalhe).length > 0 && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const texto = Object.keys(cxMapDetalhe).map(k => `${k} (${cxMapDetalhe[k].peso.toFixed(2)} kg): ${cxMapDetalhe[k].qtd} Un`).join('\n');
+                          navigator.clipboard.writeText(texto);
+                          
+                          // Efeito visual rápido usando a própria referência do evento
+                          const btn = e.currentTarget;
+                          const originalText = btn.innerHTML;
+                          btn.innerHTML = 'Copiado!';
+                          btn.style.color = '#10b981';
+                          setTimeout(() => {
+                            btn.innerHTML = originalText;
+                            btn.style.color = '#475569';
+                          }, 1500);
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                        title="Copiar resumo no padrão WMS"
+                      >
+                        <Copy size={14} /> Copiar
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
+                    {Object.keys(cxMapDetalhe).length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '20px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                        Nenhuma caixa importada do WMS.
                       </div>
-                    </div>
+                    ) : (
+                      Object.keys(cxMapDetalhe).map((k, idx) => (
+                        <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <strong style={{color: 'var(--primary)'}}>{k}</strong> 
+                            <span style={{color: '#94a3b8', fontSize: '0.75rem'}}>({cxMapDetalhe[k].peso.toFixed(2)} kg)</span>
+                          </div>
+                          <span style={{fontWeight: 700, color: '#334155'}}>{cxMapDetalhe[k].qtd} Un</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
                   </div>
                 </div>
               )}
@@ -800,107 +830,96 @@ export default function Operacao({ isAdmin }) {
               {activeTab === 'caixas' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   
-                  {/* MÓDULO DE IMPORTAÇÃO WMS */}
-                  <div style={{ background: '#fff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '20px' }}>
-                    <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '1rem', color: '#0ea5e9', marginBottom: '15px' }}><UploadCloud size={20}/> Módulo de Importação WMS</strong>
-                    
-                    <div style={{ display: 'flex', gap: '20px' }}>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div>
-                          <label style={{display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px'}}>1. Vincular caixas a qual documento?</label>
-                          <select 
-                              value={docIndexSelecionado} 
-                              onChange={handleDocSelectionChange} 
-                              disabled={isSaving || isUploading}
-                              style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', fontSize: '0.9rem', outline: 'none', color: '#334155' }}
-                          >
-                            {pedidoModal.documentos?.map((doc, idx) => (<option key={idx} value={idx}>{doc.tipo} (Resp: {doc.responsavel?.split('@')[0]})</option>))}
-                          </select>
+                  <h3 style={{ fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px', margin: '0' }}>
+                    <ListTree size={20}/> Caixas Registradas por Documento
+                  </h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {(pedidoModal.documentos || []).map((doc, dIdx) => (
+                      <div key={dIdx} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+                        <div style={{ background: '#f1f5f9', padding: '12px 15px', borderBottom: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ color: '#334155', fontSize: '0.95rem' }}>{doc.tipo}</strong>
+                          <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Responsável: {doc.responsavel?.split('@')[0]}</span>
                         </div>
-
-                        <div className="wms-upload-zone" style={{ flex: 1 }}>
-                          <input type="file" accept=".csv" onChange={handleFileUpload} id="csv-upload" disabled={isSaving || isUploading}/>
-                          <label htmlFor="csv-upload" className={`upload-label ${isUploading ? 'uploading' : ''}`} style={{ height: '100%', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                              {isUploading ? (<><Loader2 size={36} className="fa-spin" style={{ color: 'var(--primary)' }} /> <p style={{fontSize: '0.9rem', margin: '8px 0 0 0'}}>Lendo arquivo...</p></>) : (<><UploadCloud size={36} color="#94a3b8" /> <p style={{fontSize: '0.9rem', margin: '8px 0 0 0'}}>Clique para buscar o <strong>CSV do WMS</strong></p></>)}
-                          </label>
-                        </div>
-                      </div>
-
-                      <div style={{ flex: 1.5, borderLeft: '1px solid #e2e8f0', paddingLeft: '20px', display: 'flex', flexDirection: 'column' }}>
-                        <label style={{display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '6px'}}>2. Prévia de Importação</label>
-                        <div style={{ flex: 1, maxHeight: '200px', overflowY: 'auto', paddingRight: '5px', display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                            {caixasPrevia.length === 0 ? (
-                              <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '0.9rem' }}>Aguardando arquivo CSV...</div>
-                            ) : (
-                              caixasPrevia.map((cx, idx) => { 
-                                const tSkus = cx.produtos?.reduce((acc, p) => acc + (p.quantidade || 0), 0) || 0; 
-                                return (
-                                  <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                      <strong style={{color: 'var(--primary)', fontSize: '0.95rem'}}>{cx.num} <span style={{color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'normal'}}>({cx.peso}kg)</span></strong>
-                                      <span style={{fontSize: '0.75rem', color: '#64748b'}}>{cx.produtos?.length || 0} Itens únicos</span>
-                                    </div>
-                                    <span style={{fontWeight: 700, color: '#334155', fontSize: '0.95rem'}}>{tSkus} Un</span>
-                                  </div>
-                                ); 
-                              })
-                            )}
-                        </div>
-                        {caixasPrevia.length > 0 && (
-                          <button 
-                            style={{ width: '100%', marginTop: '10px', background: '#0ea5e9', color: '#fff', padding: '12px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: '0.95rem' }}
-                            onClick={handleSalvarCaixasFirebase} 
-                            disabled={isSaving || isUploading}
-                          >
-                            {isSaving ? <Loader2 size={18} className="fa-spin" /> : <Boxes size={18}/>} 
-                            {isSaving ? 'Sincronizando...' : 'Confirmar Importação para o Banco'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CAIXAS COMPLETAS POR DOCUMENTO */}
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px', margin: '10px 0 20px 0' }}><ListTree size={20}/> Caixas Registradas no Sistema</h3>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      {(pedidoModal.documentos || []).map((doc, dIdx) => (
-                        <div key={dIdx} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
-                          <div style={{ background: '#f1f5f9', padding: '12px 15px', borderBottom: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <strong style={{ color: '#334155', fontSize: '0.95rem' }}>{doc.tipo}</strong>
-                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Responsável: {doc.responsavel?.split('@')[0]}</span>
-                          </div>
+                        
+                        <div style={{ padding: '15px' }}>
                           
-                          <div style={{ padding: '15px' }}>
-                            {(!doc.caixas || doc.caixas.length === 0) ? (
-                              <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma caixa vinculada a este documento.</span>
-                            ) : (
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-                                {doc.caixas.map((cx, cxIdx) => (
-                                  <div key={cxIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
-                                      <strong style={{ color: 'var(--primary)' }}>{cx.num}</strong>
-                                      <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{cx.peso} kg</span>
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '120px', overflowY: 'auto', paddingRight: '4px' }}>
-                                      {cx.produtos?.map((p, pIdx) => (
-                                        <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', background: '#fff', padding: '4px 6px', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
-                                          <span style={{fontWeight: 600}}>{p.sku}</span>
-                                          <span style={{color: '#0ea5e9', fontWeight: 'bold'}}>{p.quantidade} un</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                          {/* BOTÃO INDIVIDUAL DE IMPORTAÇÃO POR DOCUMENTO */}
+                          <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '15px', background: '#f8fafc', padding: '15px', borderRadius: '6px', border: '1px dashed #cbd5e1' }}>
+                            <div>
+                              <input 
+                                type="file" 
+                                accept=".csv" 
+                                id={`csv-upload-${dIdx}`} 
+                                style={{ display: 'none' }}
+                                disabled={isSaving || isUploading}
+                                onChange={(e) => {
+                                  setDocIndexSelecionado(dIdx);
+                                  handleFileUpload(e);
+                                }}
+                              />
+                              <label 
+                                htmlFor={`csv-upload-${dIdx}`} 
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', color: '#475569', fontWeight: 600, transition: 'all 0.2s' }}
+                              >
+                                {isUploading && docIndexSelecionado === dIdx ? <Loader2 size={16} className="fa-spin"/> : <UploadCloud size={16} color="#0ea5e9"/>}
+                                {isUploading && docIndexSelecionado === dIdx ? 'Lendo CSV...' : 'Importar CSV do WMS'}
+                              </label>
+                            </div>
+                            
+                            {/* PRÉVIA APARECE AQUI QUANDO O ARQUIVO É LIDO */}
+                            {docIndexSelecionado === dIdx && caixasPrevia.length > 0 && (
+                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.8rem', color: '#64748b', background: '#e2e8f0', padding: '4px 8px', borderRadius: '4px' }}>
+                                    <strong>{caixasPrevia.length}</strong> caixas lidas
+                                  </span>
+                                  <button 
+                                    onClick={handleSalvarCaixasFirebase}
+                                    disabled={isSaving}
+                                    style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                  >
+                                    {isSaving ? <Loader2 size={14} className="fa-spin"/> : <CheckCircle2 size={14}/>}
+                                    Salvar no Banco
+                                  </button>
+                                  <button 
+                                    onClick={() => setCaixasPrevia([])}
+                                    disabled={isSaving}
+                                    style={{ background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}
+                                    title="Cancelar importação"
+                                  >
+                                    <X size={14}/> Cancelar
+                                  </button>
+                               </div>
                             )}
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
 
+                          {/* LISTAGEM DAS CAIXAS JÁ SALVAS */}
+                          {(!doc.caixas || doc.caixas.length === 0) ? (
+                            <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma caixa importada para este documento.</span>
+                          ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
+                              {doc.caixas.map((cx, cxIdx) => (
+                                <div key={cxIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px' }}>
+                                    <strong style={{ color: 'var(--primary)' }}>{cx.num}</strong>
+                                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{cx.peso} kg</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '120px', overflowY: 'auto', paddingRight: '4px' }}>
+                                    {cx.produtos?.map((p, pIdx) => (
+                                      <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', background: '#fff', padding: '4px 6px', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
+                                        <span style={{fontWeight: 600}}>{p.sku}</span>
+                                        <span style={{color: '#0ea5e9', fontWeight: 'bold'}}>{p.quantidade} un</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
