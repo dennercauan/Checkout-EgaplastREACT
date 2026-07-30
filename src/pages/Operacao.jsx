@@ -248,6 +248,15 @@ export default function Operacao({ isAdmin }) {
     return count;
   }, [pedidosProcessados]);
 
+  const totalPedidosKPI = useMemo(() => {
+    // Filtra apenas os pedidos que possuem pelo menos uma Nota Fiscal ou Minuta
+    return pedidosProcessados.filter(pedido => {
+      return (pedido.documentos || []).some(doc => 
+        doc.tipo === 'Nota Fiscal' || doc.tipo === 'Minuta'
+      );
+    }).length;
+  }, [pedidosProcessados]);
+
   const atividadeAtual = useMemo(() => {
     const pendente = pedidosProcessados.find(p => !p.efetivado);
     if (!pendente) return null;
@@ -673,7 +682,7 @@ export default function Operacao({ isAdmin }) {
   }
 
   // ==========================================
-  // NOVO MOTOR DO RANKING DIÁRIO (COM DETALHAMENTO)
+  // NOVO MOTOR DO RANKING DIÁRIO (COM DECRÉSCIMO AO VIVO)
   // ==========================================
   const rankingCalculado = useMemo(() => {
     const userStats = {};
@@ -685,8 +694,8 @@ export default function Operacao({ isAdmin }) {
         skus: 0, 
         op: 0, 
         pedidos: 0, 
-        bonusPedidos: 0, // Armazena o bônus de romaneios
-        decrescimo: 0,   // Armazena a perda por ociosidade
+        bonusPedidos: 0, 
+        decrescimo: 0,   
         pontos: 0, 
         eventos: [], 
         uid: u.uid
@@ -699,7 +708,7 @@ export default function Operacao({ isAdmin }) {
           userStats[op.responsavelUid].op += 1;
           userStats[op.responsavelUid].pontos += 50;
           
-          const time = op.createdAt?.toMillis ? op.createdAt.toMillis() : Date.now();
+          const time = op.createdAt?.toMillis ? op.createdAt.toMillis() : currentTime;
           userStats[op.responsavelUid].eventos.push({ start: time, end: time });
        }
     });
@@ -720,16 +729,18 @@ export default function Operacao({ isAdmin }) {
             if (pedido.efetivado) {
                userStats[uid].skus += skusCount;
                userStats[uid].pedidos += 1;
-               userStats[uid].bonusPedidos += 100; // Guarda histórico do bônus
+               userStats[uid].bonusPedidos += 100; 
                userStats[uid].pontos += skusCount; 
                userStats[uid].pontos += 100; 
             }
             
-            const start = pedido.createdAt?.toMillis ? pedido.createdAt.toMillis() : Date.now();
-            let end = Date.now();
+            const start = pedido.createdAt?.toMillis ? pedido.createdAt.toMillis() : currentTime;
+            
+            // Se o pedido está em andamento, o tempo final avança junto com o relógio
+            let end = currentTime; 
             
             if (pedido.efetivado && pedido.completedAt) {
-               end = pedido.completedAt?.toMillis ? pedido.completedAt.toMillis() : Date.now();
+               end = pedido.completedAt?.toMillis ? pedido.completedAt.toMillis() : currentTime;
             } else if (pedido.isPaused && pedido.lastPauseStart) {
                end = pedido.lastPauseStart; 
             }
@@ -739,7 +750,7 @@ export default function Operacao({ isAdmin }) {
       });
     });
 
-    // 4. Calcula o Decréscimo de Ociosidade
+    // 4. Calcula o Decréscimo de Ociosidade (Buracos + Tempo Real)
     const DEZ_MINUTOS_MS = 10 * 60 * 1000;
     
     Object.values(userStats).forEach(user => {
@@ -759,6 +770,7 @@ export default function Operacao({ isAdmin }) {
           }
        });
 
+       // 4.1 Penalidade dos buracos passados (entre tarefas já finalizadas)
        for (let i = 1; i < merged.length; i++) {
           const gapMs = merged[i].start - merged[i-1].end;
           
@@ -766,11 +778,30 @@ export default function Operacao({ isAdmin }) {
              const excessoMs = gapMs - DEZ_MINUTOS_MS;
              const minutosExcedentes = Math.floor(excessoMs / 60000);
              const penalidade = minutosExcedentes * 10;
-             user.decrescimo += penalidade; // Guarda o histórico de perda
+             user.decrescimo += penalidade; 
              user.pontos -= penalidade; 
           }
        }
        
+       // 4.2 A MÁGICA AO VIVO: Penalidade do último evento até o exato momento
+       if (merged.length > 0) {
+          const ultimaTarefa = merged[merged.length - 1];
+          
+          // Se a última tarefa tem o 'end' menor que o currentTime, significa que ele está parado
+          if (ultimaTarefa.end < currentTime) {
+             const ociosidadeAtualMs = currentTime - ultimaTarefa.end;
+             
+             if (ociosidadeAtualMs > DEZ_MINUTOS_MS) {
+                const excessoMs = ociosidadeAtualMs - DEZ_MINUTOS_MS;
+                const minutosExcedentes = Math.floor(excessoMs / 60000);
+                const penalidade = minutosExcedentes * 10;
+                user.decrescimo += penalidade;
+                user.pontos -= penalidade;
+             }
+          }
+       }
+       
+       // Evita que a pontuação fique negativa
        if (user.pontos < 0) user.pontos = 0; 
     });
 
@@ -779,7 +810,8 @@ export default function Operacao({ isAdmin }) {
        .sort((a, b) => b.pontos - a.pontos)
        .map((u, idx) => ({ ...u, posicao: idx + 1 }));
 
-  }, [pedidosProcessados, opsDoDia, usuarios]);
+  // 👇 INSERÇÃO CHAVE: 'currentTime' obriga o cálculo a rodar a cada segundo
+  }, [pedidosProcessados, opsDoDia, usuarios, currentTime]);
 
 
   return (
@@ -839,7 +871,7 @@ export default function Operacao({ isAdmin }) {
           )}
 
           <div className="op-kpi-grid">
-            <div className="op-kpi-card"><span className="kpi-label">Pedidos Hoje</span><span className="kpi-val">{pedidosProcessados.length}</span></div>
+            <div className="op-kpi-card"><span className="kpi-label">Pedidos Hoje</span><span className="kpi-val">{totalPedidosKPI}</span></div>
             <div className="op-kpi-card"><span className="kpi-label">Caixas Fechadas</span><span className="kpi-val" style={{color: 'var(--secondary)'}}>{totalCaixasHoje}</span></div>
           </div>
         </section>

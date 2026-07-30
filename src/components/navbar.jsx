@@ -319,7 +319,7 @@ export default function Navbar({ user, isAdmin }) {
                       }
 
                       navigate(`/elemento?id=${searchResult.elementoId}`);
-                    }}
+                    }} 
                   >
                     Acessar Operação <ExternalLink size={16} />
                   </button>
