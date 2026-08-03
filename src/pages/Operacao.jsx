@@ -2,15 +2,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-  collection, addDoc, serverTimestamp, getDocs, doc, deleteDoc, updateDoc,
+  collection, addDoc, serverTimestamp, getDocs, doc,
   query, where, onSnapshot, collectionGroup, Timestamp, deleteField 
 } from 'firebase/firestore';
+import { updateDoc, setDoc, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase'; 
 import { 
   ArrowLeft, Plus, FileText, CheckCircle2, 
   Clock, MoreVertical, Search, Boxes, X, User, Trash2, PackagePlus, Loader2, Edit, Check, Pause, Play, AlertCircle, MapPin, UploadCloud,
-  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw } from 'lucide-react';
+  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle } from 'lucide-react';
 import '../css/Operacao.css';
 
 export default function Operacao({ isAdmin }) {
@@ -62,6 +63,11 @@ export default function Operacao({ isAdmin }) {
   const [showAddCaixaModal, setShowAddCaixaModal] = useState(false);
   const [addCaixaForm, setAddCaixaForm] = useState({ docIdx: null, num: '', peso: '', sku: '', quantidade: '' });
   const [wmsSessions, setWmsSessions] = useState({});
+  // NOVOS ESTADOS PARA O WMS MASTER
+  const [wmsPreResumoAberto, setWmsPreResumoAberto] = useState(null);
+  const [showCaixasEfetivadasModal, setShowCaixasEfetivadasModal] = useState(null);
+  const [auditModalData, setAuditModalData] = useState(null);
+  const [buscaCaixasSalvas, setBuscaCaixasSalvas] = useState('');
 
   const toggleDocExpandido = (idx) => {
     setDocsExpandidos(prev => ({ ...prev, [idx]: !prev[idx] }));
@@ -136,8 +142,188 @@ export default function Operacao({ isAdmin }) {
   const [docResponsavel, setDocResponsavel] = useState(''); 
   const [docsTemporarios, setDocsTemporarios] = useState([]);
   const [isEditingObs, setIsEditingObs] = useState(false);
+  const [skusExpandidos, setSkusExpandidos] = useState({});
 
+  // ==========================================
+  // ESTADOS PARA CADASTRO MANUAL DE VARIAÇÃO
+  // ==========================================
+  const [modalCodigoBarras, setModalCodigoBarras] = useState(null); // Guarda os dados do SKU que será salvo
+  const [codigoBarrasInput, setCodigoBarrasInput] = useState('');
 
+  // ATUALIZA OS CAMPOS MANUAIS EM TEMPO REAL
+  const handleInputManual = (dIdx, skuRef, campo, valor) => {
+    setWmsSessions(prev => {
+      const novoEstado = { ...prev };
+      const sessao = { ...novoEstado[dIdx] };
+      const skus = [...sessao.skus];
+      const skuIndex = skus.findIndex(s => s.ref === skuRef);
+      if (skuIndex === -1) return prev;
+
+      const sku = { ...skus[skuIndex] };
+      if (campo === 'qtdPadrao') sku.qtdPadrao = parseInt(valor) || 0;
+      if (campo === 'caixaNome') sku.caixaNome = valor.toUpperCase();
+      if (campo === 'pesoPadrao') sku.pesoPadrao = parseFloat(valor.replace(',', '.')) || 0;
+
+      skus[skuIndex] = sku;
+      sessao.skus = skus;
+      novoEstado[dIdx] = sessao;
+      return novoEstado;
+    });
+  };
+
+  // ABRE O MODAL DE CÓDIGO DE BARRAS
+  const abrirModalSalvarManual = (dIdx, sku) => {
+    setModalCodigoBarras({ dIdx, sku });
+    setCodigoBarrasInput('');
+  };
+
+  // SALVA A NOVA VARIAÇÃO NO BANCO DE DADOS
+  const salvarVariacaoBanco = async () => {
+    if (!codigoBarrasInput.trim()) {
+      alert("Por favor, insira o código de barras.");
+      return;
+    }
+    
+    const { dIdx, sku } = modalCodigoBarras;
+    setIsSaving(true);
+    
+    try {
+      // 👇 AQUI: Ajustado para apontar corretamente para a coleção 'caixasMaster'
+      const produtoRef = doc(db, 'caixasMaster', sku.ref);
+      
+      const novaVariacao = {
+        caixa: sku.caixaNome || 'CAIXA',
+        quantidade: sku.qtdPadrao,
+        peso: sku.pesoPadrao,
+        codigoBarras: codigoBarrasInput
+      };
+
+      // Tenta atualizar o banco adicionando a variação ao array existente
+      await updateDoc(produtoRef, {
+        variacoes: arrayUnion(novaVariacao)
+      }).catch(async (e) => {
+         // Se o documento não existir, cria ele com a estrutura correta
+         await setDoc(produtoRef, { 
+           ref: sku.ref,
+           nome: sku.desc || '', // Salva a descrição do arquivo como nome
+           variacoes: [novaVariacao] 
+         }, { merge: true });
+      });
+
+      // Atualiza a tela atual, removendo o status de "Missing"
+      setWmsSessions(prev => {
+        const novo = { ...prev };
+        const sIndex = novo[dIdx].skus.findIndex(s => s.ref === sku.ref);
+        novo[dIdx].skus[sIndex].isMissing = false;
+        novo[dIdx].skus[sIndex].codigoBarras = codigoBarrasInput;
+        
+        // Dispara o Auto-save do planejamento
+        const refFinal = pedidoModal._isLegacy ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) : doc(db, 'pedidos', pedidoModal.id);
+        const novosDocs = [...pedidoModal.documentos];
+        novosDocs[dIdx] = { ...novosDocs[dIdx], planejamentoWms: novo[dIdx] };
+        updateDoc(refFinal, { documentos: novosDocs });
+        
+        return novo;
+      });
+
+      alert("Variação cadastrada com sucesso!");
+      setModalCodigoBarras(null);
+
+    } catch (error) {
+      alert("Erro ao salvar variação: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  // ==========================================
+  // ESTADOS E FUNÇÕES DO DICIONÁRIO MASTER
+  // ==========================================
+  const [modoEdicaoMaster, setModoEdicaoMaster] = useState(null); // 'NOVO' ou o ID/Ref do produto
+  const [formMaster, setFormMaster] = useState({ ref: '', nome: '', variacoes: [] });
+
+  const iniciarEdicaoMaster = (produto = null) => {
+    if (produto) {
+      setModoEdicaoMaster(produto.id || produto.ref);
+      setFormMaster({
+        ref: produto.ref || '',
+        nome: produto.nome || '',
+        variacoes: produto.variacoes ? JSON.parse(JSON.stringify(produto.variacoes)) : []
+      });
+    } else {
+      setModoEdicaoMaster('NOVO');
+      setFormMaster({ ref: '', nome: '', variacoes: [{ caixa: '', quantidade: '', peso: '', codigoBarras: '' }] });
+    }
+  };
+
+  const cancelarEdicaoMaster = () => {
+    setModoEdicaoMaster(null);
+    setFormMaster({ ref: '', nome: '', variacoes: [] });
+  };
+
+  const salvarDicionarioMaster = async () => {
+    if (!formMaster.ref.trim()) {
+      alert("A Referência (REF) do produto é obrigatória!");
+      return;
+    }
+    
+    setIsSaving(true);
+    try {
+      const docRef = doc(db, 'caixasMaster', formMaster.ref);
+      
+      const dadosTratados = {
+        ref: formMaster.ref.trim(),
+        nome: formMaster.nome.trim(),
+        variacoes: formMaster.variacoes.map(v => ({
+          caixa: v.caixa ? String(v.caixa).toUpperCase().trim() : 'CAIXA',
+          quantidade: parseInt(String(v.quantidade).replace(/\D/g, '')) || 0,
+          peso: parseFloat(String(v.peso).replace(',', '.')) || 0,
+          codigoBarras: (v.codigoBarras || '').trim()
+        }))
+      };
+
+      // 1. Salva na nuvem (Firebase)
+      await setDoc(docRef, dadosTratados, { merge: true });
+      
+      // 2. ATUALIZA A TELA NA MESMA HORA (Sem precisar de F5)
+      // Obs: Se o seu estado principal não se chamar 'setCaixasMaster', 
+      // troque esse nome abaixo para o correto (ex: setProdutos, setDicionario, etc).
+      setCaixasMaster(prev => {
+        const index = prev.findIndex(p => p.ref === dadosTratados.ref || p.id === dadosTratados.ref);
+        if (index > -1) {
+          const novaLista = [...prev];
+          novaLista[index] = { ...novaLista[index], ...dadosTratados };
+          return novaLista;
+        } else {
+          return [dadosTratados, ...prev]; // Adiciona o novo no topo da lista
+        }
+      });
+
+      alert("Produto salvo no dicionário com sucesso!");
+      cancelarEdicaoMaster();
+      
+    } catch (error) {
+      alert("Erro ao salvar produto: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const excluirDicionarioMaster = async (ref) => {
+    if (!window.confirm(`Tem certeza que deseja excluir definitivamente a REF ${ref} do dicionário?`)) return;
+    
+    try {
+      // 1. Apaga da nuvem (Firebase)
+      await deleteDoc(doc(db, 'produtos', ref));
+      
+      // 2. Remove da tela na mesma hora
+      setCaixasMaster(prev => prev.filter(p => p.ref !== ref && p.id !== ref));
+      
+      alert("Produto removido do dicionário!");
+    } catch (error) {
+      alert("Erro ao excluir: " + error.message);
+    }
+  };
+  
 
   useEffect(() => {
     const timerInterval = setInterval(() => setCurrentTime(Date.now()), 1000);
@@ -283,6 +469,7 @@ export default function Operacao({ isAdmin }) {
     if (!pedidoSelecionado) return null;
     return pedidosProcessados.find(p => p.id === pedidoSelecionado.id) || pedidoSelecionado;
   }, [pedidoSelecionado, pedidosProcessados]);
+
 
   const caixasMasterFiltradas = useMemo(() => {
     if (!buscaMaster.trim()) return caixasMaster;
@@ -534,6 +721,30 @@ export default function Operacao({ isAdmin }) {
     e.target.value = null; 
   };
 
+// ==========================================
+  // AUTO-LOAD DO WMS (Evita perda no F5 e limpa cache entre pedidos)
+  // ==========================================
+  useEffect(() => {
+    if (showDetalhesModal && pedidoModal?.isCaixaMaster) {
+      // Se abrir um pedido Master, busca apenas os dados dele
+      const sessoesSalvas = {};
+      (pedidoModal.documentos || []).forEach((doc, dIdx) => {
+        if (doc.planejamentoWms) {
+          sessoesSalvas[dIdx] = doc.planejamentoWms;
+        }
+      });
+      // SUBSTITUI completamente a memória (sem usar o prev)
+      setWmsSessions(sessoesSalvas);
+      
+    } else if (!showDetalhesModal) {
+      // Quando o modal fechar, "formata" a memória para não vazar pro próximo pedido
+      setWmsSessions({});
+      setAuditModalData(null);
+      setShowCaixasEfetivadasModal(null);
+      setWmsPreResumoAberto(null);
+    }
+  }, [showDetalhesModal, pedidoModal]);
+
 const handlePlanejamentoUpload = (e, dIdx) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -602,6 +813,21 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           [dIdx]: { skus: skusProcessados, fileName: file.name }
         }));
 
+        
+// Salva na sessão específica do documento
+        const novaSessao = { skus: skusProcessados, fileName: file.name };
+        setWmsSessions(prev => ({ ...prev, [dIdx]: novaSessao }));
+
+        // 👇 SALVAMENTO AUTOMÁTICO NO BANCO (BACKGROUND)
+        const refFinal = pedidoModal._isLegacy 
+          ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
+          : doc(db, 'pedidos', pedidoModal.id);
+          
+        const novosDocumentos = [...pedidoModal.documentos];
+        novosDocumentos[dIdx] = { ...novosDocumentos[dIdx], planejamentoWms: novaSessao };
+        
+        updateDoc(refFinal, { documentos: novosDocumentos }).catch(e => console.error("Erro Auto-Save:", e));
+
       } catch (error) {
         alert("Erro ao ler planejamento: " + error.message);
       } finally {
@@ -610,6 +836,167 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       }
     };
     reader.readAsText(file, 'ISO-8859-1');
+  };
+
+  // LÊ O CSV FINAL DE CAIXAS DO WMS (AUDITORIA)
+  const handleAuditoriaUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file || !auditModalData) return;
+    const currentIdx = auditModalData.dIdx; // Puxa o ID do documento pelo modal que já está aberto
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        const linhas = text.trim().split(/\r\n|\n|\r/);
+        if (linhas.length < 2) throw new Error("Arquivo CSV inválido ou vazio.");
+
+        const cabecalho = linhas.shift().split(';').map(c => c.trim().replace(/"/g, ''));
+        const map = {};
+
+        linhas.forEach(l => {
+          const cols = l.split(';');
+          const status = cols[cabecalho.indexOf("Estado Conferência")]?.trim();
+          if (status !== "EFETIVADO") return;
+
+          const idEmbalagem = cols[cabecalho.indexOf("ID Embalagem Expedição")];
+          if (!idEmbalagem) return;
+          
+          if (!map[idEmbalagem]) map[idEmbalagem] = [];
+          
+          map[idEmbalagem].push({
+            num: cols[cabecalho.indexOf("Descrição Tipo Embalagem Expedição")],
+            peso: parseFloat(cols[cabecalho.indexOf("Peso Embalagem")]?.replace(',', '.')) || 0,
+            ref: cols[cabecalho.indexOf("Produto")],
+            desc: cols[cabecalho.indexOf("Descrição Produto")],
+            qtd: cols[cabecalho.indexOf("Quantidade")]
+          });
+        });
+
+        const caixasReais = Object.keys(map).map(id => {
+          const prods = map[id];
+          return {
+            num: prods[0].num || 'CX',
+            peso: prods[0].peso || 0,
+            isBonificacao: false,
+            produtos: prods.map(p => ({
+              referencia: p.ref,
+              descricao: p.desc,
+              quantidade: p.qtd
+            }))
+          };
+        });
+
+        // Atualiza o modal que já estava aberto para agora mostrar o relatório!
+        setAuditModalData({ dIdx: currentIdx, fileName: file.name, caixasReais: caixasReais });
+
+      } catch (error) {
+        alert("Erro ao ler caixas efetivadas: " + error.message);
+      } finally {
+        e.target.value = null; 
+      }
+    };
+    reader.readAsText(file, 'ISO-8859-1');
+  };
+
+  // TROCA A VARIAÇÃO DA CAIXA E SALVA AUTOMATICAMENTE
+  const handleMudarVariacao = (dIdx, skuRef, indexVariacao) => {
+    setWmsSessions(prev => {
+      const novoEstado = { ...prev };
+      const sessao = { ...novoEstado[dIdx] };
+      const skus = [...sessao.skus];
+      
+      const skuIndex = skus.findIndex(s => s.ref === skuRef);
+      if (skuIndex === -1) return prev;
+
+      const sku = { ...skus[skuIndex] };
+      const novaVariacao = sku.variacoesDisponiveis[indexVariacao];
+
+      if (novaVariacao) {
+        // MÁGICA AQUI: Arranca as letras "CX" e deixa só os números para a matemática não zerar
+        const qtdBruta = String(novaVariacao.quantidade || novaVariacao.qtdPadrao || novaVariacao.qtd || '0');
+        const qtdLimpa = parseInt(qtdBruta.replace(/\D/g, '')) || 0;
+
+        // Trata o peso removendo "kg" e trocando vírgula por ponto
+        const pesoBruto = String(novaVariacao.peso || novaVariacao.pesoPadrao || '0');
+        const pesoLimpo = parseFloat(pesoBruto.replace(',', '.').replace(/[^\d.]/g, '')) || 0;
+
+        sku.caixaNome = novaVariacao.caixa || novaVariacao.caixaNome || "CAIXA";
+        sku.qtdPadrao = qtdLimpa;
+        sku.pesoPadrao = pesoLimpo;
+        sku.variacaoSelecionadaIdx = indexVariacao; 
+      }
+
+      skus[skuIndex] = sku;
+      sessao.skus = skus;
+      novoEstado[dIdx] = sessao;
+
+      // -----------------------------------------------------
+      // AUTO-SAVE EM BACKGROUND (Salva a escolha no Firebase)
+      // -----------------------------------------------------
+      const refFinal = pedidoModal._isLegacy 
+        ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
+        : doc(db, 'pedidos', pedidoModal.id);
+        
+      const novosDocs = [...pedidoModal.documentos];
+      novosDocs[dIdx] = { ...novosDocs[dIdx], planejamentoWms: sessao };
+      updateDoc(refFinal, { documentos: novosDocs }).catch(e => console.error("Erro Auto-Save Variação", e));
+
+      return novoEstado;
+    });
+  };
+  // SALVA A AUDITORIA FINAL NO BANCO DE DADOS
+  const confirmarAuditoriaWms = async () => {
+    if (!auditModalData || !auditModalData.caixasReais) return;
+    setIsSaving(true);
+    
+    try {
+      const { dIdx, caixasReais, fileName } = auditModalData;
+      const session = wmsSessions[dIdx] || { skus: [] };
+      
+      let pedidoRef;
+      if (pedidoModal._isLegacy) {
+        pedidoRef = doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id);
+      } else {
+        pedidoRef = doc(db, 'pedidos', pedidoModal.id);
+      }
+
+      // Gera o resumo rápido para o histórico
+      let planejado = 0;
+      session.skus.forEach(sku => {
+        if (sku.qtdPadrao > 0) planejado += Math.ceil(sku.qtdTotal / sku.qtdPadrao);
+      });
+      const totalReais = caixasReais.length;
+      
+      const novosDocumentos = [...pedidoModal.documentos];
+      novosDocumentos[dIdx] = { 
+        ...novosDocumentos[dIdx], 
+        caixas: caixasReais,
+        // 👇 AQUI: SALVA O RELATÓRIO DEFINITIVO PARA HISTÓRICO!
+        auditoria: {
+          arquivo: fileName,
+          planejado: planejado,
+          efetivado: totalReais,
+          diferenca: planejado - totalReais,
+          data: new Date().toISOString()
+        }
+      };
+      
+      await updateDoc(pedidoRef, {
+        documentos: novosDocumentos,
+        efetivado: true, 
+        completedAt: serverTimestamp()
+      });
+      
+      alert("Auditoria validada e histórico salvo com sucesso!");
+      setAuditModalData(null);
+      setShowCaixasEfetivadasModal(dIdx); 
+      
+    } catch (error) {
+      alert("Erro ao salvar auditoria no banco: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSalvarCaixasFirebase = async () => {
@@ -1251,146 +1638,324 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                    {(pedidoModal.documentos || []).map((doc, dIdx) => (
-                      <div key={dIdx} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden', padding: '25px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
-                          <h4 style={{ color: '#1e3a8a', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <Layers size={22} color="#1e3a8a" /> {doc.tipo} 
-                            <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
-                          </h4>
-                        </div>
+                    {(pedidoModal.documentos || []).map((doc, dIdx) => {
+                      
+                      // =========================================================
+                      // CÁLCULOS MATEMÁTICOS PARA O PRÉ-RESUMO E FILTRO
+                      // =========================================================
+                      let totalVolumesGeral = 0;
+                      let resumoTiposCaixa = {};
+                      const termoBuscaWms = (buscasDocumentos[dIdx] || '').toLowerCase();
+                      
+                      const skusFiltrados = wmsSessions[dIdx] ? wmsSessions[dIdx].skus.filter(sku => {
+                        // Calcula o pré-resumo
+                        if (sku.qtdPadrao > 0) {
+                          const cxsDesteSku = Math.ceil(sku.qtdTotal / sku.qtdPadrao);
+                          totalVolumesGeral += cxsDesteSku;
+                          let tKey = sku.caixaNome || "INDEFINIDO";
+                          if (!resumoTiposCaixa[tKey]) resumoTiposCaixa[tKey] = { qtd: 0, peso: 0 };
+                          resumoTiposCaixa[tKey].qtd += cxsDesteSku;
+                          resumoTiposCaixa[tKey].peso += cxsDesteSku * parseFloat(sku.pesoPadrao || 0);
+                        }
+                        // Aplica o filtro de pesquisa
+                        if (!termoBuscaWms) return true;
+                        return sku.ref.toLowerCase().includes(termoBuscaWms) || sku.desc.toLowerCase().includes(termoBuscaWms);
+                      }) : [];
 
-                        {!wmsSessions[dIdx] ? (
-                          /* ESTÁGIO 1: DROPZONE */
-                          <div style={{ textAlign: 'center', padding: '60px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
-                            <FileText size={64} color="#94a3b8" style={{ marginBottom: '20px' }} />
-                            <h3 style={{ color: 'var(--primary)', margin: '0 0 10px 0', fontSize: '1.5rem' }}>Planejamento de Caixas Master</h3>
-                            <p style={{ color: '#64748b', fontSize: '1rem', marginBottom: '30px' }}>Faça o upload do arquivo CSV extraído do WMS para iniciar o cruzamento de dados de embalagem.</p>
-                            
-                            <input 
-                              type="file" accept=".csv" id={`plan-upload-${dIdx}`} style={{ display: 'none' }} 
-                              onChange={(e) => handlePlanejamentoUpload(e, dIdx)} disabled={isUploading}
-                            />
-                            <label htmlFor={`plan-upload-${dIdx}`} style={{ background: 'var(--primary)', color: '#fff', padding: '14px 35px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-                              {isUploading ? <Loader2 size={20} className="fa-spin"/> : <UploadCloud size={20}/>}
-                              {isUploading ? 'Analisando Base de Dados...' : 'Selecionar Arquivo CSV WMS'}
-                            </label>
+                      return (
+                        <div key={dIdx} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden', padding: '25px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
+                            <h4 style={{ color: '#1e3a8a', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <Layers size={22} color="#1e3a8a" /> {doc.tipo} 
+                              <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
+                            </h4>
                           </div>
-                        ) : (
-                          /* ESTÁGIO 2: TABELA DE GERENCIAMENTO (DESIGN FIEL À IMAGEM) */
-                          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                            
-                            {/* TOOLBAR */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#fff', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '15px' }}>
-                              <div>
-                                <div style={{ fontSize: '1.3rem', color: '#1e3a8a', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
-                                  {wmsSessions[dIdx].loja || pedidoModal.loja || 'LOJA NÃO DEFINIDA'}
+
+                          {!wmsSessions[dIdx] ? (
+                            /* ESTÁGIO 1: DROPZONE */
+                            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
+                              <FileText size={64} color="#94a3b8" style={{ marginBottom: '20px' }} />
+                              <h3 style={{ color: 'var(--primary)', margin: '0 0 10px 0', fontSize: '1.5rem' }}>Planejamento de Caixas Master</h3>
+                              <p style={{ color: '#64748b', fontSize: '1rem', marginBottom: '30px' }}>Faça o upload do arquivo CSV extraído do WMS para iniciar o cruzamento de dados de embalagem.</p>
+                              
+                              <input 
+                                type="file" accept=".csv" id={`plan-upload-${dIdx}`} style={{ display: 'none' }} 
+                                onChange={(e) => handlePlanejamentoUpload(e, dIdx)} disabled={isUploading}
+                              />
+                              <label htmlFor={`plan-upload-${dIdx}`} style={{ background: 'var(--primary)', color: '#fff', padding: '14px 35px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
+                                {isUploading ? <Loader2 size={20} className="fa-spin"/> : <UploadCloud size={20}/>}
+                                {isUploading ? 'Analisando Base de Dados...' : 'Selecionar Arquivo CSV WMS'}
+                              </label>
+                            </div>
+                          ) : (
+                            /* ESTÁGIO 2: TABELA DE GERENCIAMENTO (DESIGN FIEL À IMAGEM) */
+                            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                              
+                              {/* TOOLBAR CONECTADA E FUNCIONAL */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#fff', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '15px' }}>
+                                <div>
+                                  <div style={{ fontSize: '1.3rem', color: '#1e3a8a', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
+                                    {wmsSessions[dIdx].loja || pedidoModal.loja || 'LOJA NÃO DEFINIDA'}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                                    Romaneio WMS: <strong style={{ color: '#ea580c' }}>{wmsSessions[dIdx].romaneio || pedidoModal.romaneio}</strong>
+                                  </div>
                                 </div>
-                                <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
-                                  Romaneio WMS: <strong style={{ color: '#ea580c' }}>{wmsSessions[dIdx].romaneio || pedidoModal.romaneio}</strong>
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  
+                                  {/* BUSCA */}
+                                  <div style={{ position: 'relative' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '12px', top: '10px', color: '#94a3b8' }}/>
+                                    <input type="text" 
+                                      placeholder="Buscar Produto ou SKU..." 
+                                      value={buscasDocumentos[dIdx] || ''} 
+                                      onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
+                                      style={{ padding: '8px 10px 8px 32px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', outline: 'none', width: '220px', color: '#334155' }}/>
+                                  </div>
+                                  
+                                  {/* PRÉ-RESUMO (POPOVER) */}
+                                  <div style={{ position: 'relative' }}>
+                                    <button 
+                                      onClick={() => setWmsPreResumoAberto(wmsPreResumoAberto === dIdx ? null : dIdx)}
+                                      style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', fontSize: '0.85rem', color: '#1e3a8a', fontWeight: 'bold', cursor: 'pointer' }}>
+                                      <FileText size={14} color="#ea580c"/> Pré-Resumo 
+                                      <span style={{ background: '#1e3a8a', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem' }}>
+                                        {totalVolumesGeral}
+                                      </span>
+                                    </button>
+                                    
+                                    {wmsPreResumoAberto === dIdx && (
+                                      <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '15px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 50 }}>
+                                        <h4 style={{ margin: '0 0 10px 0', borderBottom: '2px solid #f1f5f9', paddingBottom: '8px', color: 'var(--primary)', fontSize: '0.95rem' }}>Volumes Estimados</h4>
+                                        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                          {Object.keys(resumoTiposCaixa).length === 0 ? <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>Nenhuma caixa projetada.</span> : ''}
+                                          {Object.keys(resumoTiposCaixa).map(k => (
+                                            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '6px 0', borderBottom: '1px dashed #e2e8f0' }}>
+                                              <strong style={{ color: '#334155' }}>{k}</strong>
+                                              <span>{resumoTiposCaixa[k].qtd} un <span style={{ color: '#cbd5e1', margin: '0 4px' }}>|</span> <strong style={{ color: '#10b981' }}>{resumoTiposCaixa[k].peso.toFixed(1)}kg</strong></span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* VER CAIXAS EFETIVADAS */}
+                                    <button onClick={() => setShowCaixasEfetivadasModal(dIdx)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#1e3a8a', cursor: 'pointer', display: 'flex' }} title="Estrutura de Caixas Salvas">
+                                      <Boxes size={16}/>
+                                    </button>
+                                    
+                                    {/* DESCARTAR PLANEJAMENTO E LIMPAR BANCO */}
+                                    <button onClick={async () => {
+                                      if(!window.confirm("Deseja realmente descartar este planejamento?")) return;
+                                      setWmsSessions(prev => { const n = {...prev}; delete n[dIdx]; return n; });
+                                      
+                                      const refFinal = pedidoModal._isLegacy ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) : doc(db, 'pedidos', pedidoModal.id);
+                                      const novosDocs = [...pedidoModal.documentos];
+                                      novosDocs[dIdx] = { ...novosDocs[dIdx] };
+                                      delete novosDocs[dIdx].planejamentoWms;
+                                      updateDoc(refFinal, { documentos: novosDocs });
+                                    }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
+                                      <Trash2 size={16}/>
+                                    </button>
+                                    
+                                    {/* IMPORTAR CAIXAS (ABRE O MODAL INTELIGENTE) */}
+                                    <button onClick={() => {
+                                      const docDb = pedidoModal.documentos[dIdx];
+                                      if (docDb.caixas && docDb.caixas.length > 0) {
+                                        setAuditModalData({ dIdx: dIdx, fileName: docDb.auditoria?.arquivo || 'Arquivo Salvo', caixasReais: docDb.caixas });
+                                      } else {
+                                        setAuditModalData({ dIdx: dIdx });
+                                      }
+                                    }} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: pedidoModal.documentos[dIdx].caixas?.length > 0 ? '#0ea5e9' : '#22c55e', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', margin: 0 }}>
+                                      {pedidoModal.documentos[dIdx].caixas?.length > 0 ? <PieChart size={16}/> : <CheckCircle2 size={16}/>}
+                                      {pedidoModal.documentos[dIdx].caixas?.length > 0 ? 'Ver Auditoria' : 'Importar Caixas'}
+                                    </button>
                                 </div>
                               </div>
                               
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <div style={{ position: 'relative' }}>
-                                  <Search size={14} style={{ position: 'absolute', left: '12px', top: '10px', color: '#94a3b8' }}/>
-                                  <input type="text" placeholder="Buscar Produto ou SKU..." style={{ padding: '8px 10px 8px 32px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', outline: 'none', width: '220px', color: '#334155' }}/>
-                                </div>
-                                
-                                <button style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', fontSize: '0.85rem', color: '#1e3a8a', fontWeight: 'bold', cursor: 'pointer' }}>
-                                  <FileText size={14} color="#ea580c"/> Pré-Resumo 
-                                  <span style={{ background: '#1e3a8a', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem' }}>
-                                    {wmsSessions[dIdx].skus.reduce((acc, sku) => acc + (sku.qtdPadrao > 0 ? Math.ceil(sku.qtdTotal / sku.qtdPadrao) : 0), 0)}
-                                  </span>
-                                </button>
-                                
-                                <button style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#1e3a8a', cursor: 'pointer', display: 'flex' }} title="Estrutura de Caixas">
-                                  <Boxes size={16}/>
-                                </button>
-                                
-                                <button onClick={() => setWmsSessions(prev => { const n = {...prev}; delete n[dIdx]; return n; })} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#1e3a8a', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
-                                  <RefreshCcw size={16}/>
-                                </button>
-                                
-                                <button style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#22c55e', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                                  <CheckCircle2 size={16}/> Importar Caixas
-                                </button>
-                              </div>
-                            </div>
-                            
-                            {/* TABELA DE DADOS */}
-                            <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                <thead style={{ background: '#e2e8f0', position: 'sticky', top: 0, zIndex: 10 }}>
-                                  <tr>
-                                    <th style={{ padding: '12px 20px', textAlign: 'left', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO <ArrowUpDown size={10} style={{marginLeft: '4px', opacity: 0.5}}/></th>
-                                    <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD PEDIDO <ArrowUpDown size={10} style={{marginLeft: '4px', opacity: 0.5}}/></th>
-                                    <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO UC</th>
-                                    <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO CAIXA</th>
-                                    <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>PESO</th>
-                                    <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>SELECIONAR VARIAÇÃO</th>
-                                    <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TOTAL CX</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {wmsSessions[dIdx].skus.map((sku, i) => (
-                                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: sku.isMissing ? '#fef2f2' : '#fff' }}>
-                                      <td style={{ padding: '15px 20px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                          <ChevronDown size={16} color="#0284c7" style={{ marginTop: '2px', cursor: 'pointer' }}/>
-                                          <div>
-                                            <strong style={{ color: '#0284c7', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
-                                            <span style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase' }}>{sku.desc}</span>
-                                          </div>
-                                        </div>
-                                      </td>
-                                      <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: '#1e293b' }}>{sku.qtdTotal}</td>
-                                      <td style={{ padding: '15px', textAlign: 'center' }}>
-                                        {sku.isMissing ? (
-                                          <input type="number" placeholder="Ex: 60" style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem' }}/>
-                                        ) : (
-                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#475569', fontSize: '0.9rem' }}>
-                                            CX{sku.qtdPadrao} <Copy size={14} color="#ea580c" style={{ cursor: 'pointer' }}/>
-                                          </div>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '15px', textAlign: 'center' }}>
-                                        {sku.isMissing ? (
-                                          <input type="text" placeholder="CAIXA 1" style={{ width: '80px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem' }}/>
-                                        ) : (
-                                          <span style={{ color: '#475569', fontSize: '0.9rem' }}>{sku.caixaNome}</span>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '15px', textAlign: 'center' }}>
-                                        {sku.isMissing ? (
-                                          <input type="number" placeholder="0.0" style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem' }}/>
-                                        ) : (
-                                          <span style={{ color: '#475569', fontSize: '0.9rem' }}>{sku.pesoPadrao}kg</span>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '15px', textAlign: 'center' }}>
-                                        {sku.variacoesDisponiveis && sku.variacoesDisponiveis.length > 1 ? (
-                                          <select style={{ padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', outline: 'none', color: '#475569', width: '100%', maxWidth: '200px', background: '#f8fafc' }}>
-                                            {sku.variacoesDisponiveis.map((v, vIdx) => <option key={vIdx}>{v.caixa} / {v.quantidade} / {v.peso}kg</option>)}
-                                          </select>
-                                        ) : (
-                                          <span style={{ background: '#f1f5f9', color: '#94a3b8', padding: '4px 10px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid #e2e8f0' }}>Padrão Único</span>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '15px', textAlign: 'center', background: '#f8fafc', borderLeft: '1px solid #e2e8f0' }}>
-                                        <div style={{ fontWeight: '900', color: '#1e3a8a', fontSize: '1.25rem' }}>
-                                          {sku.qtdPadrao > 0 ? Math.ceil(sku.qtdTotal / sku.qtdPadrao) : 0}
-                                        </div>
-                                      </td>
+                              {/* TABELA DE DADOS (USANDO SKUS FILTRADOS) */}
+                              <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                  <thead style={{ background: '#e2e8f0', position: 'sticky', top: 0, zIndex: 10 }}>
+                                    <tr>
+                                      <th style={{ padding: '12px 20px', textAlign: 'left', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO <ArrowUpDown size={10} style={{marginLeft: '4px', opacity: 0.5}}/></th>
+                                      <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD PEDIDO <ArrowUpDown size={10} style={{marginLeft: '4px', opacity: 0.5}}/></th>
+                                      <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO UC</th>
+                                      <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO CAIXA</th>
+                                      <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>PESO</th>
+                                      <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>SELECIONAR VARIAÇÃO</th>
+                                      <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TOTAL CX</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody>
+                                    {skusFiltrados.length === 0 ? (
+                                      <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>Nenhum SKU encontrado.</td></tr>
+                                    ) : (
+                                      skusFiltrados.map((sku, i) => {
+                                        const isExpanded = skusExpandidos[`${dIdx}-${sku.ref}`];
+
+                                        return (
+                                          <React.Fragment key={i}>
+                                            <tr style={{ borderBottom: '1px solid #f1f5f9', background: sku.isMissing ? '#fef2f2' : (isExpanded ? '#f8fafc' : '#fff'), transition: 'background 0.2s' }}>
+                                              <td style={{ padding: '15px 20px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                                  
+                                                  {/* SETINHA ANIMADA DE EXPANSÃO */}
+                                                  <div 
+                                                    onClick={() => setSkusExpandidos(prev => ({...prev, [`${dIdx}-${sku.ref}`]: !prev[`${dIdx}-${sku.ref}`]}))}
+                                                    style={{ marginTop: '2px', cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease', padding: '2px' }}
+                                                    title="Ver caixas deste produto"
+                                                  >
+                                                    <ChevronDown size={18} color={isExpanded ? "#ea580c" : "#0284c7"} />
+                                                  </div>
+                                                  
+                                                  <div>
+                                                    <strong style={{ color: '#0284c7', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
+                                                    <span style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase' }}>{sku.desc}</span>
+                                                  </div>
+                                                </div>
+                                              </td>
+                                              <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: '#1e293b' }}>{sku.qtdTotal}</td>
+                                              <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                {sku.isMissing ? (
+                                                  <input type="number" placeholder="Qtd" value={sku.qtdPadrao || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'qtdPadrao', e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: '#fff' }}/>
+                                                ) : (
+                                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#475569', fontSize: '0.9rem' }}>
+                                                    CX{sku.qtdPadrao} 
+                                                    <span title="Copiar Código de Barras da Embalagem" onClick={(e) => {
+                                                        const variacao = sku.variacoesDisponiveis && sku.variacoesDisponiveis[sku.variacaoSelecionadaIdx || 0];
+                                                        const eanToCopy = variacao?.codigoBarras || sku.codigoBarras || variacao?.ean || sku.ean || 'EAN-NÃO-CADASTRADO';
+                                                        if (eanToCopy !== 'EAN-NÃO-CADASTRADO') { navigator.clipboard.writeText(eanToCopy); } else { alert('O campo "codigoBarras" não foi encontrado nesta variação ou produto no banco de dados.'); }
+                                                        const spanRef = e.currentTarget;
+                                                        spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                                                        setTimeout(() => { spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }, 1500);
+                                                      }} style={{ cursor: 'pointer', display: 'flex', padding: '4px', background: '#f1f5f9', borderRadius: '4px' }}>
+                                                      <Copy size={15} color="#ea580c" />
+                                                    </span>
+                                                  </div>
+                                                )}
+                                              </td>
+                                              <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                {sku.isMissing ? (
+                                                  <input type="text" placeholder="Ex: CAIXA 1" value={sku.caixaNome || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'caixaNome', e.target.value)} style={{ width: '90px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: '#fff' }}/>
+                                                ) : (
+                                                  <span style={{ color: '#475569', fontSize: '0.9rem' }}>{sku.caixaNome}</span>
+                                                )}
+                                              </td>
+                                              <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                {sku.isMissing ? (
+                                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                                    <input type="number" step="0.1" placeholder="0.0" value={sku.pesoPadrao || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'pesoPadrao', e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: '#fff' }}/>
+                                                    <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>kg</span>
+                                                  </div>
+                                                ) : (
+                                                  <span style={{ color: '#475569', fontSize: '0.9rem' }}>{sku.pesoPadrao}kg</span>
+                                                )}
+                                              </td>
+                                              <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                {sku.isMissing ? (
+                                                  <button 
+                                                    disabled={!sku.qtdPadrao || !sku.caixaNome || !sku.pesoPadrao}
+                                                    onClick={() => abrirModalSalvarManual(dIdx, sku)}
+                                                    style={{ background: (!sku.qtdPadrao || !sku.caixaNome || !sku.pesoPadrao) ? '#fca5a5' : '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: (!sku.qtdPadrao || !sku.caixaNome || !sku.pesoPadrao) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', margin: '0 auto' }}
+                                                  >
+                                                    <CheckCircle2 size={14}/> Salvar UC
+                                                  </button>
+                                                ) : (
+                                                  sku.variacoesDisponiveis && sku.variacoesDisponiveis.length > 1 ? (
+                                                    <select value={sku.variacaoSelecionadaIdx || 0} onChange={(e) => handleMudarVariacao(dIdx, sku.ref, parseInt(e.target.value))} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', outline: 'none', color: '#475569', width: '100%', maxWidth: '200px', background: '#f8fafc', cursor: 'pointer' }}>
+                                                      {sku.variacoesDisponiveis.map((v, vIdx) => ( <option key={vIdx} value={vIdx}> {v.caixa} / {v.quantidade} un / {v.peso}kg </option> ))}
+                                                    </select>
+                                                  ) : (
+                                                    <span style={{ background: '#f1f5f9', color: '#94a3b8', padding: '4px 10px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid #e2e8f0' }}>Padrão Único</span>
+                                                  )
+                                                )}
+                                              </td>
+                                              <td style={{ padding: '15px', textAlign: 'center', background: isExpanded ? '#f1f5f9' : '#f8fafc', borderLeft: '1px solid #e2e8f0', transition: 'background 0.2s' }}>
+                                                <div style={{ fontWeight: '900', color: '#1e3a8a', fontSize: '1.25rem' }}>
+                                                  {sku.qtdPadrao > 0 ? Math.ceil(sku.qtdTotal / sku.qtdPadrao) : 0}
+                                                </div>
+                                              </td>
+                                            </tr>
+
+                                            {/* ======================================================== */}
+                                            {/* GAVETA OCULTA: LISTAGEM DE CAIXAS (PROJEÇÃO OU REAL) */}
+                                            {/* ======================================================== */}
+                                            {isExpanded && (() => {
+                                              const caixasEfetivadasDb = pedidoModal.documentos[dIdx]?.caixas || [];
+                                              const caixasEfetivadasDesteSku = caixasEfetivadasDb.filter(cx => cx.produtos?.some(p => p.referencia === sku.ref));
+
+                                              let caixasParaExibir = [];
+                                              let isProjecao = false;
+
+                                              if (caixasEfetivadasDesteSku.length > 0) {
+                                                  // Puxa as caixas reais do arquivo importado
+                                                  caixasParaExibir = caixasEfetivadasDesteSku.map((cx) => {
+                                                      const p = cx.produtos.find(prod => prod.referencia === sku.ref);
+                                                      return { titulo: cx.num || 'CX', qtd: p.quantidade, peso: cx.peso, real: true };
+                                                  });
+                                              } else if (sku.qtdPadrao > 0) {
+                                                  // Gera a projeção matemática de fracionamento
+                                                  isProjecao = true;
+                                                  let restante = sku.qtdTotal;
+                                                  let vol = 1;
+                                                  while(restante > 0) {
+                                                      const qtdNestaCaixa = Math.min(restante, sku.qtdPadrao);
+                                                      // Calcula o peso proporcional (ex: se a última caixa tem metade dos itens, terá metade do peso)
+                                                      const pesoProp = (sku.pesoPadrao * (qtdNestaCaixa / sku.qtdPadrao)).toFixed(1);
+                                                      caixasParaExibir.push({ titulo: `${sku.caixaNome || 'CAIXA'} (Vol ${vol})`, qtd: qtdNestaCaixa, peso: pesoProp, real: false });
+                                                      restante -= qtdNestaCaixa;
+                                                      vol++;
+                                                  }
+                                              }
+
+                                              return (
+                                                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', boxShadow: 'inset 0 4px 6px -4px rgba(0,0,0,0.05)' }}>
+                                                  <td colSpan="7" style={{ padding: '20px 25px' }}>
+                                                    
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                                                       <Boxes size={18} color={isProjecao ? "#d97706" : "#10b981"}/>
+                                                       <h5 style={{ margin: 0, color: 'var(--primary)', fontSize: '0.95rem' }}>
+                                                         {isProjecao ? 'Projeção de Fracionamento (Pré-WMS)' : 'Caixas Efetivadas no WMS'}
+                                                       </h5>
+                                                       {isProjecao && <span style={{ background: '#fef3c7', color: '#d97706', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid #fde68a' }}>Estimativa Baseada na Variação</span>}
+                                                    </div>
+
+                                                    {caixasParaExibir.length === 0 ? (
+                                                      <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Nenhum dado matemático para gerar caixas.</div>
+                                                    ) : (
+                                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
+                                                         {caixasParaExibir.map((cx, cIdx) => (
+                                                           <div key={cIdx} style={{ background: '#fff', border: `1px solid ${cx.real ? '#cbd5e1' : '#e2e8f0'}`, borderLeft: `4px solid ${cx.real ? '#10b981' : '#0ea5e9'}`, borderRadius: '6px', padding: '12px 15px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                                             <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>{cx.titulo}</div>
+                                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                                               <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#334155', lineHeight: '1' }}>{cx.qtd} <span style={{fontSize: '0.75rem', fontWeight: 'normal', color: '#94a3b8'}}>un</span></div>
+                                                               <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{cx.peso}kg</div>
+                                                             </div>
+                                                           </div>
+                                                         ))}
+                                                      </div>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })()}
+                                          </React.Fragment>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                            
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -1712,9 +2277,346 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         </div>
       )}
 
+      {/* SUB-MODAL 1: AUDITORIA WMS (Upload -> Relatório) */}
+            {auditModalData && (() => {
+              const { dIdx, fileName, caixasReais } = auditModalData;
+
+              // =========================================================
+              // TELA 1: AGUARDANDO O UPLOAD DO ARQUIVO
+              // =========================================================
+              // =========================================================
+              // TELA 1: AGUARDANDO O UPLOAD DO ARQUIVO
+              // =========================================================
+              if (!caixasReais) {
+                return (
+                  <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(248, 250, 252, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    
+                    {/* ADICIONADO position: 'relative' AQUI NESTA DIV 👇 */}
+                    <div style={{ position: 'relative', background: '#fff', padding: '40px', borderRadius: '16px', width: '550px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                      
+                      {/* 👇 NOVO BOTÃO DE FECHAR (X) */}
+                      <button onClick={() => setAuditModalData(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '5px' }}>
+                        <X size={24}/>
+                      </button>
+
+                      <div style={{ background: '#e0f2fe', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto', color: '#0ea5e9' }}>
+                        <UploadCloud size={40} />
+                      </div>
+                      <h3 style={{ color: '#0f172a', fontSize: '1.6rem', margin: '0 0 10px 0' }}>Importar Caixas Efetivadas</h3>
+                      <p style={{ color: '#64748b', fontSize: '1rem', marginBottom: '30px', lineHeight: '1.5' }}>
+                        Importe o arquivo CSV contendo os volumes consolidados no WMS. O sistema fará o cruzamento automático com o seu planejamento antes de efetivar o fechamento.
+                      </p>
+
+                      <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
+                        <button onClick={() => setAuditModalData(null)} style={{ padding: '12px 25px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', flex: 1 }}>Cancelar</button>
+                        
+                        <label htmlFor="audit-upload-modal" style={{ padding: '12px 25px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flex: 1, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+                          <FileText size={18}/> Escolher CSV
+                          <input type="file" accept=".csv" id="audit-upload-modal" style={{ display: 'none' }} onChange={handleAuditoriaUpload}/>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // =========================================================
+              // TELA 2: RELATÓRIO DE AUDITORIA GERADO
+              // =========================================================
+              const session = wmsSessions[dIdx] || { skus: [] };
+              
+              let planejado = 0;
+              let planSummary = {};
+              session.skus.forEach(sku => {
+                if (sku.qtdPadrao > 0) {
+                  const cxs = Math.ceil(sku.qtdTotal / sku.qtdPadrao);
+                  planejado += cxs;
+                  const key = sku.caixaNome || "INDEFINIDA";
+                  if (!planSummary[key]) planSummary[key] = { qtd: 0, pesoTotal: 0 };
+                  planSummary[key].qtd += cxs;
+                  planSummary[key].pesoTotal += cxs * parseFloat(sku.pesoPadrao || 0);
+                }
+              });
+
+              const totalReais = caixasReais.length;
+              let realSummary = {};
+              caixasReais.forEach(cx => {
+                const key = cx.num || cx.caixa || "INDEFINIDA";
+                if (!realSummary[key]) realSummary[key] = { qtd: 0, pesoTotal: 0 };
+                realSummary[key].qtd += 1;
+                realSummary[key].pesoTotal += parseFloat(cx.peso || 0);
+              });
+
+              const diff = planejado - totalReais;
+              const isPerfect = (planejado === totalReais);
+              const cor = isPerfect ? '#155724' : '#721c24';
+              const bg = isPerfect ? '#d4edda' : '#f8d7da';
+              const allTypes = Array.from(new Set([...Object.keys(planSummary), ...Object.keys(realSummary)])).sort();
+
+              return (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(248, 250, 252, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  
+                  {/* ADICIONADO position: 'relative' AQUI NESTA DIV 👇 */}
+                  <div style={{ position: 'relative', background: '#fff', padding: '30px', borderRadius: '12px', width: '850px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
+                    
+                    {/* 👇 NOVO BOTÃO DE FECHAR (X) */}
+                    <button onClick={() => setAuditModalData(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '5px' }}>
+                      <X size={24}/>
+                    </button>
+
+                    <div style={{ textAlign: 'center', marginBottom: '20px', flexShrink: 0 }}>
+                      <h2 style={{ margin: '0 0 5px 0', color: 'var(--primary)', fontSize: '1.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                        <PieChart size={28} /> Relatório de Auditoria e Fechamento
+                      </h2>
+                      <small style={{ color: '#64748b', fontSize: '0.9rem' }}>Arquivo Analisado: <strong>{fileName}</strong></small>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', background: bg, color: cor, padding: '20px', borderRadius: '10px', border: `1px solid ${isPerfect ? '#c3e6cb' : '#f5c6cb'}`, marginBottom: '20px' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <small style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.8 }}>Planejado pela Plataforma</small>
+                          <div style={{ fontSize: '2.2rem', fontWeight: 900 }}>{planejado} <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>volumes</span></div>
+                        </div>
+                        <div style={{ fontSize: '2rem', opacity: 0.2 }}><ArrowRightLeft size={32}/></div>
+                        <div style={{ textAlign: 'center' }}>
+                          <small style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.8 }}>Efetivado na Expedição</small>
+                          <div style={{ fontSize: '2.2rem', fontWeight: 900 }}>{totalReais} <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>volumes</span></div>
+                        </div>
+                      </div>
+                      
+                      {!isPerfect && (
+                        <div style={{ background: '#fff3cd', border: '1px solid #ffeeba', color: '#856404', padding: '12px', borderRadius: '8px', fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '20px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          <AlertTriangle size={18}/> Discrepância de {Math.abs(diff)} caixa(s) detectada! Verifique o fracionamento na tabela.
+                        </div>
+                      )}
+
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', background: '#fff', marginBottom: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.85rem' }}>
+                          <thead style={{ background: '#f8fafc' }}>
+                            <tr>
+                              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>TIPO EMBALAGEM</th>
+                              <th style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>PLANEJADO</th>
+                              <th style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>REAL (WMS)</th>
+                              <th style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>PESO ESTIMADO</th>
+                              <th style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>PESO REAL</th>
+                              <th style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>CONFERÊNCIA</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {allTypes.map(type => {
+                              const p = planSummary[type] || { qtd: 0, pesoTotal: 0 };
+                              const r = realSummary[type] || { qtd: 0, pesoTotal: 0 };
+                              const matchQtd = p.qtd === r.qtd;
+                              const matchPeso = Math.abs(p.pesoTotal - r.pesoTotal) < 0.05; 
+                              
+                              return (
+                                <tr key={type} style={{ borderBottom: '1px solid #f1f5f9', background: matchQtd && matchPeso ? '#fff' : '#fef2f2' }}>
+                                  <td style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', color: 'var(--primary)' }}>{type}</td>
+                                  <td style={{ padding: '12px' }}>{p.qtd}</td>
+                                  <td style={{ padding: '12px', color: matchQtd ? 'inherit' : '#ef4444', fontWeight: matchQtd ? 'normal' : 'bold' }}>{r.qtd}</td>
+                                  <td style={{ padding: '12px' }}>{p.pesoTotal.toFixed(1)} kg</td>
+                                  <td style={{ padding: '12px', color: matchPeso ? 'inherit' : '#ef4444', fontWeight: matchPeso ? 'normal' : 'bold' }}>{r.pesoTotal.toFixed(1)} kg</td>
+                                  <td style={{ padding: '12px' }}>
+                                    {matchQtd && matchPeso ? 
+                                      <span style={{ color: '#10b981', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><CheckCircle2 size={14}/> OK</span> : 
+                                      <span style={{ color: '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><X size={14}/> Erro</span>
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '15px', paddingTop: '20px', borderTop: '1px solid #e2e8f0', flexShrink: 0 }}>
+                      <button onClick={() => setAuditModalData({dIdx: dIdx})} style={{ flex: 1, padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>Voltar e Trocar Arquivo</button>
+                      <button onClick={confirmarAuditoriaWms} disabled={isSaving} style={{ flex: 1, padding: '14px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)' }}>
+                        {isSaving ? <Loader2 className="fa-spin"/> : <CheckCircle2/>} Confirmar Efetivação
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* SUB-MODAL 2: CAIXAS EFETIVADAS (Prévia do Banco) */}
+            {showCaixasEfetivadasModal !== null && (() => {
+              const dIdx = showCaixasEfetivadasModal;
+              const docEfetivado = pedidoModal.documentos[dIdx];
+              const caixas = docEfetivado?.caixas || [];
+
+              // 1. Aplica o Filtro de Busca
+              const termo = buscaCaixasSalvas.toLowerCase();
+              const caixasFiltradas = caixas.filter(cx => {
+                if (!termo) return true;
+                const matchNum = String(cx.num || cx.caixa || '').toLowerCase().includes(termo);
+                const matchProd = cx.produtos?.some(p => {
+                  const cod = typeof p === 'object' && p !== null ? (p.sku || p.referencia || p.produto || '') : String(p);
+                  return cod.toLowerCase().includes(termo);
+                });
+                return matchNum || matchProd;
+              });
+
+              // 2. Calcula o Resumo para a Coluna da Direita e Botão Copiar
+              const cxMapDetalhe = caixasFiltradas.reduce((acc, cx) => {
+                const nome = cx.num || cx.caixa || 'CAIXA';
+                if (!acc[nome]) acc[nome] = { qtd: 0, peso: 0 };
+                acc[nome].qtd += 1;
+                acc[nome].peso += parseFloat(cx.peso || 0);
+                return acc;
+              }, {});
+
+              return (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.6)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ background: '#f8fafc', padding: '0', borderRadius: '12px', width: '95%', maxWidth: '1200px', height: '90%', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
+                    
+                    {/* HEADER DO MODAL */}
+                    <div style={{ padding: '20px 25px', background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--primary)', fontSize: '1.4rem' }}>
+                        <Boxes size={26}/> Caixas Efetivadas e Salvas
+                      </h3>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1, justifyContent: 'flex-end' }}>
+                        {/* BARRA DE BUSCA */}
+                        <div style={{ position: 'relative', width: '100%', maxWidth: '300px' }}>
+                          <Search size={16} style={{ position: 'absolute', left: '12px', top: '10px', color: '#94a3b8' }}/>
+                          <input type="text" placeholder="Buscar Caixa ou SKU..." value={buscaCaixasSalvas} onChange={(e) => setBuscaCaixasSalvas(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.9rem', outline: 'none' }}/>
+                        </div>
+
+                        {/* BOTÃO COPIAR */}
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const texto = Object.keys(cxMapDetalhe).map(k => `${k} (${cxMapDetalhe[k].peso.toFixed(2)} kg): ${cxMapDetalhe[k].qtd} Un`).join('\n');
+                            navigator.clipboard.writeText(texto);
+                            const btn = e.currentTarget;
+                            const originalHTML = btn.innerHTML;
+                            btn.innerHTML = '<span style="display:flex;align-items:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Copiado!</span>';
+                            btn.style.color = '#10b981';
+                            btn.style.borderColor = '#10b981';
+                            btn.style.background = '#ecfdf5';
+                            setTimeout(() => {
+                              btn.innerHTML = originalHTML;
+                              btn.style.color = '#475569';
+                              btn.style.borderColor = '#cbd5e1';
+                              btn.style.background = '#f8fafc';
+                            }, 1500);
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '9px 15px', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                          title="Copiar resumo no padrão WMS"
+                        >
+                          <Copy size={16} /> Copiar Resumo
+                        </button>
+                        
+                        {/* FECHAR */}
+                        <button onClick={() => { setShowCaixasEfetivadasModal(null); setBuscaCaixasSalvas(''); }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', color: '#64748b', padding: '8px', borderRadius: '6px' }}><X size={24}/></button>
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                      
+                      {/* COLUNA ESQUERDA: LISTAGEM DE CAIXAS */}
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '25px' }}>
+                        {caixas.length === 0 ? (
+                          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px' }}>Nenhuma caixa importada ainda. Realize a auditoria.</div>
+                        ) : caixasFiltradas.length === 0 ? (
+                          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px' }}>Nenhuma caixa corresponde à busca.</div>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '15px' }}>
+                            {caixasFiltradas.map((cx, idx) => (
+                              <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', marginBottom: '10px' }}>
+                                   <strong style={{ color: 'var(--primary)', fontSize: '1.1rem' }}>{cx.num || 'CX'} <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>(Vol {caixas.indexOf(cx) + 1})</span></strong>
+                                   <span style={{ fontWeight: 'bold', color: '#64748b' }}>{parseFloat(cx.peso).toFixed(1)}kg</span>
+                                 </div>
+                                 <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                   {cx.produtos.map((p, pIdx) => (
+                                     <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#475569', padding: '4px 0', borderBottom: '1px dashed #f1f5f9' }}>
+                                       <span style={{flex:1}}>{p.referencia}</span>
+                                       <span style={{flex:2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '0 10px'}}>{p.descricao}</span>
+                                       <strong style={{color: '#0ea5e9'}}>{p.quantidade} un</strong>
+                                     </div>
+                                   ))}
+                                 </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* COLUNA DIREITA: RESUMO GERAL */}
+                      <div style={{ width: '320px', background: '#fff', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ padding: '20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <h4 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <ListTree size={18}/> Resumo Geral
+                          </h4>
+                        </div>
+                        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+                          {Object.keys(cxMapDetalhe).length === 0 ? (
+                             <div style={{ color: '#94a3b8', fontSize: '0.9rem', textAlign: 'center' }}>Nenhum dado para resumir.</div>
+                          ) : (
+                            Object.keys(cxMapDetalhe).map((k, idx) => (
+                              <div key={idx} style={{ fontSize: '0.9rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <strong style={{color: 'var(--primary)'}}>{k}</strong> 
+                                  <span style={{color: '#94a3b8', fontSize: '0.8rem'}}>({cxMapDetalhe[k].peso.toFixed(1)} kg)</span>
+                                </div>
+                                <span style={{fontWeight: 700, color: '#334155'}}>{cxMapDetalhe[k].qtd} Un</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
       {/* ==========================================
           RESTANTE DOS MODAIS (O.P., MASTER)
           ========================================== */}
+
+          {/* ======================================================= */}
+            {/* MODAL: INSERIR CÓDIGO DE BARRAS DA NOVA VARIAÇÃO          */}
+            {/* ======================================================= */}
+            {modalCodigoBarras && (
+              <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ position: 'relative', background: '#fff', padding: '35px', borderRadius: '16px', width: '450px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                  
+                  <button onClick={() => setModalCodigoBarras(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '5px' }}>
+                    <X size={24}/>
+                  </button>
+
+                  <h3 style={{ color: '#0f172a', fontSize: '1.4rem', margin: '0 0 10px 0' }}>Vincular Código de Barras</h3>
+                  <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '25px', lineHeight: '1.5' }}>
+                    Para registrar a embalagem <strong style={{color: '#ef4444'}}>CX{modalCodigoBarras.sku.qtdPadrao}</strong> do produto <strong>{modalCodigoBarras.sku.ref}</strong>, insira ou bipe o código de barras (EAN) abaixo:
+                  </p>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Bipar ou digitar EAN..." 
+                    autoFocus
+                    value={codigoBarrasInput}
+                    onChange={(e) => setCodigoBarrasInput(e.target.value)}
+                    style={{ width: '100%', padding: '14px', border: '2px solid #cbd5e1', borderRadius: '8px', fontSize: '1.1rem', outline: 'none', textAlign: 'center', marginBottom: '25px', color: '#1e293b', fontWeight: 'bold' }}
+                  />
+
+                  <div style={{ display: 'flex', gap: '15px' }}>
+                    <button onClick={() => setModalCodigoBarras(null)} style={{ flex: 1, padding: '12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer' }}>Cancelar</button>
+                    <button 
+                      onClick={salvarVariacaoBanco} 
+                      disabled={isSaving || !codigoBarrasInput.trim()} 
+                      style={{ flex: 1, padding: '12px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: (!codigoBarrasInput.trim() || isSaving) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)', opacity: (!codigoBarrasInput.trim() || isSaving) ? 0.7 : 1 }}
+                    >
+                      {isSaving ? <Loader2 className="fa-spin" size={18}/> : <CheckCircle2 size={18}/>} Confirmar e Salvar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
       {showOpModal && (
         <div className="op-modal-overlay" onClick={() => !isSavingOp && setShowOpModal(false)}>
@@ -1781,80 +2683,156 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       )}
 
       {showMasterModal && (
-        <div className="op-modal-overlay" onClick={() => setShowMasterModal(false)}>
-          <div className="op-modal-content" style={{maxWidth: '900px', padding: '25px', boxSizing: 'border-box'}} onClick={(e) => e.stopPropagation()}>
+        <div className="op-modal-overlay" onClick={() => { setShowMasterModal(false); cancelarEdicaoMaster(); }}>
+          <div className="op-modal-content" style={{maxWidth: '950px', padding: '25px', boxSizing: 'border-box'}} onClick={(e) => e.stopPropagation()}>
             <div className="op-modal-header">
               <div className="op-modal-title">
                 <div className="icon-wrap" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
                 <div><h2>Dicionário de Caixas Master</h2><p>Padrões de embalagem, quantidade e EAN por Produto.</p></div>
               </div>
-              <button className="btn-close-modal" onClick={() => setShowMasterModal(false)}><X size={24}/></button>
+              <button className="btn-close-modal" onClick={() => { setShowMasterModal(false); cancelarEdicaoMaster(); }}><X size={24}/></button>
             </div>
             
             <div className="op-modal-body" style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
               
-              <div style={{ display: 'flex', alignItems: 'center', width: '100%', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 12px' }}>
-                <Search size={18} color="#94a3b8" />
-                <input 
-                  type="text" 
-                  placeholder="Pesquisar por Cód. REF, Nome do Produto ou Tipo de Caixa..." 
-                  value={buscaMaster}
-                  onChange={(e) => setBuscaMaster(e.target.value)}
-                  style={{ flex: 1, padding: '12px 10px', border: 'none', background: 'transparent', outline: 'none', color: '#334155' }}
-                  autoFocus
-                />
+              {/* BARRA DE FERRAMENTAS E BUSCA */}
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', flex: 1, background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 12px', minWidth: '300px' }}>
+                  <Search size={18} color="#94a3b8" />
+                  <input 
+                    type="text" 
+                    placeholder="Pesquisar por Cód. REF, Nome do Produto ou Tipo de Caixa..." 
+                    value={buscaMaster}
+                    onChange={(e) => setBuscaMaster(e.target.value)}
+                    style={{ flex: 1, padding: '12px 10px', border: 'none', background: 'transparent', outline: 'none', color: '#334155' }}
+                    disabled={modoEdicaoMaster !== null}
+                    autoFocus
+                  />
+                </div>
+                
+                <button 
+                  onClick={() => iniciarEdicaoMaster()}
+                  disabled={modoEdicaoMaster !== null}
+                  style={{ background: '#db2777', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '8px', fontWeight: 'bold', cursor: modoEdicaoMaster !== null ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', opacity: modoEdicaoMaster !== null ? 0.5 : 1 }}
+                >
+                  <Plus size={18} /> Novo Produto
+                </button>
               </div>
 
-              <div style={{ maxHeight: '450px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', paddingRight: '5px' }}>
-                {caixasMasterFiltradas.length === 0 ? (
+              {/* LISTAGEM E FORMULÁRIOS */}
+              <div style={{ maxHeight: '550px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px', paddingRight: '5px' }}>
+                
+                {/* FORMULÁRIO DE CRIAÇÃO/EDIÇÃO (Renderiza no topo quando ativo) */}
+                {modoEdicaoMaster && (
+                  <div style={{ gridColumn: '1 / -1', background: '#fff', padding: '25px', borderRadius: '12px', border: '2px solid #db2777', boxShadow: '0 10px 25px -5px rgba(219, 39, 119, 0.15)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '15px' }}>
+                      <h3 style={{ margin: 0, color: '#db2777', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Edit size={20}/> {modoEdicaoMaster === 'NOVO' ? 'Cadastrar Novo Produto' : `Editando REF: ${formMaster.ref}`}
+                      </h3>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>Código REF</label>
+                        <input type="text" value={formMaster.ref} onChange={(e) => setFormMaster({...formMaster, ref: e.target.value.toUpperCase()})} disabled={modoEdicaoMaster !== 'NOVO'} placeholder="Ex: 012131" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', outline: 'none', background: modoEdicaoMaster !== 'NOVO' ? '#f1f5f9' : '#fff' }}/>
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>Nome do Produto</label>
+                        <input type="text" value={formMaster.nome} onChange={(e) => setFormMaster({...formMaster, nome: e.target.value})} placeholder="Ex: OBTURADOR PVC FLEXÍVEL" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', outline: 'none' }}/>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <strong style={{ color: '#334155', fontSize: '0.95rem' }}>Variações e Embalagens</strong>
+                        <button onClick={() => setFormMaster({...formMaster, variacoes: [...formMaster.variacoes, {caixa: '', quantidade: '', peso: '', codigoBarras: ''}]})} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Plus size={14}/> Add Variação
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {formMaster.variacoes.map((v, vIdx) => (
+                          <div key={vIdx} style={{ display: 'flex', gap: '10px', background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', alignItems: 'flex-end' }}>
+                            <div style={{ flex: 1 }}><label style={{ fontSize: '0.7rem', color: '#64748b' }}>Tipo (Ex: CAIXA 1)</label><input type="text" value={v.caixa} onChange={(e) => { const novas = [...formMaster.variacoes]; novas[vIdx].caixa = e.target.value; setFormMaster({...formMaster, variacoes: novas}); }} style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', outline: 'none' }}/></div>
+                            <div style={{ width: '80px' }}><label style={{ fontSize: '0.7rem', color: '#64748b' }}>Qtd</label><input type="number" value={v.quantidade} onChange={(e) => { const novas = [...formMaster.variacoes]; novas[vIdx].quantidade = e.target.value; setFormMaster({...formMaster, variacoes: novas}); }} style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', outline: 'none' }}/></div>
+                            <div style={{ width: '80px' }}><label style={{ fontSize: '0.7rem', color: '#64748b' }}>Peso (kg)</label><input type="number" step="0.1" value={v.peso} onChange={(e) => { const novas = [...formMaster.variacoes]; novas[vIdx].peso = e.target.value; setFormMaster({...formMaster, variacoes: novas}); }} style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', outline: 'none' }}/></div>
+                            <div style={{ flex: 1.5 }}><label style={{ fontSize: '0.7rem', color: '#64748b' }}>Cód. Barras (EAN)</label><input type="text" value={v.codigoBarras} onChange={(e) => { const novas = [...formMaster.variacoes]; novas[vIdx].codigoBarras = e.target.value; setFormMaster({...formMaster, variacoes: novas}); }} style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', outline: 'none' }}/></div>
+                            <button onClick={() => { const novas = formMaster.variacoes.filter((_, i) => i !== vIdx); setFormMaster({...formMaster, variacoes: novas}); }} style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#ef4444', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={16}/></button>
+                          </div>
+                        ))}
+                        {formMaster.variacoes.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '10px' }}>Nenhuma variação adicionada. Adicione pelo menos uma.</div>}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '15px', marginTop: '20px' }}>
+                      <button onClick={cancelarEdicaoMaster} style={{ padding: '10px 20px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
+                      <button onClick={salvarDicionarioMaster} disabled={isSaving} style={{ padding: '10px 25px', background: '#db2777', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                         {isSaving ? <Loader2 className="fa-spin" size={18}/> : <CheckCircle2 size={18}/>} Salvar Produto
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* RENDERIZAÇÃO DOS CARDS NORMAIS (Oculta durante criação de NOVO, mostra os outros durante edição) */}
+                {caixasMasterFiltradas.length === 0 && modoEdicaoMaster === null ? (
                   <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
                     {buscaMaster ? 'Nenhum produto ou variação encontrada para essa busca.' : 'O dicionário de Caixas Master está vazio.'}
                   </div>
                 ) : (
-                  caixasMasterFiltradas.map(master => (
-                    <div key={master.id} style={{ display: 'flex', flexDirection: 'column', background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                      
-                      <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '8px', marginBottom: '10px' }}>
-                        <strong style={{ color: '#db2777', fontSize: '1rem', display: 'block' }}>
-                          REF: {master.ref || 'S/N'}
-                        </strong>
-                        <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginTop: '4px', lineHeight: '1.2' }}>
-                          {master.nome || 'Produto sem nome'}
-                        </span>
-                      </div>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {master.variacoes && master.variacoes.length > 0 ? (
-                          master.variacoes.map((v, vIdx) => (
-                            <div key={vIdx} style={{ background: '#f8fafc', padding: '8px', borderRadius: '6px', border: '1px solid #f1f5f9', fontSize: '0.8rem', color: '#475569' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                <strong style={{ color: '#334155' }}>{v.caixa || 'CX Padrão'}</strong>
-                                <span style={{ fontWeight: 600, color: '#0ea5e9' }}>{v.quantidade || 'N/A'}</span>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#94a3b8' }}>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  EAN: {v.codigoBarras || 'N/A'}
-                                  {v.codigoBarras && (
-                                    <button 
-                                      onClick={() => handleCopyEan(v.codigoBarras)}
-                                      title="Copiar EAN"
-                                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copiedEan === v.codigoBarras ? '#10b981' : '#94a3b8', display: 'flex', alignItems: 'center', padding: 0 }}
-                                    >
-                                      {copiedEan === v.codigoBarras ? <Check size={14} /> : <Copy size={14} />}
-                                    </button>
-                                  )}
-                                </span>
-                                <span>{v.peso || 0} kg</span>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma variação cadastrada.</span>
-                        )}
-                      </div>
+                  caixasMasterFiltradas.map(master => {
+                    if (modoEdicaoMaster === master.id || modoEdicaoMaster === master.ref) return null; // Não renderiza o card normal se ele estiver sendo editado acima
+                    
+                    return (
+                      <div key={master.id || master.ref} style={{ display: 'flex', flexDirection: 'column', background: '#fff', padding: '18px', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', position: 'relative' }}>
+                        
+                        {/* BOTÕES DE AÇÃO DO CARD */}
+                        <div style={{ position: 'absolute', top: '15px', right: '15px', display: 'flex', gap: '8px' }}>
+                          <button onClick={() => iniciarEdicaoMaster(master)} disabled={modoEdicaoMaster !== null} style={{ background: '#f1f5f9', border: 'none', padding: '6px', borderRadius: '6px', color: '#0284c7', cursor: modoEdicaoMaster !== null ? 'not-allowed' : 'pointer', opacity: modoEdicaoMaster !== null ? 0.3 : 1 }} title="Editar"><Edit size={16}/></button>
+                          <button onClick={() => excluirDicionarioMaster(master.ref || master.id)} disabled={modoEdicaoMaster !== null} style={{ background: '#fef2f2', border: 'none', padding: '6px', borderRadius: '6px', color: '#ef4444', cursor: modoEdicaoMaster !== null ? 'not-allowed' : 'pointer', opacity: modoEdicaoMaster !== null ? 0.3 : 1 }} title="Excluir"><Trash2 size={16}/></button>
+                        </div>
 
-                    </div>
-                  ))
+                        <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '12px', paddingRight: '60px' }}>
+                          <strong style={{ color: '#db2777', fontSize: '1.1rem', display: 'block' }}>
+                            REF: {master.ref || 'S/N'}
+                          </strong>
+                          <span style={{ fontSize: '0.85rem', color: '#64748b', display: 'block', marginTop: '4px', lineHeight: '1.3' }}>
+                            {master.nome || 'Produto sem nome'}
+                          </span>
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {master.variacoes && master.variacoes.length > 0 ? (
+                            master.variacoes.map((v, vIdx) => (
+                              <div key={vIdx} style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #f1f5f9', fontSize: '0.8rem', color: '#475569' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                  <strong style={{ color: '#334155' }}>{v.caixa || 'CX Padrão'}</strong>
+                                  <span style={{ fontWeight: 800, color: '#0ea5e9', fontSize: '0.9rem' }}>{v.quantidade || 'N/A'} un</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    EAN: <strong style={{ color: '#64748b' }}>{v.codigoBarras || 'N/A'}</strong>
+                                    {v.codigoBarras && (
+                                      <button 
+                                        onClick={() => handleCopyEan(v.codigoBarras)}
+                                        title="Copiar EAN"
+                                        style={{ background: '#fff', border: '1px solid #cbd5e1', cursor: 'pointer', color: copiedEan === v.codigoBarras ? '#10b981' : '#94a3b8', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '4px' }}
+                                      >
+                                        {copiedEan === v.codigoBarras ? <Check size={14} /> : <Copy size={14} />}
+                                      </button>
+                                    )}
+                                  </span>
+                                  <strong style={{ color: '#64748b' }}>{v.peso || 0} kg</strong>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', padding: '10px', textAlign: 'center', background: '#f8fafc', borderRadius: '6px' }}>Nenhuma variação cadastrada.</span>
+                          )}
+                        </div>
+
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
