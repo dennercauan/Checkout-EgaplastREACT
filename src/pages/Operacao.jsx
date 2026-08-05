@@ -11,7 +11,7 @@ import { auth, db } from '../firebase';
 import { 
   ArrowLeft, Plus, FileText, CheckCircle2, 
   Clock, MoreVertical, Search, Boxes, X, User, Trash2, PackagePlus, Loader2, Edit, Check, Pause, Play, AlertCircle, MapPin, UploadCloud,
-  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle, Gift} from 'lucide-react';
 import '../css/Operacao.css';
 
 export default function Operacao({ isAdmin }) {
@@ -68,6 +68,9 @@ export default function Operacao({ isAdmin }) {
   const [showCaixasEfetivadasModal, setShowCaixasEfetivadasModal] = useState(null);
   const [auditModalData, setAuditModalData] = useState(null);
   const [buscaCaixasSalvas, setBuscaCaixasSalvas] = useState('');
+  const [abaAtivaComum, setAbaAtivaComum] = useState({}); // Controla a aba por documento { [dIdx]: 0 ou 1 }
+  const [skusExpandidosComum, setSkusExpandidosComum] = useState({}); // Controla as gavetas { [`${dIdx}-${ref}`]: boolean }
+  const [modalSucesso, setModalSucesso] = useState(null); // Vai guardar { titulo, mensagem }
 
   const toggleDocExpandido = (idx) => {
     setDocsExpandidos(prev => ({ ...prev, [idx]: !prev[idx] }));
@@ -143,6 +146,9 @@ export default function Operacao({ isAdmin }) {
   const [docsTemporarios, setDocsTemporarios] = useState([]);
   const [isEditingObs, setIsEditingObs] = useState(false);
   const [skusExpandidos, setSkusExpandidos] = useState({});
+
+
+
 
   // ==========================================
   // ESTADOS PARA CADASTRO MANUAL DE VARIAÇÃO
@@ -269,6 +275,98 @@ export default function Operacao({ isAdmin }) {
   };
 
   // ==========================================
+  // UPLOAD DE CSV - PEDIDOS COMUNS (WMS DIRETO)
+  // ==========================================
+  const handleUploadWMSComum = (e, dIdx) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsUploading(true);
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target.result;
+        const linhas = text.trim().split(/\r\n|\n|\r/);
+        if (linhas.length <= 1) throw new Error("Arquivo vazio");
+
+        let separador = linhas[0].includes(';') ? ';' : ',';
+        const cabecalho = linhas[0].split(separador).map(c => c.trim().toUpperCase().replace(/"/g, ''));
+        
+        // Mapeamento otimizado para as colunas do seu WMS
+        const idxCaixa = cabecalho.findIndex(c => c.includes("TIPO EMBALAGEM") || c.includes("CAIXA") || c.includes("VOLUME"));
+        const idxPeso = cabecalho.findIndex(c => c.includes("PESO"));
+        const idxIdUnico = cabecalho.findIndex(c => c.includes("ID EMBALAGEM") || c === "ID" || c.includes("RASTREIO"));
+        const idxRef = cabecalho.findIndex(c => c === "PRODUTO" || c.includes("CÓDIGO") || c === "REF");
+        const idxDesc = cabecalho.findIndex(c => c.includes("DESCRIÇÃO") || c.includes("DESCRICAO"));
+        const idxQtd = cabecalho.findIndex(c => c.includes("QUANTIDADE") || c.includes("QTDE"));
+
+        if (idxRef === -1 || idxQtd === -1 || idxCaixa === -1) {
+          throw new Error("Colunas obrigatórias (Caixa, Código Produto, Quantidade) não encontradas.");
+        }
+
+        const caixasMap = {};
+
+        for (let i = 1; i < linhas.length; i++) {
+          const cols = linhas[i].split(separador).map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.length <= idxRef) continue;
+          
+          const nomeCaixa = cols[idxCaixa] || `CAIXA S/N`;
+          const pesoCaixa = idxPeso !== -1 ? parseFloat(String(cols[idxPeso]).replace(',', '.')) || 0 : 0;
+          
+          const idUnico = idxIdUnico !== -1 && cols[idxIdUnico] ? cols[idxIdUnico] : `S/N-linha-${i}`;
+          
+          const ref = cols[idxRef];
+          const desc = idxDesc !== -1 ? cols[idxDesc] : "Produto";
+          const qtd = parseInt(String(cols[idxQtd]).replace(/\D/g, '')) || 0;
+
+          if (!ref || qtd <= 0) continue;
+
+          if (!caixasMap[idUnico]) {
+            caixasMap[idUnico] = { num: nomeCaixa, peso: pesoCaixa, idUnico: idUnico, produtos: [] };
+          } else {
+            caixasMap[idUnico].peso = Math.max(caixasMap[idUnico].peso, pesoCaixa);
+          }
+          
+          const prodExistente = caixasMap[idUnico].produtos.find(p => p.referencia === ref);
+          
+          if (prodExistente) {
+            prodExistente.quantidade += qtd; 
+          } else {
+            caixasMap[idUnico].produtos.push({ referencia: ref, descricao: desc, quantidade: qtd }); 
+          }
+        }
+
+        const caixasFinais = Object.values(caixasMap);
+
+        // 👇 TRAVA DE SEGURANÇA: Peso 0.0
+        const caixasComZero = caixasFinais.filter(c => parseFloat(c.peso) === 0);
+        if (caixasComZero.length > 0) {
+          setAlertaPesoZero({
+            origem: 'comum',
+            dIdx,
+            caixasProblematicas: caixasComZero,
+            caixasNormais: caixasFinais.filter(c => parseFloat(c.peso) > 0),
+            caixasOriginais: caixasFinais
+          });
+          setIsUploading(false);
+          if (e.target) e.target.value = null; 
+          return; // Interrompe o fluxo para exibir o Alerta
+        }
+
+        // Se passar limpo, salva normalmente
+        await finalizarImportacaoComum(dIdx, caixasFinais);
+
+      } catch (error) {
+        alert("Erro ao ler CSV: " + error.message);
+      } finally {
+        setIsUploading(false);
+        if (e.target) e.target.value = null; 
+      }
+    };
+    reader.readAsText(file, 'ISO-8859-1'); 
+  };
+
+  // ==========================================
   // ESTADOS E FUNÇÕES DO CRUD DE CAIXAS MANUAIS
   // ==========================================
   const [edicaoCaixa, setEdicaoCaixa] = useState(null); // Guarda { dIdx, cIdx (ou -1 pra nova) }
@@ -339,6 +437,22 @@ export default function Operacao({ isAdmin }) {
     }
   };
 
+  const toggleBonificacaoCaixa = async (dIdx, cIdx) => {
+    try {
+      const novosDocs = [...pedidoModal.documentos];
+      const caixa = novosDocs[dIdx].caixas[cIdx];
+      // Inverte o status de bonificação da caixa específica
+      caixa.isBonificacao = !caixa.isBonificacao;
+      
+      const refFinal = pedidoModal._isLegacy ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) : doc(db, 'pedidos', pedidoModal.id);
+      await updateDoc(refFinal, { documentos: novosDocs });
+      
+      setForceRender(prev => prev + 1); // Atualiza a tela na mesma hora
+    } catch(e) {
+      alert("Erro ao alterar o status da caixa.");
+    }
+  };
+  
   // ==========================================
   // ESTADOS E FUNÇÕES DO DICIONÁRIO MASTER
   // ==========================================
@@ -945,11 +1059,13 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     reader.readAsText(file, 'ISO-8859-1');
   };
 
+  // ==========================================
   // LÊ O CSV FINAL DE CAIXAS DO WMS (AUDITORIA)
+  // ==========================================
   const handleAuditoriaUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !auditModalData) return;
-    const currentIdx = auditModalData.dIdx; // Puxa o ID do documento pelo modal que já está aberto
+    const currentIdx = auditModalData.dIdx;
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -994,13 +1110,28 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           };
         });
 
-        // Atualiza o modal que já estava aberto para agora mostrar o relatório!
+        // 👇 TRAVA DE SEGURANÇA: Peso 0.0 (Para Pedidos Master)
+        const caixasComZero = caixasReais.filter(c => parseFloat(c.peso) === 0);
+        if (caixasComZero.length > 0) {
+          setAlertaPesoZero({
+            origem: 'auditoria',
+            dIdx: currentIdx,
+            fileName: file.name,
+            caixasProblematicas: caixasComZero,
+            caixasNormais: caixasReais.filter(c => parseFloat(c.peso) > 0),
+            caixasOriginais: caixasReais
+          });
+          if (e.target) e.target.value = null;
+          return; // Interrompe o fluxo e chama o alerta
+        }
+
+        // Se passar limpo, abre o relatório de auditoria direto
         setAuditModalData({ dIdx: currentIdx, fileName: file.name, caixasReais: caixasReais });
 
       } catch (error) {
         alert("Erro ao ler caixas efetivadas: " + error.message);
       } finally {
-        e.target.value = null; 
+        if (e.target) e.target.value = null; 
       }
     };
     reader.readAsText(file, 'ISO-8859-1');
@@ -1052,7 +1183,7 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       return novoEstado;
     });
   };
-  // SALVA A AUDITORIA FINAL NO BANCO DE DADOS
+ // SALVA A AUDITORIA FINAL NO BANCO DE DADOS
   const confirmarAuditoriaWms = async () => {
     if (!auditModalData || !auditModalData.caixasReais) return;
     setIsSaving(true);
@@ -1079,7 +1210,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       novosDocumentos[dIdx] = { 
         ...novosDocumentos[dIdx], 
         caixas: caixasReais,
-        // 👇 AQUI: SALVA O RELATÓRIO DEFINITIVO PARA HISTÓRICO!
         auditoria: {
           arquivo: fileName,
           planejado: planejado,
@@ -1095,9 +1225,14 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         completedAt: serverTimestamp()
       });
       
-      alert("Auditoria validada e histórico salvo com sucesso!");
       setAuditModalData(null);
       setShowCaixasEfetivadasModal(dIdx); 
+      
+      // 👇 SAÍDA SUAVE COM MODAL ANIMADO EM VEZ DE ALERT
+      setModalSucesso({
+        titulo: "Auditoria Validada!",
+        mensagem: "O arquivo do WMS foi processado, cruzado com o planejamento e salvo no histórico com sucesso!"
+      });
       
     } catch (error) {
       alert("Erro ao salvar auditoria no banco: " + error.message);
@@ -1270,18 +1405,45 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     setTimeout(() => setCopiedEan(null), 2000);
   };
 
+  // Lógica do Resumo Geral (Aba 1) com suporte a Bonificação
   let detalheSkus = 0;
   const cxMapDetalhe = {};
+  
   if (pedidoModal) {
     (pedidoModal.documentos || []).forEach(d => {
+      const isBonifDoc = String(d.tipo || '').toUpperCase().includes('BONIF');
       (d.caixas || []).forEach(cx => {
          (cx.produtos || []).forEach(p => detalheSkus += parseInt(p.quantidade) || 0);
-         let n = cx.num || "CX";
-         if(!cxMapDetalhe[n]) cxMapDetalhe[n] = { qtd: 0, peso: 0 };
-         cxMapDetalhe[n].qtd++; cxMapDetalhe[n].peso += parseFloat(cx.peso) || 0;
+         
+         const isBoxBonif = isBonifDoc || cx.isBonificacao;
+         let n = String(cx.num || "CX").toUpperCase();
+         
+         if (isBoxBonif && !n.includes('BONIF')) n = `${n} BONIF`;
+
+         if(!cxMapDetalhe[n]) cxMapDetalhe[n] = { qtd: 0, peso: 0, originalName: n, isBonif: isBoxBonif };
+         cxMapDetalhe[n].qtd++; 
+         cxMapDetalhe[n].peso += parseFloat(cx.peso) || 0;
       });
     });
   }
+
+  // Ordenação inteligente (NF Primeiro, Bonif depois, por ordem numérica)
+  const resumoOrdenadoComum = Object.values(cxMapDetalhe).sort((a, b) => {
+    // 1º Critério: Força para que seja um booleano estrito (true ou false) evitando bugs de undefined
+    const isBonifA = Boolean(a.isBonif);
+    const isBonifB = Boolean(b.isBonif);
+    if (isBonifA !== isBonifB) return isBonifA ? 1 : -1;
+    
+    // 2º Critério: Extrai apenas o PRIMEIRO número da caixa (Evita ler CAIXA 10X15 como 1015)
+    const matchA = a.originalName.match(/\d+/);
+    const matchB = b.originalName.match(/\d+/);
+    const numA = matchA ? parseInt(matchA[0]) : 0;
+    const numB = matchB ? parseInt(matchB[0]) : 0;
+    
+    // 3º Critério: Se forem do mesmo número (ou sem número), desempata por ordem alfabética
+    if (numA === numB) return a.originalName.localeCompare(b.originalName);
+    return numA - numB;
+  });
 
   // ==========================================
   // NOVO MOTOR DO RANKING DIÁRIO (LIMITADO A 300 PTS/CAIXA)
@@ -1415,6 +1577,73 @@ const handlePlanejamentoUpload = (e, dIdx) => {
 
   }, [pedidosProcessados, opsDoDia, usuarios, currentTime]);
 
+  // ==========================================
+  // ESTADOS E FUNÇÕES DO ALERTA DE PESO ZERO
+  // ==========================================
+  const [alertaPesoZero, setAlertaPesoZero] = useState(null);
+
+  const finalizarImportacaoComum = async (dIdx, caixasFinais) => {
+    setIsSaving(true);
+    try {
+      const novosDocs = [...pedidoModal.documentos];
+      novosDocs[dIdx] = { ...novosDocs[dIdx], caixas: caixasFinais };
+      
+      const todosPossuemCaixas = novosDocs.every(doc => doc.caixas && doc.caixas.length > 0);
+      const payload = { documentos: novosDocs };
+      
+      if (todosPossuemCaixas) {
+        payload.efetivado = true;
+        payload.completedAt = serverTimestamp();
+      }
+
+      const refFinal = pedidoModal._isLegacy ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) : doc(db, 'pedidos', pedidoModal.id);
+      
+      await updateDoc(refFinal, payload);
+      pedidoModal.documentos = novosDocs;
+      
+      // 👇 SAÍDA SUAVE E FEEDBACK PARA TODOS OS CENÁRIOS
+      if (todosPossuemCaixas) {
+        pedidoModal.efetivado = true;
+        setModalSucesso({
+          titulo: "Romaneio Efetivado!",
+          mensagem: "Todos os documentos foram importados e o romaneio foi finalizado automaticamente."
+        });
+      } else {
+        setModalSucesso({
+          titulo: "Caixas Importadas!",
+          mensagem: "As caixas deste documento foram carregadas com sucesso. Faltam outros documentos para finalizar o romaneio."
+        });
+      }
+      
+      setForceRender(prev => prev + 1); 
+    } catch (error) {
+      alert("Erro ao salvar caixas importadas.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleResolvePesoZero = async (acao) => {
+    if (!alertaPesoZero) return;
+    const { origem, dIdx, caixasNormais, caixasOriginais, fileName } = alertaPesoZero;
+    const caixasEscolhidas = acao === 'excluir' ? caixasNormais : caixasOriginais;
+
+    if (acao === 'excluir') {
+       if (!window.confirm("Tem certeza? A caixa será excluída permanentemente da listagem.")) return;
+    } else {
+       if (!window.confirm("Tem certeza? Certifique-se que essa caixa existe fisicamente.")) return;
+    }
+
+    if (origem === 'comum') {
+       await finalizarImportacaoComum(dIdx, caixasEscolhidas);
+    } else if (origem === 'auditoria') {
+       setAuditModalData({ dIdx, fileName, caixasReais: caixasEscolhidas });
+    }
+    
+    setAlertaPesoZero(null);
+  };
+
+  // 👇 O SEU RETURN ORIGINAL FICA LOGO AQUI EMBAIXO
   return (
     <div className="op-wrapper">
       <header className="op-header">
@@ -2069,6 +2298,62 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                         </div>
                       );
                     })}
+
+                    {/* ==========================================
+          MODAL DE ALERTA DE SEGURANÇA: PESO ZERO
+          ========================================== */}
+      {alertaPesoZero && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.85)', zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '12px', width: '600px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
+            
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{ background: '#fef2f2', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px auto', color: '#ef4444' }}>
+                <AlertTriangle size={36} />
+              </div>
+              <h2 style={{ color: '#0f172a', fontSize: '1.4rem', margin: '0 0 10px 0' }}>Atenção: Caixa com Peso Zero!</h2>
+              <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', margin: 0 }}>
+                O sistema identificou {alertaPesoZero.caixasProblematicas.length === 1 ? 'um volume' : 'alguns volumes'} com <strong>peso 0.0kg</strong> no arquivo.
+              </p>
+            </div>
+
+            <div style={{ maxHeight: '250px', overflowY: 'auto', marginBottom: '25px', paddingRight: '5px' }}>
+              {alertaPesoZero.caixasProblematicas.map((cx, idx) => (
+                <div key={idx} style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '15px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #fca5a5', paddingBottom: '8px', marginBottom: '8px' }}>
+                    <strong style={{ color: '#b91c1c', fontSize: '1.1rem' }}>{cx.num || cx.caixa || 'CX INDEFINIDA'}</strong>
+                    <span style={{ background: '#ef4444', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>Peso: 0.0 kg</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {(cx.produtos || []).map((p, pIdx) => (
+                       <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#7f1d1d' }}>
+                         <span style={{ fontWeight: 600 }}>{p.referencia || p.ref}</span>
+                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, margin: '0 10px' }}>{p.descricao || p.desc}</span>
+                         <strong>{p.quantidade || p.qtd} un</strong>
+                       </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <button 
+                onClick={() => handleResolvePesoZero('excluir')} 
+                style={{ flex: 1, padding: '12px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <Trash2 size={18}/> Excluir Caixa(s)
+              </button>
+              <button 
+                onClick={() => handleResolvePesoZero('cancelar')} 
+                style={{ flex: 1, padding: '12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <X size={18}/> Cancelar (Manter Caixa)
+              </button>
+            </div>
+            
+          </div>
+        </div>
+      )}
                   </div>
                 </div>
               ) : (
@@ -2191,23 +2476,19 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                             </span>
                           </strong>
                           
-                          {Object.keys(cxMapDetalhe).length > 0 && (
+                          {resumoOrdenadoComum.length > 0 && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const texto = Object.keys(cxMapDetalhe).map(k => `${k} (${cxMapDetalhe[k].peso.toFixed(2)} kg): ${cxMapDetalhe[k].qtd} Un`).join('\n');
+                                const texto = resumoOrdenadoComum.map(k => `${k.originalName} (${k.peso.toFixed(2)} kg): ${k.qtd} Un`).join('\n');
                                 navigator.clipboard.writeText(texto);
                                 const btn = e.currentTarget;
                                 const originalText = btn.innerHTML;
                                 btn.innerHTML = 'Copiado!';
-                                btn.style.color = '#10b981';
-                                btn.style.borderColor = '#10b981';
-                                btn.style.background = '#ecfdf5';
+                                btn.style.color = '#10b981'; btn.style.borderColor = '#10b981'; btn.style.background = '#ecfdf5';
                                 setTimeout(() => {
                                   btn.innerHTML = originalText;
-                                  btn.style.color = '#475569';
-                                  btn.style.borderColor = '#cbd5e1';
-                                  btn.style.background = '#f8fafc';
+                                  btn.style.color = '#475569'; btn.style.borderColor = '#cbd5e1'; btn.style.background = '#f8fafc';
                                 }, 1500);
                               }}
                               style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
@@ -2219,18 +2500,18 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                         </div>
     
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
-                          {Object.keys(cxMapDetalhe).length === 0 ? (
+                          {resumoOrdenadoComum.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '25px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#94a3b8', fontSize: '0.9rem' }}>
-                              Nenhuma caixa importada do WMS.
+                              Nenhuma caixa importada.
                             </div>
                           ) : (
-                            Object.keys(cxMapDetalhe).map((k, idx) => (
-                              <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                            resumoOrdenadoComum.map((k, idx) => (
+                              <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? '#fef2f2' : '#f8fafc', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${k.isBonif ? '#fca5a5' : '#e2e8f0'}` }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <strong style={{color: 'var(--primary)'}}>{k}</strong> 
-                                  <span style={{color: '#94a3b8', fontSize: '0.8rem'}}>({cxMapDetalhe[k].peso.toFixed(2)} kg)</span>
+                                  <strong style={{color: k.isBonif ? '#ef4444' : 'var(--primary)'}}>{k.originalName}</strong> 
+                                  <span style={{color: k.isBonif ? '#f87171' : '#94a3b8', fontSize: '0.8rem'}}>({k.peso.toFixed(2)} kg)</span>
                                 </div>
-                                <span style={{fontWeight: 700, color: '#334155'}}>{cxMapDetalhe[k].qtd} Un</span>
+                                <span style={{fontWeight: 700, color: k.isBonif ? '#b91c1c' : '#334155'}}>{k.qtd} Un</span>
                               </div>
                             ))
                           )}
@@ -2240,147 +2521,161 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                     </div>
                   )}
 
-                  {/* ABA 2: CAIXAS COMPLETAS E WMS (ACORDEON COMUM) */}
+                  {/* ABA 2: CAIXAS COMPLETAS E WMS (ACORDEON COMUM -> NOVO LAYOUT WMS) */}
                   {activeTab === 'caixas' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      
-                      <h3 style={{ fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px', margin: '0' }}>
-                        <ListTree size={20}/> Caixas Registradas por Documento
-                      </h3>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        {(pedidoModal.documentos || []).map((doc, dIdx) => {
-                          const termoBusca = (buscasDocumentos[dIdx] || '').toLowerCase();
-                          const caixasFiltradas = (doc.caixas || []).filter(cx => {
-                            if (!termoBusca) return true;
-                            const matchNum = String(cx.num || cx.caixa || '').toLowerCase().includes(termoBusca);
-                            const matchProd = cx.produtos?.some(p => {
-                              const cod = typeof p === 'object' && p !== null ? (p.sku || p.referencia || p.produto || '') : String(p);
-                              return cod.toLowerCase().includes(termoBusca);
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                      {(pedidoModal.documentos || []).map((doc, dIdx) => {
+                        const caixas = doc.caixas || [];
+
+                        // Gera o resumo de SKUs a partir das caixas importadas
+                        const skusAgrupados = caixas.reduce((acc, cx) => {
+                          (cx.produtos || []).forEach(p => {
+                            if (!acc[p.referencia]) acc[p.referencia] = { ref: p.referencia, desc: p.descricao, qtdTotal: 0, caixasDetalhadas: [] };
+                            acc[p.referencia].qtdTotal += parseInt(p.quantidade) || 0;
+                            acc[p.referencia].caixasDetalhadas.push({
+                              idUnico: cx.idUnico || cx.idExpedicao || '-',
+                              tipoCaixa: cx.num || 'CAIXA',
+                              peso: cx.peso || 0,
+                              qtdNestaCaixa: parseInt(p.quantidade) || 0
                             });
-                            return matchNum || matchProd;
                           });
-    
-                          return (
-                            <div key={dIdx} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+                          return acc;
+                        }, {});
+                       const listaSkus = Object.values(skusAgrupados);
+
+                        // 1. LÓGICA DO FILTRO DE BUSCA
+                        const termoBusca = (buscasDocumentos[dIdx] || '').toLowerCase();
+                        const skusFiltrados = listaSkus.filter(sku => 
+                          sku.ref.toLowerCase().includes(termoBusca) || 
+                          (sku.desc && sku.desc.toLowerCase().includes(termoBusca))
+                        );
+
+                        return (
+                          <div key={dIdx} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden', padding: '25px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                            
+                            {/* HEADER DO DOCUMENTO E AÇÕES */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+                              <h4 style={{ color: '#1e3a8a', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <Layers size={22} color="#1e3a8a" /> {doc.tipo} 
+                                <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
+                              </h4>
                               
-                              {/* HEADER ACORDEON */}
-                              <div 
-                                onClick={() => toggleDocExpandido(dIdx)}
-                                style={{ background: '#f1f5f9', padding: '12px 15px', borderBottom: docsExpandidos[dIdx] ? '1px solid #cbd5e1' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                  <span style={{ transform: docsExpandidos[dIdx] ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '0.8rem', color: '#64748b' }}>▼</span>
-                                  <strong style={{ color: '#334155', fontSize: '0.95rem' }}>{doc.tipo}</strong>
-                                  
-                                  <span style={{ background: '#e0e7ff', color: '#4f46e5', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', marginLeft: '5px' }}>
-                                    {caixasFiltradas.length} {caixasFiltradas.length === 1 ? 'Volume' : 'Volumes'}
-                                  </span>
-                                </div>
-                                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Responsável: {doc.responsavel?.split('@')[0]}</span>
-                              </div>
-                              
-                              {/* CORPO DO DOCUMENTO (EXPANSÍVEL) */}
-                              {docsExpandidos[dIdx] && (
-                                <div style={{ padding: '15px' }}>
-                                  
-                                  {/* BARRA DE FERRAMENTAS DO DOCUMENTO */}
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'center', background: '#f8fafc', padding: '15px', borderRadius: '6px', border: '1px dashed #cbd5e1', marginBottom: '15px' }}>
-                                    
-                                    {/* IMPORTAR CSV */}
-                                    <div>
-                                      <input 
-                                        type="file" accept=".csv" id={`csv-upload-${dIdx}`} style={{ display: 'none' }} disabled={isSaving || isUploading}
-                                        onChange={(e) => { setDocIndexSelecionado(dIdx); handleFileUpload(e); }}
-                                      />
-                                      <label htmlFor={`csv-upload-${dIdx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', color: '#475569', fontWeight: 600, transition: 'all 0.2s' }}>
-                                        {isUploading && docIndexSelecionado === dIdx ? <Loader2 size={16} className="fa-spin"/> : <UploadCloud size={16} color="#0ea5e9"/>}
-                                        {isUploading && docIndexSelecionado === dIdx ? 'Lendo CSV...' : 'Importar CSV'}
-                                      </label>
-                                    </div>
-    
-                                    {/* ADCIONAR MANUAL */}
-                                    <button 
-                                      onClick={() => handleAbrirAddCaixa(dIdx)}
-                                      disabled={isSaving || isUploading}
-                                      style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#10b981', color: '#fff', border: 'none', padding: '9px 12px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}
-                                    >
-                                      <Plus size={16}/> Caixa Manual
-                                    </button>
-    
-                                    {/* PESQUISA */}
-                                    <div style={{ flex: 1, minWidth: '200px', display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0 10px' }}>
-                                      <Search size={16} color="#94a3b8"/>
-                                      <input 
-                                        type="text" placeholder="Buscar Caixa ou REF..." 
-                                        value={buscasDocumentos[dIdx] || ''} onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
-                                        style={{ width: '100%', padding: '9px 8px', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.85rem', color: '#334155' }}
-                                      />
-                                    </div>
-    
-                                    {/* STATUS DE PRÉVIA CSV */}
-                                    {docIndexSelecionado === dIdx && caixasPrevia.length > 0 && (
-                                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
-                                          <span style={{ fontSize: '0.8rem', color: '#64748b', background: '#e2e8f0', padding: '4px 8px', borderRadius: '4px' }}><strong>{caixasPrevia.length}</strong> lidas</span>
-                                          <button onClick={handleSalvarCaixasFirebase} disabled={isSaving} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isSaving ? <Loader2 size={14} className="fa-spin"/> : <CheckCircle2 size={14}/>} Salvar</button>
-                                          <button onClick={() => setCaixasPrevia([])} disabled={isSaving} style={{ background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}><X size={14}/> Cancelar</button>
-                                       </div>
-                                    )}
+                              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                
+                                {/* BARRA DE PESQUISA (Continua sendo exibida apenas se tiver caixas) */}
+                                {caixas.length > 0 && (
+                                  <div style={{ position: 'relative', width: '260px' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: '#94a3b8' }}/>
+                                    <input 
+                                      type="text" 
+                                      placeholder="Buscar Produto ou SKU..." 
+                                      value={buscasDocumentos[dIdx] || ''}
+                                      onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
+                                      style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', outline: 'none', color: '#334155', boxSizing: 'border-box' }}
+                                    />
                                   </div>
-    
-                                  {/* LISTAGEM DAS CAIXAS */}
-                                  {caixasFiltradas.length === 0 ? (
-                                    <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>Nenhuma caixa encontrada.</span>
-                                  ) : (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-                                      {caixasFiltradas.map((cx, cxIdx) => {
-                                        const caixaOriginalIdx = doc.caixas.indexOf(cx); 
-                                        
-                                        return (
-                                          <div key={cxIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px', position: 'relative' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #cbd5e1', paddingBottom: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                                              <strong style={{ color: 'var(--primary)' }}>{cx.num || cx.caixa || 'CX'}</strong>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{cx.peso || 0} kg</span>
-                                                <button onClick={() => handleExcluirCaixa(dIdx, caixaOriginalIdx)} title="Excluir Caixa" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}>
-                                                  <Trash2 size={14}/>
-                                                </button>
-                                              </div>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '120px', overflowY: 'auto', paddingRight: '4px' }}>
-                                              {(!cx.produtos || cx.produtos.length === 0) ? (
-                                                <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', padding: '4px', display: 'block', textAlign: 'center' }}>
-                                                  Volume avulso (sem detalhamento)
-                                                </span>
-                                              ) : (
-                                                Object.values((cx.produtos || []).reduce((acc, p) => {
-                                                  const isObj = typeof p === 'object' && p !== null;
-                                                  const codProduto = isObj ? (p.sku || p.referencia || p.produto || 'S/N') : String(p);
-                                                  const qtdProduto = isObj ? (parseInt(p.quantidade) || 1) : 1;
-                                                  const descricao = isObj ? p.descricao : '';
-                                                  if (!acc[codProduto]) acc[codProduto] = { cod: codProduto, qtd: 0, desc: descricao };
-                                                  acc[codProduto].qtd += qtdProduto;
-                                                  if (!acc[codProduto].desc && descricao) acc[codProduto].desc = descricao;
-                                                  return acc;
-                                                }, {})).map((item, pIdx) => (
-                                                  <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', background: '#fff', padding: '4px 6px', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
-                                                    <span style={{fontWeight: 600}} title={item.desc || ''}>{item.cod}</span>
-                                                    <span style={{color: '#0ea5e9', fontWeight: 'bold'}}>{item.qtd} un</span>
-                                                  </div>
-                                                ))
-                                              )}
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                                )}
+
+                                <label style={{ background: '#0ea5e9', color: '#fff', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {isUploading && docIndexSelecionado === dIdx ? <Loader2 size={16} className="fa-spin"/> : <UploadCloud size={16}/>}
+                                  {isUploading && docIndexSelecionado === dIdx ? 'Importando...' : 'Importar WMS (CSV)'}
+                                  <input type="file" accept=".csv" onChange={(e) => { setDocIndexSelecionado(dIdx); handleUploadWMSComum(e, dIdx); }} style={{ display: 'none' }} disabled={isUploading} />
+                                </label>
+                                
+                                {/* 👇 TRAVA REMOVIDA: BOTÃO AGORA APARECE SEMPRE! Ele muda de cor se estiver vazio. */}
+                                <button 
+                                  onClick={() => setShowCaixasEfetivadasModal(dIdx)} 
+                                  style={{ background: caixas.length > 0 ? '#10b981' : '#f8fafc', color: caixas.length > 0 ? '#fff' : '#10b981', border: caixas.length > 0 ? 'none' : '1px solid #10b981', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                                >
+                                  <Boxes size={16}/> {caixas.length > 0 ? 'Ver Caixas e Resumo' : 'Criar Caixa Manual'}
+                                </button>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
+
+                            {/* TABELA DE DETALHAMENTO DOS SKUs */}
+                            {caixas.length > 0 ? (
+                              <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                  <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0, zIndex: 10 }}>
+                                    <tr>
+                                      <th style={{ padding: '12px 20px', textAlign: 'left', color: '#475569', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO</th>
+                                      <th style={{ padding: '12px 15px', textAlign: 'center', color: '#475569', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD TOTAL</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {skusFiltrados.length === 0 ? (
+                                      <tr>
+                                        <td colSpan="2" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+                                          Nenhum produto encontrado para "{buscasDocumentos[dIdx]}".
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      skusFiltrados.map((sku, i) => {
+                                        const isExpanded = skusExpandidosComum[`${dIdx}-${sku.ref}`];
+                                        return (
+                                          <React.Fragment key={i}>
+                                            <tr style={{ borderBottom: '1px solid #f1f5f9', background: isExpanded ? '#f8fafc' : '#fff' }}>
+                                              <td style={{ padding: '15px 20px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                                  <div 
+                                                    onClick={() => setSkusExpandidosComum(prev => ({...prev, [`${dIdx}-${sku.ref}`]: !prev[`${dIdx}-${sku.ref}`]}))}
+                                                    style={{ marginTop: '2px', cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}
+                                                  >
+                                                    <ChevronDown size={18} color={isExpanded ? "#ea580c" : "#0284c7"} />
+                                                  </div>
+                                                  <div>
+                                                    <strong style={{ color: '#0284c7', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
+                                                    <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{sku.desc}</span>
+                                                  </div>
+                                                </div>
+                                              </td>
+                                              <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: '#1e293b' }}>{sku.qtdTotal}</td>
+                                            </tr>
+
+                                            {/* GAVETA OCULTA: LISTAGEM DE CAIXAS DO SKU */}
+                                            {isExpanded && (
+                                              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                                                <td colSpan="2" style={{ padding: '15px 25px' }}>
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', color: '#10b981' }}>
+                                                    <Package size={16} /> <strong style={{ fontSize: '0.85rem' }}>Embalagens Registradas</strong>
+                                                  </div>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                                                    {sku.caixasDetalhadas.map((detalhe, cIdx) => (
+                                                      <div key={cIdx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderLeft: '4px solid #10b981', borderRadius: '6px', padding: '10px' }}>
+                                                        
+                                                        {/* AQUI ESTÁ O ID DA EMBALAGEM EM DESTAQUE */}
+                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={detalhe.idUnico}>
+                                                          <strong style={{ color: '#94a3b8' }}>ID WMS:</strong> {detalhe.idUnico}
+                                                        </div>
+                                                        
+                                                        <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#334155' }}>{detalhe.tipoCaixa}</div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '6px' }}>
+                                                          <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0ea5e9' }}>{detalhe.qtdNestaCaixa} <span style={{fontSize: '0.7rem', fontWeight: 'normal', color: '#64748b'}}>un</span></div>
+                                                          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{parseFloat(detalhe.peso).toFixed(1)}kg</div>
+                                                        </div>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </td>
+                                              </tr>
+                                            )}
+                                          </React.Fragment>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <div style={{ textAlign: 'center', padding: '60px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
+                                <FileText size={64} color="#94a3b8" style={{ marginBottom: '20px' }} />
+                                <h3 style={{ color: 'var(--primary)', margin: '0 0 10px 0', fontSize: '1.3rem' }}>Nenhuma Caixa Registrada</h3>
+                                <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0' }}>Importe o arquivo CSV do WMS, ou inicie criando uma caixa manualmente pelo botão superior.</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </>
@@ -2397,17 +2692,12 @@ const handlePlanejamentoUpload = (e, dIdx) => {
               // =========================================================
               // TELA 1: AGUARDANDO O UPLOAD DO ARQUIVO
               // =========================================================
-              // =========================================================
-              // TELA 1: AGUARDANDO O UPLOAD DO ARQUIVO
-              // =========================================================
               if (!caixasReais) {
                 return (
-                  <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(248, 250, 252, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="animate-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(248, 250, 252, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     
-                    {/* ADICIONADO position: 'relative' AQUI NESTA DIV 👇 */}
-                    <div style={{ position: 'relative', background: '#fff', padding: '40px', borderRadius: '16px', width: '550px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                    <div className="animate-modal" style={{ position: 'relative', background: '#fff', padding: '40px', borderRadius: '16px', width: '550px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
                       
-                      {/* 👇 NOVO BOTÃO DE FECHAR (X) */}
                       <button onClick={() => setAuditModalData(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '5px' }}>
                         <X size={24}/>
                       </button>
@@ -2467,10 +2757,9 @@ const handlePlanejamentoUpload = (e, dIdx) => {
               const allTypes = Array.from(new Set([...Object.keys(planSummary), ...Object.keys(realSummary)])).sort();
 
               return (
-                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(248, 250, 252, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="animate-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(248, 250, 252, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   
-                  {/* ADICIONADO position: 'relative' AQUI NESTA DIV 👇 */}
-                  <div style={{ position: 'relative', background: '#fff', padding: '30px', borderRadius: '12px', width: '850px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
+                  <div className="animate-modal" style={{ position: 'relative', background: '#fff', padding: '30px', borderRadius: '12px', width: '850px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
                     
                     {/* 👇 NOVO BOTÃO DE FECHAR (X) */}
                     <button onClick={() => setAuditModalData(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '5px' }}>
@@ -2574,16 +2863,16 @@ const handlePlanejamentoUpload = (e, dIdx) => {
 
               // 2. MOTOR DO RESUMO GERAL: Unifica todos os documentos e ordena
               const cxMapGeral = (pedidoModal.documentos || []).reduce((acc, doc) => {
-                // Checa se o documento é bonificação (Ajuste a propriedade doc.tipo se no seu banco for outro nome)
-                const isBonif = String(doc.tipo || doc.natureza || doc.nomeDocumento || '').toUpperCase().includes('BONIF');
+                const isBonifDoc = String(doc.tipo || doc.natureza || doc.nomeDocumento || '').toUpperCase().includes('BONIF');
                 
                 (doc.caixas || []).forEach(cx => {
+                  const isBoxBonif = isBonifDoc || cx.isBonificacao;
                   let nomeCaixa = String(cx.num || cx.caixa || 'CAIXA').toUpperCase();
-                  if (isBonif && !nomeCaixa.includes('BONIF')) {
+                  if (isBoxBonif && !nomeCaixa.includes('BONIF')) {
                     nomeCaixa = `${nomeCaixa} BONIF`;
                   }
                   
-                  if (!acc[nomeCaixa]) acc[nomeCaixa] = { qtd: 0, peso: 0, originalName: nomeCaixa, isBonif };
+                  if (!acc[nomeCaixa]) acc[nomeCaixa] = { qtd: 0, peso: 0, originalName: nomeCaixa, isBonif: isBoxBonif };
                   acc[nomeCaixa].qtd += 1;
                   acc[nomeCaixa].peso += parseFloat(cx.peso || 0);
                 });
@@ -2592,14 +2881,16 @@ const handlePlanejamentoUpload = (e, dIdx) => {
 
              // Ordena primeiro por Tipo (NF > Bonif) e depois por Número da Caixa
               const resumoOrdenado = Object.values(cxMapGeral).sort((a, b) => {
-                // 1º Critério de desempate: Bonificação sempre vai para o final
-                if (a.isBonif !== b.isBonif) {
-                  return a.isBonif ? 1 : -1; 
-                }
+                const isBonifA = Boolean(a.isBonif);
+                const isBonifB = Boolean(b.isBonif);
+                if (isBonifA !== isBonifB) return isBonifA ? 1 : -1; 
                 
-                // 2º Critério de desempate: Se forem do mesmo tipo, ordena pelo número
-                const numA = parseInt(a.originalName.replace(/\D/g, '')) || 0;
-                const numB = parseInt(b.originalName.replace(/\D/g, '')) || 0;
+                const matchA = a.originalName.match(/\d+/);
+                const matchB = b.originalName.match(/\d+/);
+                const numA = matchA ? parseInt(matchA[0]) : 0;
+                const numB = matchB ? parseInt(matchB[0]) : 0;
+                
+                if (numA === numB) return a.originalName.localeCompare(b.originalName);
                 return numA - numB;
               });
 
@@ -2692,7 +2983,7 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                       {/* COLUNA ESQUERDA: LISTAGEM DE CAIXAS DO DOCUMENTO ATUAL */}
                       <div style={{ flex: 1, overflowY: 'auto', padding: '25px', position: 'relative' }}>
                         {caixas.length === 0 ? (
-                          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px' }}>Nenhuma caixa neste documento. Adicione manualmente ou realize a auditoria.</div>
+                          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px' }}>Nenhuma caixa neste documento.</div>
                         ) : caixasFiltradas.length === 0 ? (
                           <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px' }}>Nenhuma caixa corresponde à busca.</div>
                         ) : (
@@ -2702,24 +2993,43 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                               const originalIdx = caixas.findIndex(c => c === cx);
                               
                               return (
-                                <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', position: 'relative' }}>
+                                <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                                   
-                                  <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px' }}>
-                                    <button onClick={() => abrirFormCaixa(dIdx, originalIdx, cx)} style={{ background: '#f1f5f9', border: 'none', padding: '4px', borderRadius: '4px', cursor: 'pointer', color: '#0ea5e9' }}><Edit size={14}/></button>
-                                    <button onClick={() => excluirCaixaManual(dIdx, originalIdx)} style={{ background: '#fef2f2', border: 'none', padding: '4px', borderRadius: '4px', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={14}/></button>
-                                  </div>
-
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', marginBottom: '10px', paddingRight: '50px' }}>
-                                    <strong style={{ color: 'var(--primary)', fontSize: '1.1rem' }}>{cx.num || 'CX'} <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>(Vol {originalIdx + 1})</span></strong>
-                                    <span style={{ fontWeight: 'bold', color: '#64748b' }}>{parseFloat(cx.peso).toFixed(1)}kg</span>
+                                  {/* CABEÇALHO UNIFICADO DA CAIXA (Título + Botões na mesma linha) */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                                    <strong style={{ color: cx.isBonificacao ? '#ef4444' : 'var(--primary)', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      {cx.num || 'CX'} 
+                                      {cx.isBonificacao && <span style={{ fontSize: '0.65rem', background: '#fef2f2', border: '1px solid #fca5a5', padding: '2px 6px', borderRadius: '10px' }}>BONIF</span>}
+                                      <span style={{fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'normal'}}>(Vol {originalIdx + 1})</span>
+                                    </strong>
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span style={{ fontWeight: 'bold', color: '#64748b', marginRight: '6px' }}>{parseFloat(cx.peso).toFixed(1)}kg</span>
+                                      
+                                      <button 
+                                        onClick={() => toggleBonificacaoCaixa(dIdx, originalIdx)} 
+                                        style={{ background: cx.isBonificacao ? '#fef2f2' : '#ecfdf5', border: 'none', padding: '5px', borderRadius: '4px', cursor: 'pointer', color: cx.isBonificacao ? '#ef4444' : '#10b981', display: 'flex' }} 
+                                        title={cx.isBonificacao ? "Remover Bonificação" : "Marcar como Bonificação"}
+                                      >
+                                        <Gift size={14}/>
+                                      </button>
+                                      <button onClick={() => abrirFormCaixa(dIdx, originalIdx, cx)} style={{ background: '#f1f5f9', border: 'none', padding: '5px', borderRadius: '4px', cursor: 'pointer', color: '#0ea5e9', display: 'flex' }}><Edit size={14}/></button>
+                                      <button onClick={() => excluirCaixaManual(dIdx, originalIdx)} style={{ background: '#fef2f2', border: 'none', padding: '5px', borderRadius: '4px', cursor: 'pointer', color: '#ef4444', display: 'flex' }}><Trash2 size={14}/></button>
+                                    </div>
                                   </div>
                                   
+                                  {/* LISTAGEM DE PRODUTOS COM AGRUPAMENTO VISUAL AUTOMÁTICO */}
                                   <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                                    {cx.produtos.map((p, pIdx) => (
+                                    {Object.values((cx.produtos || []).reduce((acc, p) => {
+                                      const cod = p.referencia || 'S/N';
+                                      if (!acc[cod]) acc[cod] = { ref: cod, desc: p.descricao, qtd: 0 };
+                                      acc[cod].qtd += (parseInt(p.quantidade) || 1);
+                                      return acc;
+                                    }, {})).map((item, pIdx) => (
                                       <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#475569', padding: '4px 0', borderBottom: '1px dashed #f1f5f9' }}>
-                                        <span style={{flex:1}}>{p.referencia}</span>
-                                        <span style={{flex:2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '0 10px'}}>{p.descricao}</span>
-                                        <strong style={{color: '#0ea5e9'}}>{p.quantidade} un</strong>
+                                        <span style={{flex:1}}>{item.ref}</span>
+                                        <span style={{flex:2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '0 10px'}} title={item.desc}>{item.desc}</span>
+                                        <strong style={{color: '#0ea5e9'}}>{item.qtd} un</strong>
                                       </div>
                                     ))}
                                   </div>
@@ -2736,7 +3046,7 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                           <h4 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
                             <ListTree size={20}/> Resumo Geral <span style={{fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', fontWeight: 'normal'}}>Unificado</span>
                           </h4>
-                          <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>Engloba as caixas de todas as Notas e Bonificações deste Pedido Master.</p>
+                          <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>Engloba as caixas de todas as Notas e Bonificações deste Pedido.</p>
                         </div>
                         <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
                           {resumoOrdenado.length === 0 ? (
@@ -2762,6 +3072,7 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                 </div>
               );
             })()}
+
       {/* ==========================================
           RESTANTE DOS MODAIS (O.P., MASTER)
           ========================================== */}
@@ -3133,6 +3444,106 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                 {isSaving ? <Loader2 size={16} className="fa-spin" /> : 'Adicionar Volume'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+
+{/* ==========================================
+          MODAL DE ALERTA DE SEGURANÇA: PESO ZERO
+          ========================================== */}
+      {alertaPesoZero && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.85)', zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '12px', width: '600px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0' }}>
+            
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{ background: '#fef2f2', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px auto', color: '#ef4444' }}>
+                <AlertTriangle size={36} />
+              </div>
+              <h2 style={{ color: '#0f172a', fontSize: '1.4rem', margin: '0 0 10px 0' }}>Atenção: Caixa com Peso Zero!</h2>
+              <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', margin: 0 }}>
+                O sistema identificou {alertaPesoZero.caixasProblematicas.length === 1 ? 'um volume' : 'alguns volumes'} com <strong>peso 0.0kg</strong> no arquivo.
+              </p>
+            </div>
+
+            <div style={{ maxHeight: '250px', overflowY: 'auto', marginBottom: '25px', paddingRight: '5px' }}>
+              {alertaPesoZero.caixasProblematicas.map((cx, idx) => (
+                <div key={idx} style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '15px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #fca5a5', paddingBottom: '8px', marginBottom: '8px' }}>
+                    <strong style={{ color: '#b91c1c', fontSize: '1.1rem' }}>{cx.num || cx.caixa || 'CX INDEFINIDA'}</strong>
+                    <span style={{ background: '#ef4444', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>Peso: 0.0 kg</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {(cx.produtos || []).map((p, pIdx) => (
+                       <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#7f1d1d' }}>
+                         <span style={{ fontWeight: 600 }}>{p.referencia || p.ref}</span>
+                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, margin: '0 10px' }}>{p.descricao || p.desc}</span>
+                         <strong>{p.quantidade || p.qtd} un</strong>
+                       </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <button onClick={() => handleResolvePesoZero('excluir')} style={{ flex: 1, padding: '12px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <Trash2 size={18}/> Excluir Caixa(s)
+              </button>
+              <button onClick={() => handleResolvePesoZero('cancelar')} style={{ flex: 1, padding: '12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <X size={18}/> Cancelar (Manter)
+              </button>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          ANIMAÇÕES GLOBAIS PARA MODAIS (FADE E ZOOM)
+          ========================================== */}
+      <style>
+        {`
+          @keyframes fadeInOverlay { 
+            from { opacity: 0; backdrop-filter: blur(0px); } 
+            to { opacity: 1; backdrop-filter: blur(4px); } 
+          }
+          @keyframes popInModal { 
+            from { opacity: 0; transform: scale(0.90) translateY(15px); } 
+            to { opacity: 1; transform: scale(1) translateY(0); } 
+          }
+          .animate-overlay { 
+            animation: fadeInOverlay 0.25s ease-out forwards; 
+          }
+          .animate-modal { 
+            animation: popInModal 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; 
+          }
+        `}
+      </style>
+
+      {/* ==========================================
+          MODAL DE SUCESSO (COM ANIMAÇÃO)
+          ========================================== */}
+      {modalSucesso && (
+        <div className="animate-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.85)', zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="animate-modal" style={{ background: '#fff', padding: '35px', borderRadius: '16px', width: '450px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', textAlign: 'center', position: 'relative' }}>
+            
+            {/* ÍCONE DE SUCESSO COM EFEITO HALO */}
+            <div style={{ background: '#ecfdf5', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto', color: '#10b981', boxShadow: '0 0 0 10px #f0fdf4' }}>
+              <CheckCircle2 size={40} />
+            </div>
+            
+            <h2 style={{ color: '#0f172a', fontSize: '1.5rem', margin: '0 0 10px 0', fontWeight: '900' }}>{modalSucesso.titulo}</h2>
+            <p style={{ color: '#64748b', fontSize: '1rem', lineHeight: '1.5', marginBottom: '30px' }}>
+              {modalSucesso.mensagem}
+            </p>
+
+            <button 
+              onClick={() => setModalSucesso(null)} 
+              style={{ width: '100%', padding: '14px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.05rem', cursor: 'pointer', transition: 'background 0.2s', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)' }}
+            >
+              Continuar
+            </button>
           </div>
         </div>
       )}
