@@ -298,9 +298,9 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
                 <XAxis type="number" hide />
                 <YAxis dataKey="mes" type="category" tick={{ fill: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} />
                 <RechartsTooltip 
-                  cursor={{ fill: 'var(--bg-main)' }}
-                  contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
-                />
+  cursor={false} 
+  contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
+/>
                 {/* Barras duplas com as cores do seu modelo */}
                 <Bar dataKey="caixas" name="Caixas" fill="#c4709d" barSize={8} radius={[0, 4, 4, 0]} />
                 <Bar dataKey="pedidos" name="Pedidos" fill="#0273a3" barSize={8} radius={[0, 4, 4, 0]} />
@@ -335,14 +335,15 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
             </div>
             <div className="ranking-list free-list">
               {rankingDataCompleto.slice(0, 5).length === 0 ? <div style={{color: '#999', fontSize: '13px'}}>Nenhum dado no período.</div> : rankingDataCompleto.slice(0, 5).map((u, i) => (
-                <div key={u.nome} className={`ranking-row ${i === 0 ? 'first' : 'shadow-sm'}`}><span className="rank-pos">{i + 1}º</span><span className="rank-name">{u.nome}</span><span className="rank-points">{u.pontos.toFixed(0)} pts</span></div>
+                <div key={`${u.nome}-${i}`} className={`ranking-row ${i === 0 ? 'first' : 'shadow-sm'}`}>
+                  <span className="rank-pos">{i + 1}º</span><span className="rank-name">{u.nome}</span><span className="rank-points">{u.pontos.toFixed(0)} pts</span></div>
               ))}
             </div>
 
             <div className="card-expansion">
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 'bold' }}>LISTA COMPLETA DO PERÍODO</div>
               {rankingDataCompleto.map((u, i) => (
-                 <div key={u.nome} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: i === 0 ? 'var(--primary)' : '#f8fafc', color: i === 0 ? '#fff' : 'var(--text-main)', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                 <div key={`${u.nome}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: i === 0 ? 'var(--primary)' : '#f8fafc', color: i === 0 ? '#fff' : 'var(--text-main)', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
                     <span style={{ display: 'flex', gap: '10px' }}><span style={{ opacity: 0.7 }}>{i + 1}º</span>{u.nome}</span><span>{u.pontos.toFixed(0)} pts</span>
                  </div>
               ))}
@@ -371,7 +372,7 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
             <div className="card-expansion">
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 'bold' }}>TODOS OS PEDIDOS</div>
               {topOrdersDataCompleto.map((p, i) => (
-                 <div key={p.pedido} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                 <div key={`${p.pedido}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
                     <span style={{ display: 'flex', gap: '10px' }}><span style={{ color: '#a0aec0' }}>{i + 1}º</span>Rom. {p.pedido}</span><span style={{ color: 'var(--secondary)' }}>{p.caixas} cx</span>
                  </div>
               ))}

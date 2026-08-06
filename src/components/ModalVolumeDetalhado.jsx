@@ -1,24 +1,28 @@
 import React, { useState } from 'react';
-import { X, ChevronLeft, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, Loader2, TrendingUp, Calendar as CalendarIcon } from 'lucide-react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesResumo }) {
   const [mesSelecionado, setMesSelecionado] = useState(null);
   const [dadosDiarios, setDadosDiarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [barHover, setBarHover] = useState(null);
+  const [modoVisao, setModoVisao] = useState('chart');
 
   const handleClose = () => {
     setShowModal(false);
     setTimeout(() => {
       setMesSelecionado(null);
       setDadosDiarios([]);
+      setModoVisao('chart'); 
     }, 300);
   };
 
-  const carregarDetalhesDoMes = async (mesBase) => {
+  const carregarDetalhesDoMes = async (dadosClique) => {
+    const mesBase = dadosClique.payload || dadosClique;
+    if (!mesBase || !mesBase.id) return;
+
     setMesSelecionado(mesBase);
     setIsLoading(true);
     
@@ -33,32 +37,31 @@ export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesRes
           dia: diaFormatado, 
           dataCompleta: `${mesBase.id}-${diaFormatado}`, 
           pedidos: 0,
-          caixas: 0 // Adicionamos a métrica de caixas para o gráfico duplo
+          caixas: 0 
         };
       }
 
       const qPedidos = query(
-        collection(db, 'pedidos'), 
+        collection(db, 'pedidos'),
+        where('efetivado', '==', true),
         where('dataOperacao', '>=', `${mesBase.id}-01`),
-        where('dataOperacao', '<=', `${mesBase.id}-31`)
+        where('dataOperacao', '<=', `${mesBase.id}-${diasNoMes}`)
       );
       
       const snap = await getDocs(qPedidos);
       
       snap.forEach(docSnap => {
         const data = docSnap.data();
-        if (!data.efetivado) return; 
-
         const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
-        if (temNfOuMinuta && data.dataOperacao) {
-          if (mapaDias[data.dataOperacao]) {
-            mapaDias[data.dataOperacao].pedidos += 1;
-            
-            // Soma as caixas deste pedido
-            let totalCaixas = 0;
-            (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
-            mapaDias[data.dataOperacao].caixas += totalCaixas;
-          }
+        if (!temNfOuMinuta) return;
+
+        const dataDoc = String(data.dataOperacao).substring(0, 10);
+
+        if (mapaDias[dataDoc]) {
+          mapaDias[dataDoc].pedidos += 1;
+          let totalCaixas = 0;
+          (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
+          mapaDias[dataDoc].caixas += totalCaixas;
         }
       });
 
@@ -70,13 +73,61 @@ export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesRes
     }
   };
 
+  const renderCalendario = () => {
+    if (!mesSelecionado) return null;
+    const [ano, mes] = mesSelecionado.id.split('-');
+    const primeiroDiaDaSemana = new Date(ano, parseInt(mes) - 1, 1).getDay(); 
+    
+    const espacosVazios = Array.from({ length: primeiroDiaDaSemana }).map((_, i) => (
+      <div key={`empty-${i}`} style={{ background: 'transparent', border: 'none' }} />
+    ));
+
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', background: 'var(--bg-main)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '10px' }}>
+          <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', flex: 1 }}>
+          {espacosVazios}
+          {dadosDiarios.map((d, i) => (
+            <div 
+              key={i} 
+              style={{ 
+                minHeight: '80px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)',
+                color: d.pedidos > 0 ? 'var(--primary)' : 'var(--text-muted)',
+                opacity: d.pedidos === 0 ? 0.6 : 1,
+                boxShadow: d.pedidos > 0 ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+              }}
+            >
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>{d.dia}</span>
+              {d.pedidos > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <span style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0273a3', lineHeight: '1' }}>{d.pedidos}</span>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>pedidos</span>
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.8rem' }}>-</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   if (!showModal) return null;
 
   return (
     <div className="modal-overlay-search">
-      <div className="modal-content-search" style={{ maxWidth: '900px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
+      {/* 
+        A MÁGICA ACONTECE AQUI: 
+        Largura de 90vw (90% da tela), Altura de 85vh (85% da tela), layout Flex travado.
+      */}
+      <div className="modal-content-search" style={{ width: '80vw', maxWidth: 'none', height: '80vh', minHeight: '600px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
-        <div className="search-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* HEADER TRAVADO NO TOPO */}
+        <div className="search-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div>
             {mesSelecionado ? (
               <button 
@@ -89,70 +140,85 @@ export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesRes
               <div className="search-badge">Desempenho Executivo</div>
             )}
             <h2 className="search-title">
-              {mesSelecionado ? `Oscilação Diária: ${mesSelecionado.mes} / ${mesSelecionado.ano}` : 'Comparativo Mensal'}
+              {mesSelecionado ? `Detalhamento Diário: ${mesSelecionado.mes} / ${mesSelecionado.ano}` : 'Comparativo Mensal'}
             </h2>
           </div>
           <button className="btn-close-search" onClick={handleClose}><X size={28}/></button>
         </div>
 
-        <div className="search-modal-body" style={{ minHeight: '400px', padding: '30px', display: 'flex', flexDirection: 'column' }}>
+        {/* CORPO DO MODAL EXPANSIVO (flex: 1 preenche o resto da tela) */}
+        <div className="search-modal-body" style={{ flex: 1, padding: '30px', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           
-          {/* VISÃO 1: GRÁFICO DE MESES (HORIZONTAL) */}
+          {/* VISÃO 1: GRÁFICO DE MESES */}
           {!mesSelecionado && (
-            <>
-              <p style={{ color: 'var(--text-muted)', marginBottom: '30px' }}>Clique em uma das áreas para detalhar o volume dia a dia daquele mês.</p>
-              <div style={{ flex: 1, width: '100%', height: '350px' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '30px', flexShrink: 0 }}>Clique em uma das áreas coloridas para detalhar o volume dia a dia daquele mês.</p>
+              {/* O Gráfico agora ocupa o resto da tela 100% */}
+              <div style={{ flex: 1, width: '100%', minHeight: '400px' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={mesesResumo} layout="vertical" margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" opacity={0.5} />
                     <XAxis type="number" tick={{ fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                     <YAxis dataKey="mes" type="category" tick={{ fill: 'var(--text-main)', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={80} />
-                    <Tooltip 
-                      cursor={{ fill: 'var(--bg-main)' }}
-                      contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
-                    />
+                    <Tooltip cursor={false} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }} />
                     <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                    <Bar dataKey="caixas" name="Caixas Movimentadas" fill="#c4709d" barSize={20} radius={[0, 4, 4, 0]} />
-                    <Bar 
-                      dataKey="pedidos" 
-                      name="Pedidos Processados"
-                      fill="#0273a3" 
-                      barSize={20} 
-                      radius={[0, 4, 4, 0]}
-                      onClick={(data) => carregarDetalhesDoMes(data.payload)}
-                      style={{ cursor: 'pointer' }}
-                    />
+                    <Bar dataKey="caixas" name="Caixas Movimentadas" fill="#c4709d" barSize={30} radius={[0, 4, 4, 0]} onClick={(data) => carregarDetalhesDoMes(data)} style={{ cursor: 'pointer' }} />
+                    <Bar dataKey="pedidos" name="Pedidos Processados" fill="#0273a3" barSize={30} radius={[0, 4, 4, 0]} onClick={(data) => carregarDetalhesDoMes(data)} style={{ cursor: 'pointer' }} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </>
+            </div>
           )}
 
-          {/* VISÃO 2: GRÁFICO DIÁRIO (HORIZONTAL) */}
           {mesSelecionado && isLoading && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px', color: 'var(--primary)', gap: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, color: 'var(--primary)', gap: '10px' }}>
               <Loader2 size={32} className="fa-spin" style={{ animation: 'spin 1s linear infinite' }} />
             </div>
           )}
 
+          {/* VISÃO 2: DETALHAMENTO DIÁRIO */}
           {mesSelecionado && !isLoading && (
-            // Aumentamos a altura para 800px para caber os 31 dias confortavelmente na vertical
-            <div style={{ width: '100%', height: '800px', marginTop: '10px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dadosDiarios} layout="vertical" margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" opacity={0.5} />
-                  <XAxis type="number" tick={{ fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="dia" type="category" tick={{ fill: 'var(--text-main)', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} tickFormatter={(val) => `Dia ${val}`} />
-                  <Tooltip 
-                    cursor={{ fill: 'var(--bg-main)' }}
-                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
-                    labelFormatter={(label) => `Data: ${label}/${mesSelecionado.mes}`}
-                  />
-                  <Legend wrapperStyle={{ paddingBottom: '20px' }} verticalAlign="top" />
-                  <Bar dataKey="caixas" name="Caixas Movimentadas" fill="#c4709d" barSize={10} radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="pedidos" name="Pedidos Processados" fill="#0273a3" barSize={10} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}>
+              
+              <div style={{ display: 'flex', background: 'var(--bg-main)', padding: '5px', borderRadius: '10px', width: 'fit-content', flexShrink: 0 }}>
+                <button 
+                  onClick={() => setModoVisao('chart')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', background: modoVisao === 'chart' ? 'var(--bg-card)' : 'transparent', color: modoVisao === 'chart' ? 'var(--primary)' : 'var(--text-muted)', boxShadow: modoVisao === 'chart' ? '0 2px 10px rgba(0,0,0,0.05)' : 'none' }}
+                >
+                  <TrendingUp size={18}/> Oscilação (Sobe e Desce)
+                </button>
+                <button 
+                  onClick={() => setModoVisao('calendar')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s', background: modoVisao === 'calendar' ? 'var(--bg-card)' : 'transparent', color: modoVisao === 'calendar' ? 'var(--primary)' : 'var(--text-muted)', boxShadow: modoVisao === 'calendar' ? '0 2px 10px rgba(0,0,0,0.05)' : 'none' }}
+                >
+                  <CalendarIcon size={18}/> Calendário de Volume
+                </button>
+              </div>
+
+              {/* GRÁFICO PREENCHENDO A TELA */}
+              {modoVisao === 'chart' && (
+                <div style={{ flex: 1, width: '100%', minHeight: '400px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dadosDiarios} margin={{ top: 20, right: 30, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.5} />
+                      <XAxis dataKey="dia" tick={{ fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                      <Tooltip 
+                        cursor={{ stroke: 'var(--border-color)', strokeWidth: 1, strokeDasharray: '5 5' }}
+                        contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
+                        labelFormatter={(label) => `Dia ${label}/${mesSelecionado.mes}`}
+                      />
+                      <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                      <Line type="monotone" dataKey="caixas" name="Caixas" stroke="#c4709d" strokeWidth={3} dot={{ r: 4, fill: '#c4709d', strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="pedidos" name="Pedidos" stroke="#0273a3" strokeWidth={3} dot={{ r: 4, fill: '#0273a3', strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* CALENDÁRIO PREENCHENDO A TELA */}
+              {modoVisao === 'calendar' && renderCalendario()}
+
             </div>
           )}
 

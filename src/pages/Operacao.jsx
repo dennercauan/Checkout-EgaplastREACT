@@ -5,7 +5,7 @@ import {
   collection, addDoc, serverTimestamp, getDocs, doc,
   query, where, onSnapshot, collectionGroup, Timestamp, deleteField 
 } from 'firebase/firestore';
-import { updateDoc, setDoc, arrayUnion, deleteDoc, getDoc, increment } from 'firebase/firestore';
+import { updateDoc, setDoc, arrayUnion, deleteDoc, getDoc, increment, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase'; 
 import { 
@@ -1634,85 +1634,122 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                       statusBadge = <div className="time-badge pending"><Clock size={12} style={{marginRight:'3px', display:'inline'}}/> {formatarCronometro(pedido)}</div>;
                     }
 
-                    const migrarDadosAntigosParaEstatisticas = async () => {
-    if (!window.confirm("Deseja sincronizar as estatísticas mensais com os dados legados?")) return;
+                    const migrarPedidosParaRaizLote = async () => {
+    if (!window.confirm("Deseja iniciar a migração DEFINITIVA dos pedidos legados para a raiz em lotes?")) return;
     
     try {
-      console.log("Iniciando varredura otimizada para estatísticas...");
-      const mapaMeses = {};
-
-      // 1. Processa os pedidos novos da raiz
-      const snapNovos = await getDocs(collection(db, 'pedidos'));
-      snapNovos.forEach(docSnap => {
-        const data = docSnap.data();
-        if (!data.efetivado) return;
-        
-        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
-        if (!temNfOuMinuta) return;
-
-        let totalCaixas = 0;
-        (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
-
-        let idMes = '2026-01';
-        if (data.dataOperacao) {
-          idMes = String(data.dataOperacao).substring(0, 7);
-        } else if (data.createdAt?.toDate) {
-          const dObj = data.createdAt.toDate();
-          idMes = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
-        }
-
-        if (!mapaMeses[idMes]) mapaMeses[idMes] = { totalNfMinuta: 0, totalCaixas: 0 };
-        mapaMeses[idMes].totalNfMinuta += 1;
-        mapaMeses[idMes].totalCaixas += totalCaixas;
-      });
-
-      // 2. Processa os pedidos legados (Apenas leitura e soma na memória, sem escrita em massa)
+      console.log("Iniciando leitura dos pedidos legados...");
+      // Busca todos os pedidos legados de todas as subpastas
       const snapLegados = await getDocs(collectionGroup(db, 'pedidosMultiDocumento'));
-      console.log(`Processando ${snapLegados.size} pedidos legados na memória...`);
+      const totalDocs = snapLegados.docs.length;
+      console.log(`Encontrados ${totalDocs} pedidos para migrar.`);
 
-      snapLegados.forEach(docSnap => {
-        const data = docSnap.data();
-        if (!data.efetivado) return;
-
-        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
-        if (!temNfOuMinuta) return;
-
-        let totalCaixas = 0;
-        (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
-
-        let idMes = '2026-01';
-        if (data.dataOperacao) {
-          idMes = String(data.dataOperacao).substring(0, 7);
-        } else if (data.completedAt?.toDate) {
-          const dObj = data.completedAt.toDate();
-          idMes = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
-        } else if (data.createdAt?.toDate) {
-          const dObj = data.createdAt.toDate();
-          idMes = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
-        }
-
-        if (!mapaMeses[idMes]) mapaMeses[idMes] = { totalNfMinuta: 0, totalCaixas: 0 };
-        mapaMeses[idMes].totalNfMinuta += 1;
-        mapaMeses[idMes].totalCaixas += totalCaixas;
-      });
-
-      console.log("Gravando consolidados mensais no Firestore...", mapaMeses);
-      
-      // 3. Salva apenas os totais consolidados por mês (No máximo 12 a 48 writes, super leve!)
-      for (const [idMes, stats] of Object.entries(mapaMeses)) {
-        const mesRef = doc(db, 'estatisticasMensais', idMes);
-        await setDoc(mesRef, stats, { merge: true });
+      if (totalDocs === 0) {
+        alert("Nenhum pedido legado encontrado. Tudo já está na raiz!");
+        return;
       }
 
-      console.log("Migração de estatísticas concluída com sucesso!");
-      alert(`Sincronização concluída com sucesso!\nMeses atualizados: ${Object.keys(mapaMeses).join(', ')}`);
+      const tamanhoLote = 250; // Limite máximo do Firebase é 500 por lote
+      let lotesProcessados = 0;
+      let totalMigrados = 0;
+
+      // Loop para quebrar os 2.400 documentos em lotes menores
+      for (let i = 0; i < totalDocs; i += tamanhoLote) {
+        const lote = snapLegados.docs.slice(i, i + tamanhoLote);
+        const batch = writeBatch(db); 
+
+        lote.forEach(docSnap => {
+          const data = docSnap.data();
+          // Define que o destino será a pasta raiz 'pedidos' com o mesmo ID
+          const novoDocRef = doc(db, 'pedidos', docSnap.id);
+          
+          // Adiciona as informações no lote
+          batch.set(novoDocRef, {
+            ...data,
+            _migradoDoLegado: true,
+            elementoIdOriginal: docSnap.ref.path.split('/')[3] || 'desconhecido'
+          }, { merge: true });
+        });
+
+        console.log(`Enviando lote ${lotesProcessados + 1}... (${i + lote.length}/${totalDocs})`);
+        
+        // Dispara o lote para a nuvem
+        await batch.commit();
+        
+        totalMigrados += lote.length;
+        lotesProcessados++;
+
+        // MÁGICA: Pausa a execução por 1.5 segundos para não afogar o Firebase
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+
+      console.log("Migração concluída com sucesso!");
+      alert(`Migração Definitiva concluída! ${totalMigrados} pedidos foram movidos para a raiz.`);
     } catch (error) {
-      console.error("Erro crítico na migração:", error);
+      console.error("Erro crítico na migração em lotes:", error);
       alert("Erro ao migrar dados: " + error.message);
     }
   };
 
-  window.rodarMigracao = migrarDadosAntigosParaEstatisticas;
+  // Expõe para o console
+  window.rodarMigracaoDefinitiva = migrarPedidosParaRaizLote;
+
+  const padronizarDatasLegadas = async () => {
+    if (!window.confirm("Deseja padronizar o campo dataOperacao de todos os pedidos legados?")) return;
+    
+    try {
+      console.log("Iniciando padronização de datas nos pedidos legados...");
+      const snap = await getDocs(collection(db, 'pedidos'));
+      console.log(`Verificando ${snap.size} documentos...`);
+
+      const tamanhoLote = 250;
+      let alterados = 0;
+      let batch = writeBatch(db);
+      let emLote = 0;
+
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data();
+
+        // Se já possui dataOperacao válida no formato YYYY-MM-DD, ignora
+        if (data.dataOperacao && String(data.dataOperacao).length >= 10) continue;
+
+        let dataFormatada = null;
+        if (data.completedAt?.toDate) {
+          const d = data.completedAt.toDate();
+          dataFormatada = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        } else if (data.createdAt?.toDate) {
+          const d = data.createdAt.toDate();
+          dataFormatada = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        if (dataFormatada) {
+          batch.update(docSnap.ref, { dataOperacao: dataFormatada });
+          alterados++;
+          emLote++;
+
+          if (emLote === tamanhoLote) {
+            await batch.commit();
+            console.log(`Lote de ${emLote} atualizações gravado...`);
+            batch = writeBatch(db);
+            emLote = 0;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      }
+
+      if (emLote > 0) {
+        await batch.commit();
+      }
+
+      console.log("Padronização concluída com sucesso!");
+      alert(`Padronização concluída! ${alterados} pedidos receberam a dataOperacao.`);
+    } catch (error) {
+      console.error("Erro na padronização:", error);
+      alert("Erro ao padronizar datas: " + error.message);
+    }
+  };
+
+  window.rodarPadronizacao = padronizarDatasLegadas;
 
                     return (
                       <tr 
