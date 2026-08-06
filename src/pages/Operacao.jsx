@@ -1634,6 +1634,86 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                       statusBadge = <div className="time-badge pending"><Clock size={12} style={{marginRight:'3px', display:'inline'}}/> {formatarCronometro(pedido)}</div>;
                     }
 
+                    const migrarDadosAntigosParaEstatisticas = async () => {
+    if (!window.confirm("Deseja sincronizar as estatísticas mensais com os dados legados?")) return;
+    
+    try {
+      console.log("Iniciando varredura otimizada para estatísticas...");
+      const mapaMeses = {};
+
+      // 1. Processa os pedidos novos da raiz
+      const snapNovos = await getDocs(collection(db, 'pedidos'));
+      snapNovos.forEach(docSnap => {
+        const data = docSnap.data();
+        if (!data.efetivado) return;
+        
+        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
+        if (!temNfOuMinuta) return;
+
+        let totalCaixas = 0;
+        (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
+
+        let idMes = '2026-01';
+        if (data.dataOperacao) {
+          idMes = String(data.dataOperacao).substring(0, 7);
+        } else if (data.createdAt?.toDate) {
+          const dObj = data.createdAt.toDate();
+          idMes = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        if (!mapaMeses[idMes]) mapaMeses[idMes] = { totalNfMinuta: 0, totalCaixas: 0 };
+        mapaMeses[idMes].totalNfMinuta += 1;
+        mapaMeses[idMes].totalCaixas += totalCaixas;
+      });
+
+      // 2. Processa os pedidos legados (Apenas leitura e soma na memória, sem escrita em massa)
+      const snapLegados = await getDocs(collectionGroup(db, 'pedidosMultiDocumento'));
+      console.log(`Processando ${snapLegados.size} pedidos legados na memória...`);
+
+      snapLegados.forEach(docSnap => {
+        const data = docSnap.data();
+        if (!data.efetivado) return;
+
+        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
+        if (!temNfOuMinuta) return;
+
+        let totalCaixas = 0;
+        (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
+
+        let idMes = '2026-01';
+        if (data.dataOperacao) {
+          idMes = String(data.dataOperacao).substring(0, 7);
+        } else if (data.completedAt?.toDate) {
+          const dObj = data.completedAt.toDate();
+          idMes = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
+        } else if (data.createdAt?.toDate) {
+          const dObj = data.createdAt.toDate();
+          idMes = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        if (!mapaMeses[idMes]) mapaMeses[idMes] = { totalNfMinuta: 0, totalCaixas: 0 };
+        mapaMeses[idMes].totalNfMinuta += 1;
+        mapaMeses[idMes].totalCaixas += totalCaixas;
+      });
+
+      console.log("Gravando consolidados mensais no Firestore...", mapaMeses);
+      
+      // 3. Salva apenas os totais consolidados por mês (No máximo 12 a 48 writes, super leve!)
+      for (const [idMes, stats] of Object.entries(mapaMeses)) {
+        const mesRef = doc(db, 'estatisticasMensais', idMes);
+        await setDoc(mesRef, stats, { merge: true });
+      }
+
+      console.log("Migração de estatísticas concluída com sucesso!");
+      alert(`Sincronização concluída com sucesso!\nMeses atualizados: ${Object.keys(mapaMeses).join(', ')}`);
+    } catch (error) {
+      console.error("Erro crítico na migração:", error);
+      alert("Erro ao migrar dados: " + error.message);
+    }
+  };
+
+  window.rodarMigracao = migrarDadosAntigosParaEstatisticas;
+
                     return (
                       <tr 
                         key={pedido.id} 
