@@ -7,12 +7,11 @@ import { db } from '../firebase';
 import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, ChevronDown, LayoutDashboard, Clock, TrendingUp, Package, Award, BarChart2, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import '../css/PersonalDashboard.css';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function PersonalDashboard({ user, isAdmin }) {
   const navigate = useNavigate();
-
   const [estatisticasPeriodo, setEstatisticasPeriodo] = useState([]); 
-  const [estatisticasVolume, setEstatisticasVolume] = useState([]); 
   const [loading, setLoading] = useState(true);
   
   // Modais (Mantivemos apenas o Histórico, pois calendário no hover seria ruim de usar)
@@ -58,12 +57,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
     return () => unsub();
   }, [startDate, endDate]);
 
-  useEffect(() => {
-    const dataStr = new Date(today.getFullYear(), today.getMonth() - 3, 1).toISOString().split('T')[0];
-    const qVol = query(collection(db, 'estatisticasDiarias'), where(documentId(), '>=', dataStr));
-    const unsub = onSnapshot(qVol, (snap) => setEstatisticasVolume(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-    return () => unsub();
-  }, []);
 
   const prevMonth = () => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
   const nextMonth = () => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
@@ -154,22 +147,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
     return pedidos.length === 0 ? [] : pedidos.sort((a, b) => b.caixas - a.caixas);
   }, [estatisticasPeriodo]);
 
-  const volumeDataCompleto = useMemo(() => {
-    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'], result = [];
-    for (let i = 3; i >= 0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      result.push({ chaveBusca: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, mes: meses[d.getMonth()], ano: d.getFullYear(), pedidos: 0, caixas: 0 });
-    }
-    estatisticasVolume.forEach(dia => {
-      if (!dia.id) return;
-      const index = result.findIndex(m => m.chaveBusca === dia.id.substring(0, 7));
-      if (index !== -1) {
-        result[index].pedidos += (dia.totalPedidos || 0);
-        result[index].caixas += (dia.volumeCaixas || 0);
-      }
-    });
-    return result;
-  }, [estatisticasVolume]);
+  
 
   const handleAccessToday = async () => {
     if (todayElement) navigate(`/elemento?id=${todayElement.id}`);
@@ -180,6 +158,52 @@ export default function PersonalDashboard({ user, isAdmin }) {
       } catch (e) { console.error(e); }
     }
   };
+
+  // NOVO ESTADO DIRETO PRO GRÁFICO
+  const [volumeDataCompleto, setVolumeDataCompleto] = useState([]);
+
+  useEffect(() => {
+    const fetchVolumeMensal = async () => {
+      const mesesNomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      const ultimosMeses = [];
+      const dataAtual = new Date();
+
+      // Monta o esqueleto vazio dos últimos 4 meses (ex: Maio, Junho, Julho, Agosto)
+      for (let i = 3; i >= 0; i--) {
+        const d = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - i, 1);
+        const idMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        ultimosMeses.push({
+          id: idMes,
+          chaveBusca: idMes,
+          mes: mesesNomes[d.getMonth()],
+          ano: d.getFullYear(),
+          pedidos: 0, 
+          caixas: 0
+        });
+      }
+
+      try {
+        // Dispara as 4 consultas simultaneamente (CUSTO TOTAL: 4 Reads!)
+        const promessas = ultimosMeses.map(m => getDoc(doc(db, 'estatisticasMensais', m.id)));
+        const snaps = await Promise.all(promessas);
+
+        snaps.forEach((snap, index) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            // Puxa exatamente o campo onde vamos salvar os pedidos válidos (NF/Minuta)
+            ultimosMeses[index].pedidos = data.totalNfMinuta || 0;
+            ultimosMeses[index].caixas = data.totalCaixas || 0;
+          }
+        });
+
+        setVolumeDataCompleto(ultimosMeses);
+      } catch (error) {
+        console.error("Erro ao buscar estatísticas mensais:", error);
+      }
+    };
+
+    fetchVolumeMensal();
+  }, []); // Executa apenas 1x ao carregar a página
 
   const getDayOfWeek = () => ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'][today.getDay()];
 
@@ -224,7 +248,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
       ) : (
         <div className="dashboard-free-layout">
           
-          <div className="hero-card" style={isAdmin ? { background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', boxShadow: '0 10px 25px rgba(15, 23, 42, 0.3)' } : {}}>
+          <div className="hero-card" style={isAdmin ? { boxShadow: '0 10px 25px rgba(0, 0, 0, 0.4)' } : {}}>
             <div className="hero-content">
               <div className="hero-badge" style={isAdmin ? { background: 'rgba(242, 101, 34, 0.9)' } : {}}>
                 {isAdmin ? 'OPERAÇÃO GLOBAL - HOJE' : 'SUA OPERAÇÃO - HOJE'}

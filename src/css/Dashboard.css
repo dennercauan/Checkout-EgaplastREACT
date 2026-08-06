@@ -1,24 +1,29 @@
 /* src/css/Dashboard.css */
 
-/* --- VARIÁVEIS GLOBAIS --- */
+/* --- VARIÁVEIS GLOBAIS COM SUPORTE A TEMAS --- */
 :root {
   --primary: #0d3269;
   --secondary: #f26522;
-  --bg-base: #f0f2f5;
-  --text-main: #333333;
-  --text-muted: #666666;
+  /* Fallbacks do tema Light (serão sobrescritos pelo React) */
+  --bg-main: #f0f2f5;
+  --bg-card: #ffffff;
+  --text-main: #334155;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  
   --shadow-card: 0 10px 25px rgba(0,0,0,0.05);
   --shadow-hover: 0 20px 45px rgba(13, 50, 105, 0.1);
 }
 
-/* Fundo padrão do Dashboard */
+/* Fundo dinâmico do Dashboard */
 .dashboard-layout {
-  background: linear-gradient(135deg, #eef2f8 0%, #fff8f5 100%);
+  background: var(--bg-main);
   background-attachment: fixed;
   color: var(--text-main);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   min-height: 100vh;
   width: 100%;
+  transition: background 0.3s ease;
 }
 
 .app-container { 
@@ -35,15 +40,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 1400px; /* Trava na mesma largura do Dashboard */
+  max-width: 1400px;
   margin: 0 auto;
   padding: 30px 20px 10px 20px; 
-  background: transparent; /* Removemos o fundo rígido */
-  box-shadow: none; /* Sem sombras dividindo a tela */
+  background: transparent;
+  box-shadow: none;
   border: none;
 }
 
-/* Área da Logo e Título (Lado Esquerdo) */
 .nav-brand {
   display: flex;
   align-items: center;
@@ -51,7 +55,7 @@
 }
 
 .nav-logo {
-  height: 40px; /* Ajuste conforme necessário para a sua logo */
+  height: 40px;
   cursor: pointer;
 }
 
@@ -62,24 +66,22 @@
   font-weight: 800;
   font-size: 1.1rem;
   line-height: 1.2;
-  border-left: 2px solid #eef2f8; /* Linha sutil separando a logo do texto */
+  border-left: 2px solid var(--border-color);
   padding-left: 15px;
 }
 
 .nav-title small {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #a0aec0;
+  color: var(--text-muted);
 }
 
-/* Área de Botões (Lado Direito) */
 .nav-actions {
   display: flex;
   align-items: center;
   gap: 15px;
 }
 
-/* Os botões ganham um destaque elegante já que estão flutuando soltos */
 .btn-nav.btn-primary {
   background: var(--primary);
   color: white;
@@ -101,9 +103,9 @@
 }
 
 .btn-nav.btn-logout {
-  background: #fff;
+  background: var(--bg-card);
   color: #dc3545; 
-  border: 1px solid #ffebeb;
+  border: 1px solid var(--border-color);
   border-radius: 50%;
   width: 42px;
   height: 42px;
@@ -131,12 +133,12 @@
 }
 
 .search-expandable {
-  width: 42px; /* Inicia como um botão redondo */
+  width: 42px;
   height: 42px;
   padding: 10px;
   border: 1px solid transparent;
   border-radius: 30px;
-  background: #f7f9fc;
+  background: var(--bg-card);
   font-size: 0.9rem;
   color: var(--text-main);
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
@@ -144,37 +146,33 @@
   outline: none;
 }
 
-/* Oculta o texto do placeholder enquanto estiver recolhido */
 .search-expandable::placeholder {
   color: transparent;
   transition: color 0.3s;
 }
 
-/* Ícone centralizado inicialmente */
 .search-icon-overlay {
   position: absolute;
   left: 13px; 
-  color: #a0aec0;
-  pointer-events: none; /* Permite que o clique passe para o input abaixo dele */
+  color: var(--text-muted);
+  pointer-events: none;
   transition: all 0.3s;
 }
 
-/* --- ESTADO EXPANDIDO (Ao clicar ou ao ter algo digitado) --- */
 .search-expandable:focus,
 .search-expandable:not(:placeholder-shown) {
   width: 280px;
-  padding: 10px 15px 10px 40px; /* Abre o espaço lateral para o ícone */
-  background: #ffffff;
-  border-color: #ccd7e6;
-  box-shadow: 0 4px 20px rgba(13, 50, 105, 0.08);
+  padding: 10px 15px 10px 40px;
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   cursor: text;
 }
 
 .search-expandable:focus::placeholder {
-  color: #a0aec0; /* Revela o texto de dica suavemente */
+  color: var(--text-muted);
 }
 
-/* Destaca o ícone quando o campo está ativo */
 .search-expandable:focus + .search-icon-overlay,
 .search-expandable:not(:placeholder-shown) + .search-icon-overlay {
   color: var(--primary); 
@@ -195,14 +193,14 @@
 }
 
 .modal-content-search {
-  background: #ffffff;
+  background: var(--bg-card);
   width: 90%;
   max-width: 500px;
   border-radius: 20px;
   position: relative;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   animation: modalPopSearch 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-  overflow: hidden; /* Garante que o rodapé não vaze as bordas redondas */
+  overflow: hidden;
 }
 
 @keyframes modalPopSearch {
@@ -212,7 +210,7 @@
 
 .search-modal-header {
   padding: 30px 30px 20px 30px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
   position: relative;
 }
 
@@ -231,7 +229,7 @@
 .search-title {
   font-size: 1.8rem;
   font-weight: 800;
-  color: #1e293b;
+  color: var(--text-main);
   margin: 0;
 }
 
@@ -243,7 +241,7 @@
   border: none;
   font-size: 28px;
   line-height: 1;
-  color: #94a3b8;
+  color: var(--text-muted);
   cursor: pointer;
   transition: 0.2s;
 }
@@ -267,8 +265,8 @@
 }
 
 .info-icon {
-  color: #64748b;
-  background: #f8fafc;
+  color: var(--text-muted);
+  background: var(--bg-main);
   padding: 10px;
   border-radius: 12px;
   width: 40px;
@@ -282,21 +280,21 @@
 .info-label {
   display: block;
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--text-muted);
   margin-bottom: 3px;
 }
 
 .info-value {
   display: block;
   font-size: 1.05rem;
-  color: #1e293b;
+  color: var(--text-main);
   font-weight: 700;
 }
 
 .search-modal-footer {
   padding: 20px 30px;
-  background: #f8fafc;
-  border-top: 1px solid #e2e8f0;
+  background: var(--bg-main);
+  border-top: 1px solid var(--border-color);
   display: flex;
   gap: 15px;
 }
@@ -304,9 +302,9 @@
 .btn-cancel-search {
   flex: 1;
   padding: 12px;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  color: #475569;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
@@ -314,9 +312,8 @@
 }
 
 .btn-cancel-search:hover {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-  color: #1e293b;
+  background: var(--bg-main);
+  border-color: var(--text-muted);
 }
 
 .btn-access-search {

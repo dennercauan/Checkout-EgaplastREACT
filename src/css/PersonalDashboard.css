@@ -1,14 +1,17 @@
+/* src/css/PersonalDashboard.css */
+
 /* ==========================================================
    CSS DO DASHBOARD PESSOAL E GLOBAL (VISÃO EXPANSÍVEL)
    ========================================================== */
 
-/* Variáveis base (Caso não estejam globais no seu projeto) */
 :root {
   --primary: #0d3269;
   --primary-light: #1e4b8f;
   --secondary: #f26522;
-  --bg-color: #f4f7fe;
-  --text-main: #1e293b;
+  /* O React assumirá o controle dessas cores */
+  --bg-main: #f0f2f5;
+  --bg-card: #ffffff;
+  --text-main: #334155;
   --text-muted: #64748b;
   --border-color: #e2e8f0;
 }
@@ -21,8 +24,11 @@
   max-width: 1400px;
   margin: 0 auto;
   min-height: calc(100vh - 70px);
-  background-color: var(--bg-color);
+  /* 👇 Mudamos para 'background' e travamos na tela com o 'fixed' */
+  background: var(--bg-main);
+  background-attachment: fixed;
   font-family: 'Inter', -apple-system, sans-serif;
+  transition: background 0.3s ease;
 }
 
 .dashboard-free-layout {
@@ -32,25 +38,24 @@
   margin-top: 10px;
 }
 
-/* Blocos Base */
 .free-block {
-  background: #ffffff;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 22px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02);
   border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
-/* Posições no Grid (Desktop) */
+/* Posições no Grid */
 .hero-card { grid-column: span 8; }
 .volume-zone { grid-column: span 4; }
 .media-zone { grid-column: span 4; }
 .ranking-zone { grid-column: span 4; }
 .bottom-zone { grid-column: span 4; }
 
-/* Responsividade (Tablets e Celulares) */
 @media (max-width: 1024px) {
   .hero-card { grid-column: span 12; }
   .volume-zone { grid-column: span 6; }
@@ -65,7 +70,6 @@
   .dash-header-container { flex-direction: column; align-items: flex-start; gap: 15px; }
   .dash-actions-area { width: 100%; flex-wrap: wrap; }
 }
-
 
 /* ==========================================
    2. CABEÇALHO DO DASHBOARD
@@ -109,7 +113,7 @@
 .dash-period-filter {
   display: flex;
   align-items: center;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 5px 15px;
@@ -137,7 +141,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
   color: var(--text-main);
   padding: 10px 18px;
@@ -149,16 +153,15 @@
 }
 
 .btn-history:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--bg-main);
 }
-
 
 /* ==========================================
    3. CARD DE HOJE (HERO CARD)
    ========================================== */
 .hero-card {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  /* 👇 Agora o fundo obedece ao tema escolhido */
+  background: var(--bg-hero, linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%));
   border-radius: 16px;
   padding: 30px;
   color: #fff;
@@ -167,11 +170,13 @@
   justify-content: space-between;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 10px 25px rgba(13, 50, 105, 0.2);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  transition: background 0.3s ease; /* Transição suave */
 }
 
 .hero-badge {
-  background: rgba(255, 255, 255, 0.2);
+  /* 👇 Fundo dinâmico para contrastar melhor em temas escuros */
+  background: var(--bg-hero-badge, rgba(255, 255, 255, 0.2));
   backdrop-filter: blur(5px);
   padding: 6px 12px;
   border-radius: 20px;
@@ -181,6 +186,7 @@
   display: inline-block;
   align-self: flex-start;
   margin-bottom: 15px;
+  transition: background 0.3s ease;
 }
 
 .hero-title {
@@ -248,7 +254,6 @@
   box-shadow: 0 4px 12px rgba(242, 101, 34, 0.3);
 }
 
-
 /* ==========================================
    4. COMPONENTES DOS CARDS MENORES
    ========================================== */
@@ -273,10 +278,11 @@
   height: 36px;
 }
 
-.kpi-icon.blue { background: #e0e7ff; color: #4f46e5; }
-.kpi-icon.orange { background: #ffedd5; color: #ea580c; }
-.kpi-icon.gold { background: #fef3c7; color: #d97706; }
-.kpi-icon.green { background: #dcfce7; color: #16a34a; }
+/* Tons iluminados para garantir alto contraste em fundos escuros */
+.kpi-icon.blue { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+.kpi-icon.orange { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
+.kpi-icon.gold { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.kpi-icon.green { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
 
 .kpi-value {
   font-size: 2.2rem;
@@ -295,7 +301,6 @@
 }
 .kpi-trend.positive { color: #10b981; }
 .kpi-trend.neutral { color: var(--text-muted); }
-
 
 /* ==========================================
    5. LISTA DE RANKING
@@ -322,7 +327,7 @@
 }
 
 .ranking-row.shadow-sm {
-  background: #f8fafc;
+  background: var(--bg-main);
   color: var(--text-main);
 }
 
@@ -343,9 +348,8 @@
   font-weight: 700;
 }
 
-
 /* ==========================================
-   6. ESTADOS DE CARREGAMENTO
+   6. ESTADOS DE CARREGAMENTO E MODAL CALENDÁRIO
    ========================================== */
 .loading-state {
   display: flex;
@@ -358,10 +362,6 @@
   gap: 15px;
 }
 
-
-/* ==========================================
-   7. MODAL DE HISTÓRICO DE PASTAS
-   ========================================== */
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -374,7 +374,7 @@
 }
 
 .modal-content {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   width: 90%;
   max-width: 600px;
@@ -408,7 +408,7 @@
 }
 
 .history-item {
-  background: #f8fafc;
+  background: var(--bg-main);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 15px;
@@ -435,66 +435,6 @@
   opacity: 0.7;
 }
 
-/* Nota: O CSS do Modal de Buscas e Gráficos (modal-overlay-search) 
-   geralmente herda do Navbar.css, mas a estrutura Flex e Hover 
-   dos botões já está tratada inline no JSX. */
-
-   /* ==========================================
-   8. MODAIS EXPANSÍVEIS DOS GRÁFICOS
-   ========================================== */
-.modal-overlay-search {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(4px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
-
-.modal-content-search {
-  background: #ffffff;
-  width: 90%;
-  max-width: 600px;
-  border-radius: 20px;
-  position: relative;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  animation: modalPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-.search-modal-header {
-  padding: 25px 30px 15px 30px;
-  border-bottom: 1px solid var(--border-color);
-  position: relative;
-}
-
-.btn-close-search {
-  position: absolute;
-  top: 25px;
-  right: 25px;
-  background: none;
-  border: none;
-  font-size: 28px;
-  line-height: 1;
-  color: #94a3b8;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.btn-close-search:hover {
-  color: #ef4444;
-  transform: scale(1.1);
-}
-
-@keyframes modalPop {
-  0% { transform: scale(0.95) translateY(10px); opacity: 0; }
-  100% { transform: scale(1) translateY(0); opacity: 1; }
-}
-
 /* ==========================================
    9. CALENDÁRIO INTERATIVO
    ========================================== */
@@ -510,7 +450,7 @@
 }
 
 .calendar-header button {
-  background: #f8fafc;
+  background: var(--bg-main);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   width: 40px;
@@ -562,7 +502,7 @@
 }
 
 .calendar-day.active {
-  background: #f8fafc;
+  background: var(--bg-main);
   border: 1px solid var(--border-color);
   cursor: pointer;
   color: var(--text-main);
@@ -574,18 +514,11 @@
   color: #fff;
   border-color: var(--primary);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(13, 50, 105, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.calendar-day.empty {
-  visibility: hidden;
-}
-
-.calendar-day.is-today {
-  background: #e0e7ff;
-  color: #4f46e5;
-  border-color: #c7d2fe;
-}
+.calendar-day.empty { visibility: hidden; }
+.calendar-day.is-today { background: #e0e7ff; color: #4f46e5; border-color: #c7d2fe; }
 
 /* ==========================================
    10. ANIMAÇÕES LENTAS E PERCEPTÍVEIS
@@ -594,7 +527,6 @@
 @keyframes slideUpFadeDash { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes popInDash { from { opacity: 0; transform: scale(0.92) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
-/* Efeito Cascata do Dashboard - Tempos Aumentados */
 .dashboard-wrapper { animation: fadeInDash 1s ease-out forwards; }
 .dash-header-container { animation: slideUpFadeDash 1s ease-out 0.3s backwards; }
 .hero-card { animation: popInDash 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.5s backwards; }
@@ -605,51 +537,23 @@
 .ranking-zone { animation-delay: 0.95s; }
 .bottom-zone { animation-delay: 1.1s; }
 
-/* ==========================================
-   11. ANIMAÇÕES DE ABERTURA E FECHAMENTO DOS MODAIS
-   ========================================== */
-@keyframes modalOverlayIn { from { opacity: 0; backdrop-filter: blur(0px); } to { opacity: 1; backdrop-filter: blur(4px); } }
-@keyframes modalOverlayOut { from { opacity: 1; backdrop-filter: blur(4px); } to { opacity: 0; backdrop-filter: blur(0px); } }
-@keyframes modalContentIn { from { opacity: 0; transform: scale(0.9) translateY(40px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-@keyframes modalContentOut { from { opacity: 1; transform: scale(1) translateY(0); } to { opacity: 0; transform: scale(0.9) translateY(40px); } }
-
 /* Abertura (Entrada) */
-.modal-overlay, .modal-overlay-search {
-  animation: modalOverlayIn 0.4s ease-out forwards;
-}
-.modal-content, .modal-content-search {
-  animation: modalContentIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
+.modal-overlay, .modal-overlay-search { animation: modalOverlayIn 0.4s ease-out forwards; }
+.modal-content, .modal-content-search { animation: modalContentIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
-/* Fechamento (Saída controlada via React) */
-.modal-overlay.modal-closing, .modal-overlay-search.modal-closing {
-  animation: modalOverlayOut 0.4s ease-in forwards;
-}
-.modal-overlay.modal-closing .modal-content, 
-.modal-overlay-search.modal-closing .modal-content-search {
-  animation: modalContentOut 0.4s ease-in forwards;
-}
+.modal-overlay.modal-closing, .modal-overlay-search.modal-closing { animation: modalOverlayOut 0.4s ease-in forwards; }
+.modal-overlay.modal-closing .modal-content, .modal-overlay-search.modal-closing .modal-content-search { animation: modalContentOut 0.4s ease-in forwards; }
 
 /* ==========================================
    12. EFEITO SUPER ZOOM (FOCO CENTRALIZADO)
    ========================================== */
-
-/* Prepara o card para o efeito 3D sem quebrar o layout por baixo */
 .expandable-card {
   position: relative;
   z-index: 1;
-  /* Transição elástica premium (mais lenta no final) */
-  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
-              box-shadow 0.5s ease,
-              border-radius 0.3s ease;
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.5s ease, border-radius 0.3s ease, background 0.3s ease;
   will-change: transform;
 }
 
-/* 
-  A MÁGICA DA CENTRALIZAÇÃO: 
-  Âncoramos os cantos externos de cada card. 
-  Quando eles crescem, são forçados a empurrar em direção ao meio da tela!
-*/
 @media (min-width: 768px) {
   .volume-zone { transform-origin: top left; }
   .media-zone { transform-origin: top right; }
@@ -657,26 +561,16 @@
   .bottom-zone { transform-origin: bottom right; }
 }
 
-/* O crescimento do card e dos gráficos */
 .expandable-card:hover {
-  /* scale(1.35) aumenta o gráfico e o card em 35% na sua tela */
   transform: scale(1.35);
   z-index: 100;
-  box-shadow: 0 40px 100px rgba(13, 50, 105, 0.35);
-  /* Deixa o fundo reto para grudar perfeitamente na gaveta que vai descer */
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.35);
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
 
-/* Animação suave do ícone da setinha */
-.expand-icon {
-  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.expandable-card:hover .expand-icon {
-  transform: rotate(180deg);
-  color: var(--primary) !important;
-}
+.expand-icon { transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.expandable-card:hover .expand-icon { transform: rotate(180deg); color: var(--primary) !important; }
 
 /* ==========================================
    A GAVETA DE DETALHES EXPANSIVA
@@ -686,40 +580,32 @@
   top: 100%;
   left: -1px;
   right: -1px;
-  background: #ffffff;
-  border: 1px solid rgba(13, 50, 105, 0.2);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-top: none;
   border-radius: 0 0 16px 16px;
-  box-shadow: 0 30px 50px rgba(13, 50, 105, 0.3);
-  
-  /* Começa totalmente invisível e retraída para cima */
+  box-shadow: 0 30px 50px rgba(0, 0, 0, 0.3);
   opacity: 0;
   visibility: hidden;
   transform: translateY(-20px);
   transition: all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-  
   max-height: 250px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 15px;
-  
-  /* Como o card inteiro sofreu um zoom de 35%, 
-     diminuímos a fonte interna para ela ficar equilibrada visualmente */
   font-size: 0.75rem; 
+  color: var(--text-main);
 }
 
-/* Revela a gaveta quando o mouse passa no card principal */
 .expandable-card:hover .card-expansion {
   opacity: 1;
   visibility: visible;
-  /* A gaveta cai suavemente */
   transform: translateY(0);
   padding: 15px;
 }
 
-/* Personalização da barra de rolagem da expansão */
 .card-expansion::-webkit-scrollbar { width: 6px; }
 .card-expansion::-webkit-scrollbar-track { background: transparent; }
-.card-expansion::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 4px; }
+.card-expansion::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
