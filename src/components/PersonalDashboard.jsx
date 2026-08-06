@@ -8,6 +8,11 @@ import { Calendar as CalendarIcon, ChevronRight, ChevronLeft, ChevronDown, Layou
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import '../css/PersonalDashboard.css';
 import { doc, getDoc } from 'firebase/firestore';
+import ModalVolumeDetalhado from './ModalVolumeDetalhado'; // <-- Importe aqui
+import { Tooltip as RechartsTooltip } from 'recharts';
+import { CartesianGrid } from 'recharts';
+
+
 
 export default function PersonalDashboard({ user, isAdmin }) {
   const navigate = useNavigate();
@@ -17,6 +22,9 @@ export default function PersonalDashboard({ user, isAdmin }) {
   // Modais (Mantivemos apenas o Histórico, pois calendário no hover seria ruim de usar)
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [isClosingHistory, setIsClosingHistory] = useState(false);
+
+  // Dentro do seu componente PersonalDashboard, crie o estado:
+const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
   
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -60,6 +68,8 @@ export default function PersonalDashboard({ user, isAdmin }) {
 
   const prevMonth = () => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
   const nextMonth = () => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
+
+  
 
   const handleDateClick = async (day) => {
     if (!day) return;
@@ -168,8 +178,8 @@ export default function PersonalDashboard({ user, isAdmin }) {
       const ultimosMeses = [];
       const dataAtual = new Date();
 
-      // Monta o esqueleto vazio dos últimos 4 meses (ex: Maio, Junho, Julho, Agosto)
-      for (let i = 3; i >= 0; i--) {
+      // Monta o esqueleto vazio dos últimos 3 meses (ex: Maio, Junho, Julho)
+      for (let i = 2; i >= 0; i--) {
         const d = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - i, 1);
         const idMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         ultimosMeses.push({
@@ -269,34 +279,35 @@ export default function PersonalDashboard({ user, isAdmin }) {
             </div>
           </div>
 
-          {/* BLOCK 1: VOLUME */}
-          <div className="free-block volume-zone expandable-card">
-            <div className="kpi-header free-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Package size={20} className="kpi-icon blue" />
-                <div><h4>Volume Mensal</h4></div>
-              </div>
-              <ChevronDown size={18} color="#a0aec0" className="expand-icon" />
-            </div>
-            <div style={{ height: '120px', width: '100%', marginTop: '10px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={volumeDataCompleto}>
-                  <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#a0aec0'}} />
-                  <Tooltip cursor={{fill: 'rgba(13, 50, 105, 0.05)'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}/>
-                  <Bar dataKey="pedidos" radius={[6, 6, 0, 0]}>
-                    {volumeDataCompleto.map((entry, i) => <Cell key={i} fill={i === volumeDataCompleto.length - 1 ? 'var(--primary)' : '#dbe4f0'} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {/* O SEGREDO DO HOVER: A expansão escondida */}
-            <div className="card-expansion">
-              {volumeDataCompleto.map(m => (
-                 <div key={m.chaveBusca} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '8px', fontWeight: 'bold' }}>
-                    <span style={{ color: 'var(--primary)' }}>{m.mes} / {m.ano}</span><div>{m.pedidos} pedidos</div>
-                 </div>
-              ))}
-            </div>
+          {/* BLOCO 1: VOLUME ESTATÍSTICO MENSAL */}
+        <div 
+          className="free-block volume-zone expandable-card" 
+          onClick={() => setModalVolumeAberto(true)} 
+          style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+        >
+          <div className="block-header">
+            <h3>Volume Mensal</h3>
+            <span className="block-action">Ver Detalhes</span>
           </div>
+          <div style={{ flex: 1, width: '100%', height: '150px', marginTop: '15px' }}>
+            {/* Adicionamos layout="vertical" para as barras deitarem */}
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={volumeDataCompleto} layout="vertical" margin={{ top: 0, right: 20, left: -20, bottom: 0 }}>
+                {/* Linhas de grade apenas na vertical como no seu exemplo */}
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" opacity={0.5} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="mes" type="category" tick={{ fill: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} />
+                <RechartsTooltip 
+                  cursor={{ fill: 'var(--bg-main)' }}
+                  contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
+                />
+                {/* Barras duplas com as cores do seu modelo */}
+                <Bar dataKey="caixas" name="Caixas" fill="#c4709d" barSize={8} radius={[0, 4, 4, 0]} />
+                <Bar dataKey="pedidos" name="Pedidos" fill="#0273a3" barSize={8} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
           {/* BLOCK 2: MÉDIA */}
           <div className="free-block media-zone expandable-card">
@@ -382,6 +393,13 @@ export default function PersonalDashboard({ user, isAdmin }) {
           </div>
         </div>
       )}
+
+      {/* MODAL DE VOLUME ESTATÍSTICO */}
+      <ModalVolumeDetalhado 
+        showModal={modalVolumeAberto}
+        setShowModal={setModalVolumeAberto}
+        mesesResumo={volumeDataCompleto} // Aquele array de 4 meses que puxamos do Firebase
+      />
 
     </div>
   );
