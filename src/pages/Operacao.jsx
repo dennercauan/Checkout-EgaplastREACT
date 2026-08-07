@@ -1751,6 +1751,48 @@ const handlePlanejamentoUpload = (e, dIdx) => {
 
   window.rodarPadronizacao = padronizarDatasLegadas;
 
+  const sincronizarEstatisticasDiarias = async () => {
+    if (!window.confirm("Deseja gerar as estatísticas diárias a partir dos pedidos na raiz?")) return;
+    
+    try {
+      console.log("Calculando volume diário...");
+      const q = query(collection(db, 'pedidos'), where('efetivado', '==', true));
+      const snap = await getDocs(q);
+      const diasMap = {};
+
+      // Conta todos os pedidos válidos e agrupa por dia
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
+        if (!temNfOuMinuta || !data.dataOperacao) return;
+
+        const dataFormatada = String(data.dataOperacao).substring(0, 10);
+        if (!diasMap[dataFormatada]) diasMap[dataFormatada] = 0;
+        diasMap[dataFormatada]++;
+      });
+
+      // Salva na coleção estatisticasDiarias
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const [dia, total] of Object.entries(diasMap)) {
+        const docRef = doc(db, 'estatisticasDiarias', dia);
+        // Usamos merge para não apagar o ranking, caso ele já exista lá!
+        batch.set(docRef, { totalPedidos: total, totalNfMinuta: total }, { merge: true });
+        count++;
+      }
+
+      await batch.commit();
+      console.log("Sincronização concluída!");
+      alert(`Sucesso! ${count} dias de operação foram salvos nas estatísticas diárias.`);
+    } catch (error) {
+      console.error("Erro na sincronização:", error);
+      alert("Erro: " + error.message);
+    }
+  };
+
+  window.rodarSincronizacaoDiaria = sincronizarEstatisticasDiarias;
+
                     return (
                       <tr 
                         key={pedido.id} 
