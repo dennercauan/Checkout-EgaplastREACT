@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard'; // Importando o novo painel
 import Operacao from './pages/Operacao';
+import OperacaoAdm from './pages/OperacaoAdm';
+
 
 
 function App() {
@@ -19,6 +21,8 @@ function App() {
         <Route path="/dashboard-viewer" element={<h2>Dashboard Comercial (Em construção)</h2>} />
 
         <Route path="/elemento" element={<Operacao />} />
+
+        <Route path="/operacao-adm" element={<OperacaoAdm />} />
       </Routes>
     </BrowserRouter>
   );

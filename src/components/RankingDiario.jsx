@@ -1,5 +1,5 @@
-import React from 'react';
-import { Trophy, Medal, CheckCircle2, Factory, TrendingUp, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Trophy, Medal, CheckCircle2, Factory, TrendingUp, Clock, Maximize2, X } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function RankingDiario({
@@ -9,6 +9,7 @@ export default function RankingDiario({
   currentTime,
   dataOperacaoAtiva
 }) {
+  const [modalUser, setModalUser] = useState(null);
 
   const formatTime = (ms) => {
     if (!ms) return '';
@@ -43,34 +44,25 @@ export default function RankingDiario({
     return null;
   };
 
- // ==========================================
-  // NOVO: PONTOS PERSONALIZADOS DO GRÁFICO (Bolinha + Texto)
-  // ==========================================
   const CustomLabelDot = (props) => {
     const { cx, cy, payload } = props;
-    
     if (!payload || payload.delta === 0 || payload.delta === undefined) {
-       // Adicionado pointerEvents: 'none'
        return <circle cx={cx} cy={cy} r={2} fill="#38bdf8" opacity={0.5} style={{ pointerEvents: 'none' }} />;
     }
-
     const isNegative = payload.delta < 0;
-    
     return (
-      // A MÁGICA AQUI: pointerEvents: 'none' faz o mouse "atravessar" os números e acionar o Tooltip!
       <g style={{ pointerEvents: 'none' }}>
         <circle cx={cx} cy={cy} r={4} fill={isNegative ? '#ef4444' : '#10b981'} stroke="#fff" strokeWidth={2} />
-        
         <text x={cx} y={isNegative ? cy + 20 : cy - 12} fill="#fff" fontSize={11} fontWeight="900" textAnchor="middle" stroke="#fff" strokeWidth={4} strokeLinejoin="round">
           {isNegative ? payload.delta : `+${payload.delta}`}
         </text>
-        
         <text x={cx} y={isNegative ? cy + 20 : cy - 12} fill={isNegative ? '#ef4444' : '#10b981'} fontSize={11} fontWeight="900" textAnchor="middle">
           {isNegative ? payload.delta : `+${payload.delta}`}
         </text>
       </g>
     );
   };
+
   const renderTimeline = (user) => {
     if (!user.eventosMesclados || user.eventosMesclados.length === 0) return null;
 
@@ -86,20 +78,21 @@ export default function RankingDiario({
     const totalMs = maxTime - minTime;
     if (totalMs <= 0) return null;
 
-    const DEZ_MINUTOS = 10 * 60 * 1000;
+    // ATUALIZADO: A barra visual agora usa 20 minutos de tolerância
+    const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000; 
     const segments = [];
     let lastEnd = minTime;
 
     user.eventosMesclados.forEach(ev => {
       const gap = ev.start - lastEnd;
-      if (gap > 0) segments.push({ type: gap > DEZ_MINUTOS ? 'idle' : 'gap', ms: gap });
+      if (gap > 0) segments.push({ type: gap > LIMITE_OCIOSIDADE_MS ? 'idle' : 'gap', ms: gap });
       const active = ev.end - ev.start;
       if (active >= 0) segments.push({ type: 'active', ms: active });
       lastEnd = ev.end;
     });
 
     const finalGap = maxTime - lastEnd;
-    if (finalGap > 0) segments.push({ type: (finalGap > DEZ_MINUTOS && isHoje) ? 'idle' : 'gap', ms: finalGap });
+    if (finalGap > 0) segments.push({ type: (finalGap > LIMITE_OCIOSIDADE_MS && isHoje) ? 'idle' : 'gap', ms: finalGap });
 
     return (
       <div style={{ marginTop: '15px', borderTop: '1px dashed #cbd5e1', paddingTop: '12px' }}>
@@ -109,7 +102,7 @@ export default function RankingDiario({
           </span>
           <div style={{ display: 'flex', gap: '10px', fontSize: '0.7rem' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><div style={{width: '8px', height: '8px', background: '#10b981', borderRadius: '2px'}}></div> Trabalhando</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><div style={{width: '8px', height: '8px', background: '#e2e8f0', borderRadius: '2px'}}></div> Tolerância</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><div style={{width: '8px', height: '8px', background: '#e2e8f0', borderRadius: '2px'}}></div> Tolerância (20m)</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><div style={{width: '8px', height: '8px', background: '#ef4444', borderRadius: '2px'}}></div> Ocioso (Multa)</span>
           </div>
         </div>
@@ -136,116 +129,204 @@ export default function RankingDiario({
   };
 
   return (
-    <div className="op-ranking-container">
-      <div className="ranking-header">
-        <h3><Trophy size={20} color="#eab308" style={{marginRight: '8px'}}/> Ranking Diário - Produtividade</h3>
-        <span className="ranking-subtitle">Top Conferentes do Dia</span>
-      </div>
-      <div className="ranking-list">
-        {rankingCalculado.map((user, idx) => (
-          <div key={`${user.uid}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            
-            <div 
-              className={`ranking-item ${idx === 0 ? 'first-place' : ''}`}
-              onClick={() => setRankingExpandido(rankingExpandido === user.uid ? null : user.uid)}
-              style={{ cursor: 'pointer', transition: 'all 0.2s' }}
-            >
-              <div className="ranking-pos">{idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}</div>
-              <div className="ranking-avatar"><div className="avatar-circle">{user.nome.charAt(0)}</div></div>
-              <div className="ranking-info">
-                <strong className="ranking-name">{user.nome}</strong>
-                <div className="ranking-metrics">
-                  <span><CheckCircle2 size={12}/> {user.skus} SKUs</span>
-                  <span><Factory size={12}/> {user.op} O.P.s</span>
+    <>
+      <div className="op-ranking-container">
+        <div className="ranking-header">
+          <h3><Trophy size={20} color="#eab308" style={{marginRight: '8px'}}/> Ranking Diário - Produtividade</h3>
+          <span className="ranking-subtitle">Top Conferentes do Dia</span>
+        </div>
+        <div className="ranking-list">
+          {rankingCalculado.map((user, idx) => (
+            <div key={`${user.uid}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              
+              <div 
+                className={`ranking-item ${idx === 0 ? 'first-place' : ''}`}
+                onClick={() => setRankingExpandido(rankingExpandido === user.uid ? null : user.uid)}
+                style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                <div className="ranking-pos">{idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}</div>
+                <div className="ranking-avatar"><div className="avatar-circle">{user.nome.charAt(0)}</div></div>
+                <div className="ranking-info">
+                  <strong className="ranking-name">{user.nome}</strong>
+                  <div className="ranking-metrics">
+                    <span><CheckCircle2 size={12}/> {user.skus} SKUs</span>
+                    <span><Factory size={12}/> {user.op} O.P.s</span>
+                  </div>
+                </div>
+                <div className="ranking-score">
+                  <div className="score-value">{user.pontos.toLocaleString()} pts</div>
+                  <div className="score-bar"><div className="score-fill" style={{width: `${(user.pontos / (rankingCalculado[0]?.pontos || 1)) * 100}%`}}></div></div>
                 </div>
               </div>
-              <div className="ranking-score">
-                <div className="score-value">{user.pontos.toLocaleString()} pts</div>
-                <div className="score-bar"><div className="score-fill" style={{width: `${(user.pontos / (rankingCalculado[0]?.pontos || 1)) * 100}%`}}></div></div>
+              
+              {rankingExpandido === user.uid && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px 12px 10px 12px', fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '35px', marginRight: '10px' }}>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>📦 SKUs (Max 300 pts/cx):</span> 
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                       <strong>{user.pontosSku} pts</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>🚀 Bônus (Pedidos):</span> 
+                    <strong style={{ color: '#10b981' }}>+{user.bonusPedidos} pts</strong>
+                  </div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>🏭 O.P.s ({user.op}):</span> 
+                    <strong style={{ color: '#3b82f6' }}>+{user.op * 50} pts</strong>
+                  </div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #cbd5e1', paddingTop: '8px', marginTop: '4px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>⏱️ Penalidade (Ociosidade):</span> 
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                       <strong style={{ color: '#ef4444' }}>-{user.decrescimo} pts</strong>
+                       {user.decrescimo > 0 && <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{user.decrescimo / 10} min em atraso</span>}
+                    </div>
+                  </div>
+                  
+                  {renderTimeline(user)}
+                  
+                  {/* MINI-MAPA DE EVOLUÇÃO (Com botão de expandir) */}
+                  {user.chartData && user.chartData.length > 0 && (
+                    <div style={{ marginTop: '15px', borderTop: '1px dashed #cbd5e1', paddingTop: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#475569' }}>
+                          <TrendingUp size={16} color="#3b82f6" /> Gráfico de Evolução Diária
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setModalUser(user); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '4px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}
+                          title="Ampliar gráfico"
+                        >
+                          <Maximize2 size={12} /> Ampliar
+                        </button>
+                      </div>
+                      
+                      <div 
+                        style={{ width: '100%', height: '180px', marginLeft: '-15px', cursor: 'zoom-in' }}
+                        onClick={() => setModalUser(user)}
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={user.chartData} margin={{ top: 25, right: 15, left: 0, bottom: 25 }}>
+                            <defs>
+                              <linearGradient id={`colorEvolucao_${user.uid}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4}/>
+                                <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis 
+                              dataKey="timestamp" 
+                              type="number" 
+                              scale="time" 
+                              domain={['dataMin', 'dataMax']} 
+                              tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              tick={{ fontSize: 10, fill: '#94a3b8' }} 
+                              axisLine={false} 
+                              tickLine={false} 
+                              minTickGap={20} 
+                            />
+                            <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={40} />
+                            <RechartsTooltip content={<EvolucaoTooltip />} cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                            <Area 
+                              type="linear" 
+                              dataKey="score" 
+                              stroke="#0284c7" 
+                              strokeWidth={2} 
+                              fillOpacity={1} 
+                              fill={`url(#colorEvolucao_${user.uid})`}
+                              dot={<CustomLabelDot />}
+                              activeDot={{ r: 6, strokeWidth: 0, fill: '#0ea5e9' }}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                  
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* MODAL DE GRÁFICO EXPANDIDO (COM CORREÇÃO DE ALTURA) */}
+      {modalUser && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '1100px', height: 'auto', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+            
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <TrendingUp color="#0284c7" />
+                  Evolução Detalhada: {modalUser.nome}
+                </h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                  Total atual: <strong style={{ color: '#0ea5e9' }}>{modalUser.pontos} pontos</strong>
+                </p>
+              </div>
+              <button 
+                onClick={() => setModalUser(null)}
+                style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#e2e8f0'}
+                onMouseOut={(e) => e.currentTarget.style.background = '#f1f5f9'}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* CORREÇÃO AQUI: height definida rigidamente para 500px, impedindo que o gráfico suma! */}
+            <div style={{ padding: '30px 20px', flex: 1, overflowX: 'auto', display: 'flex' }}>
+              <div style={{ minWidth: '800px', width: '100%', height: '500px' }}> 
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={modalUser.chartData} margin={{ top: 30, right: 30, left: 10, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id={`colorEvolucaoModal_${modalUser.uid}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
+                        <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={true} stroke="#e2e8f0" opacity={0.5} />
+                    <XAxis 
+                      dataKey="timestamp" 
+                      type="number" 
+                      scale="time" 
+                      domain={['dataMin', 'dataMax']} 
+                      tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} 
+                      axisLine={{ stroke: '#cbd5e1' }} 
+                      tickLine={false} 
+                      minTickGap={40} 
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} 
+                      axisLine={false} 
+                      tickLine={false} 
+                      width={50} 
+                    />
+                    <RechartsTooltip content={<EvolucaoTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                    <Area 
+                      type="linear" 
+                      dataKey="score" 
+                      stroke="#0284c7" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill={`url(#colorEvolucaoModal_${modalUser.uid})`}
+                      dot={<CustomLabelDot />}
+                      activeDot={{ r: 8, strokeWidth: 2, stroke: '#fff', fill: '#0ea5e9' }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             </div>
-            
-            {rankingExpandido === user.uid && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px 12px 10px 12px', fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '35px', marginRight: '10px' }}>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>📦 SKUs (Max 300 pts/cx):</span> 
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                     <strong>{user.pontosSku} pts</strong>
-                  </div>
-                </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>🚀 Bônus (Pedidos):</span> 
-                  <strong style={{ color: '#10b981' }}>+{user.bonusPedidos} pts</strong>
-                </div>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>🏭 O.P.s ({user.op}):</span> 
-                  <strong style={{ color: '#3b82f6' }}>+{user.op * 50} pts</strong>
-                </div>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #cbd5e1', paddingTop: '8px', marginTop: '4px' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>⏱️ Penalidade (Ociosidade):</span> 
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                     <strong style={{ color: '#ef4444' }}>-{user.decrescimo} pts</strong>
-                     {user.decrescimo > 0 && <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{user.decrescimo / 10} min em atraso</span>}
-                  </div>
-                </div>
-                
-                {renderTimeline(user)}
-                
-                {user.chartData && user.chartData.length > 0 && (
-                  <div style={{ marginTop: '15px', borderTop: '1px dashed #cbd5e1', paddingTop: '15px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontWeight: 'bold', color: '#475569' }}>
-                      <TrendingUp size={16} color="#3b82f6" /> Gráfico de Evolução Diária
-                    </div>
-                    
-                    <div style={{ width: '100%', height: '180px', marginLeft: '-15px' }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={user.chartData} margin={{ top: 25, right: 15, left: 0, bottom: 25 }}>
-                          <defs>
-                            <linearGradient id={`colorEvolucao_${user.uid}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4}/>
-                              <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                          <XAxis 
-                            dataKey="timestamp" 
-                            type="number" 
-                            scale="time" 
-                            domain={['dataMin', 'dataMax']} 
-                            tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            tick={{ fontSize: 10, fill: '#94a3b8' }} 
-                            axisLine={false} 
-                            tickLine={false} 
-                            minTickGap={20} 
-                          />
-                          <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={40} />
-                          <RechartsTooltip content={<EvolucaoTooltip />} cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                          {/* INJEÇÃO DO NOVO COMPONENTE NA PROPRIEDADE DOT */}
-                          <Area 
-                            type="linear" 
-                            dataKey="score" 
-                            stroke="#0284c7" 
-                            strokeWidth={2} 
-                            fillOpacity={1} 
-                            fill={`url(#colorEvolucao_${user.uid})`}
-                            dot={<CustomLabelDot />}
-                            activeDot={{ r: 6, strokeWidth: 0, fill: '#0ea5e9' }}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
-                
-              </div>
-            )}
           </div>
-        ))}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -39,6 +39,7 @@ export default function Operacao({ isAdmin }) {
   const isHoje = dataOperacaoAtiva === dataHojeStr;
 
   const [titulo, setTitulo] = useState('Carregando...');
+  const [ajustesDoDia, setAjustesDoDia] = useState([]);
   const [localUser, setLocalUser] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   
@@ -190,6 +191,33 @@ export default function Operacao({ isAdmin }) {
   const abrirModalSalvarManual = (dIdx, sku) => {
     setModalCodigoBarras({ dIdx, sku });
     setCodigoBarrasInput('');
+  };
+
+  const sincronizarTudoEmTempoReal = async () => {
+    // Pega a foto exata do momento atual da operação
+    const rankingAtual = rankingRef.current; 
+    if (!rankingAtual || rankingAtual.length === 0) return;
+
+    try {
+      const rankingMap = {};
+      rankingAtual.forEach(user => {
+        // Empacota os dados estruturados de SKUs e OPs
+        rankingMap[user.nome] = {
+          pontos: user.pontos || 0,
+          skus: user.skus || 0,
+          op: user.op || 0,
+          decrescimo: user.decrescimo || 0
+        };
+      });
+
+      const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
+      
+      // Envia o pacote inteiro instantaneamente
+      await setDoc(refDia, { ranking: rankingMap }, { merge: true });
+      
+    } catch (error) {
+      console.error("Falha ao sincronizar em tempo real:", error);
+    }
   };
 
   // SALVA A NOVA VARIAÇÃO NO BANCO DE DADOS (COM PROTEÇÃO ANTI-DUPLICIDADE E AUTO-UPDATE)
@@ -543,6 +571,15 @@ export default function Operacao({ isAdmin }) {
       setOpsDoDia(ops);
     });
 
+    // INJETE ESTE BLOCO AQUI:
+    const qAjustes = query(collection(db, 'ajustesDiarios'), where('dataOperacao', '==', dataOperacaoAtiva));
+    const unsubAjustes = onSnapshot(qAjustes, (snap) => {
+      setAjustesDoDia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // ATUALIZE A LINHA DO RETURN PARA DESLIGAR ESTE TAMBÉM:
+    return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); };
+
     return () => { unsubNovo(); unsubLegado(); unsubOp(); };
   }, [localUser, dataOperacaoAtiva]); // Removido o isAdmin daqui, pois a visão agora é global
 
@@ -646,12 +683,26 @@ export default function Operacao({ isAdmin }) {
     if (pedido.isPaused) return alert("Retome o pedido antes de finalizá-lo.");
     const novoStatus = !pedido.efetivado;
     const ref = obterReferenciaDocumento(pedido);
-    const payload = { efetivado: novoStatus };
-    if (novoStatus) payload.completedAt = serverTimestamp();
-    else payload.completedAt = deleteField(); 
-    await updateDoc(ref, payload);
     
-    // 👇 GATILHO NOVO AQUI:
+    const payload = { efetivado: novoStatus };
+    
+    if (novoStatus) {
+      // BLINDAGEM: Só registra o horário novo se for a primeira vez. 
+      if (!pedido.primeiraEfetivacao) {
+        payload.completedAt = serverTimestamp();
+        payload.primeiraEfetivacao = serverTimestamp(); // Cria a trava inquebrável
+      } else {
+        payload.completedAt = pedido.primeiraEfetivacao; // Restaura o horário original
+      }
+    } else {
+      // Se for um pedido antigo sendo desfeito, salva o horário original antes de apagar
+      if (!pedido.primeiraEfetivacao && pedido.completedAt) {
+        payload.primeiraEfetivacao = pedido.completedAt;
+      }
+      payload.completedAt = deleteField(); 
+    }
+    
+    await updateDoc(ref, payload);
     await atualizarEstatisticasMensais(pedido, novoStatus);
   };
 
@@ -1372,8 +1423,13 @@ const handlePlanejamentoUpload = (e, dIdx) => {
             let startRaw = pedido.createdAt?.toMillis ? pedido.createdAt.toMillis() : tempoReferencia;
             let endRaw = tempoReferencia; 
             
+            // TRAVA ANTI-FRAUDE DA OCIOSIDADE:
             if (pedido.efetivado && pedido.completedAt) {
                endRaw = pedido.completedAt?.toMillis ? pedido.completedAt.toMillis() : tempoReferencia;
+            } else if (pedido.primeiraEfetivacao) {
+               // Se o pedido foi reaberto, ele trava o tempo final no momento da 1ª conclusão
+               // impedindo que o bloco de trabalho se estique até o momento atual!
+               endRaw = pedido.primeiraEfetivacao?.toMillis ? pedido.primeiraEfetivacao.toMillis() : tempoReferencia;
             } else if (pedido.isPaused && pedido.lastPauseStart) {
                endRaw = pedido.lastPauseStart; 
             }
@@ -1409,8 +1465,8 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       });
     });
 
-    // 4. Calcula o Decréscimo de Ociosidade
-    const DEZ_MINUTOS_MS = 10 * 60 * 1000;
+    // 4. Calcula o Decréscimo de Ociosidade (AGORA COM 20 MINUTOS)
+    const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000; // 20 Minutos
     
     Object.values(userStats).forEach(user => {
        user.eventos.sort((a, b) => a.start - b.start);
@@ -1425,23 +1481,23 @@ const handlePlanejamentoUpload = (e, dIdx) => {
 
        for (let i = 1; i < merged.length; i++) {
           const gapMs = merged[i].start - merged[i-1].end;
-          if (gapMs > DEZ_MINUTOS_MS) {
-             const excessoMs = gapMs - DEZ_MINUTOS_MS;
+          if (gapMs > LIMITE_OCIOSIDADE_MS) {
+             const excessoMs = gapMs - LIMITE_OCIOSIDADE_MS;
              const penalidade = Math.floor(excessoMs / 60000) * 10;
              user.decrescimo += penalidade; 
              user.pontos -= penalidade; 
              
              // REGISTRO NO GRÁFICO: Marca o momento exato que acabou a tolerância
              user.pointEvents.push({ 
-               time: merged[i-1].end + DEZ_MINUTOS_MS, 
+               time: merged[i-1].end + LIMITE_OCIOSIDADE_MS, 
                delta: 0, 
                label: '⏱️ Fim da Tolerância', 
-               detalhe: 'A pausa permitida de 10 min acabou aqui. Iniciando perda de pontos.'
+               detalhe: 'A pausa permitida de 20 min acabou aqui. Iniciando perda de pontos.'
              });
 
              // REGISTRO NO GRÁFICO: Queda na hora que ele voltou a trabalhar
              user.pointEvents.push({ 
-               time: merged[i].start, 
+               time: merged[i].start - 1000, // <--- A MÁGICA ESTÁ AQUI: - 1000ms (1 segundo antes)
                delta: -penalidade, 
                label: '❌ Multa Aplicada (Retorno)', 
                detalhe: `Perdeu ${penalidade} pts (Ficou ocioso por ${Math.floor(gapMs / 60000)} minutos totais)`
@@ -1453,18 +1509,18 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           const ultimaTarefa = merged[merged.length - 1];
           if (ultimaTarefa.end < currentTime) {
              const ociosidadeAtualMs = currentTime - ultimaTarefa.end;
-             if (ociosidadeAtualMs > DEZ_MINUTOS_MS) {
-                const excessoMs = ociosidadeAtualMs - DEZ_MINUTOS_MS;
+             if (ociosidadeAtualMs > LIMITE_OCIOSIDADE_MS) {
+                const excessoMs = ociosidadeAtualMs - LIMITE_OCIOSIDADE_MS;
                 const penalidade = Math.floor(excessoMs / 60000) * 10;
                 user.decrescimo += penalidade;
                 user.pontos -= penalidade;
                 
-                // Marca o fim da tolerância para fazer o gráfico cair apenas DEPOIS dos 10 min
+                // Marca o fim da tolerância para fazer o gráfico cair apenas DEPOIS dos 20 min
                 user.pointEvents.push({ 
-                  time: ultimaTarefa.end + DEZ_MINUTOS_MS, 
+                  time: ultimaTarefa.end + LIMITE_OCIOSIDADE_MS, 
                   delta: 0, 
                   label: '⏱️ Fim da Tolerância', 
-                  detalhe: 'Iniciou o sangramento de pontos.'
+                  detalhe: 'A pausa permitida de 20 min acabou aqui. Iniciando sangramento.'
                 });
 
                 // Queda contínua até o momento atual
@@ -1477,11 +1533,45 @@ const handlePlanejamentoUpload = (e, dIdx) => {
              }
           }
        }
-       user.eventosMesclados = merged; 
+
+       user.eventosMesclados = merged;
        if (user.pontos < 0) user.pontos = 0;
+       
        // ===============================================
+       // 4.5 APLICA OS AJUSTES E PERDÕES MANUAIS DA LIDERANÇA
+       // ===============================================
+       const ajustesDesteUsuario = ajustesDoDia.filter(a => a.usuarioNome === user.nome);
+       
+       ajustesDesteUsuario.forEach(ajuste => {
+         if (ajuste.tipo === 'bonus') {
+           user.pontos += ajuste.pontos;
+           let time = ajuste.createdAt?.toMillis ? ajuste.createdAt.toMillis() : tempoReferencia;
+           
+           // Extrai o motivo ou deixa em branco caso seja um ajuste antigo sem motivo gravado
+           const motivoAdicional = ajuste.motivo ? ` - Motivo: ${ajuste.motivo}` : '';
+           
+           if (ajuste.isPerdao) {
+             user.decrescimo = Math.max(0, user.decrescimo - ajuste.pontos);
+             user.pointEvents.push({
+               time, 
+               delta: ajuste.pontos, 
+               label: '🛡️ Perdão de Ociosidade', 
+               detalhe: `A liderança devolveu ${ajuste.pontos} pts${motivoAdicional}`
+             });
+           } else {
+             user.pointEvents.push({
+               time, 
+               delta: ajuste.pontos, 
+               label: '⭐ Bônus / Ajuste ADM', 
+               detalhe: `${ajuste.pontos > 0 ? '+' : ''}${ajuste.pontos} pts${motivoAdicional}`
+             });
+           }
+         }
+       });
+
+       // ===============================================
+
        // 5. PROCESSA OS DADOS PARA O RECHARTS
-       // ===============================================
        user.pointEvents.sort((a, b) => a.time - b.time);
        
        let pontuacaoCorrente = 0;
@@ -1527,14 +1617,12 @@ const handlePlanejamentoUpload = (e, dIdx) => {
        .sort((a, b) => b.pontos - a.pontos)
        .map((u, idx) => ({ ...u, posicao: idx + 1 }));
 
-  }, [pedidosProcessados, opsDoDia, usuarios, currentTime, dataOperacaoAtiva]);
+  }, [pedidosProcessados, opsDoDia, usuarios, currentTime, dataOperacaoAtiva, ajustesDoDia]);
   
 
   // ==========================================
-  // AUTO-SAVE SEGURO DO RANKING (Protegendo a cota do Firebase)
+  // AUTO-SAVE EM TEMPO REAL (EVENT-DRIVEN)
   // ==========================================
-  // Para evitar usar a variável "rankingCalculado" diretamente no useEffect (o que dispararia a cada 1 segundo),
-  // usamos uma ref para guardar o valor mais recente do ranking silenciosamente.
   const rankingRef = React.useRef(rankingCalculado);
   
   useEffect(() => {
@@ -1549,10 +1637,16 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       try {
         const rankingMap = {};
         rankingAtual.forEach(user => {
-          rankingMap[user.nome] = user.pontos;
+          rankingMap[user.nome] = {
+            pontos: user.pontos || 0,
+            skus: user.skus || 0,
+            op: user.op || 0,
+            decrescimo: user.decrescimo || 0
+          };
         });
 
         const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
+        // Envia o pacote instantaneamente
         await setDoc(refDia, { ranking: rankingMap }, { merge: true });
         
       } catch (error) {
@@ -1560,17 +1654,12 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       }
     };
 
-    // Dispara a gravação a cada 5 MINUTOS (300.000 milissegundos)
-    const timer = setInterval(() => {
-      salvarRankingConsolidado();
-    }, 300000); 
+    // O PULO DO GATO: Em vez de um setInterval de 5 minutos, a função é disparada 
+    // no exato milissegundo em que uma O.P. ou Pedido sofre qualquer edição no banco!
+    salvarRankingConsolidado();
 
-    // Dispara uma última gravação instantânea caso o usuário feche a aba ou mude de página
-    return () => {
-      clearInterval(timer);
-      salvarRankingConsolidado();
-    };
-  }, [dataOperacaoAtiva]); // A dependência travada na data impede que o relógio dispare o efeito
+  // O React fica vigiando essas duas variáveis abaixo. Se elas mudarem, ele salva.
+}, [pedidosProcessados, opsDoDia, dataOperacaoAtiva, ajustesDoDia]);
 
   // ==========================================
   // ESTADOS E FUNÇÕES DO ALERTA DE PESO ZERO

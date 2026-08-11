@@ -416,9 +416,11 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
             <span className="date-separator">até</span>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="date-input" />
           </div>
+          
           <button className="btn-history" onClick={() => setShowHistoryModal(true)}>
             <Clock size={16} /> Ver Histórico
           </button>
+
         </div>
       </div>
 
@@ -450,8 +452,8 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
               </div>
               <div className="hero-footer">
                 <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
-                <button className="btn-access hero-btn" onClick={() => isAdmin ? navigate(`/visao-geral`) : handleAccessToday()}>
-                  {isAdmin ? 'Ver Todos os Pedidos' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
+                <button className="btn-access hero-btn" onClick={() => isAdmin ? navigate(`/operacao-adm`) : handleAccessToday()}>
+                  {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
                 </button>
               </div>
             </div>
