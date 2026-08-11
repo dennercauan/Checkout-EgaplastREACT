@@ -36,6 +36,7 @@ export default function Operacao({ isAdmin }) {
   const today = new Date();
   const dataHojeStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const dataOperacaoAtiva = dataUrl || dataHojeStr;
+  const isHoje = dataOperacaoAtiva === dataHojeStr;
 
   const [titulo, setTitulo] = useState('Carregando...');
   const [localUser, setLocalUser] = useState(null);
@@ -1295,84 +1296,120 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     } catch (error) { alert("Houve um erro ao salvar o pedido."); } finally { setIsSaving(false); }
   };
 
-
-  // ==========================================
-  // NOVO MOTOR DO RANKING DIÁRIO (LIMITADO A 300 PTS/CAIXA)
+// ==========================================
+  // NOVO MOTOR DO RANKING DIÁRIO (COM EVOLUÇÃO E DETALHAMENTO DE TEMPO)
   // ==========================================
   const rankingCalculado = useMemo(() => {
     const userStats = {};
     
-    // 1. Inicializa o painel para todos os usuários
+    const [anoStr, mesStr, diaStr] = dataOperacaoAtiva.split('-');
+    const inicioDoDiaAtivo = new Date(anoStr, mesStr - 1, diaStr, 0, 0, 0).getTime();
+    const fimDoDiaAtivo = new Date(anoStr, mesStr - 1, diaStr, 23, 59, 59).getTime();
+    
+    const isHoje = dataOperacaoAtiva === dataHojeStr;
+    const tempoReferencia = isHoje ? currentTime : fimDoDiaAtivo;
+
     usuarios.forEach(u => {
       userStats[u.uid] = { 
         nome: u.email.split('@')[0], 
-        skus: 0,         // Quantidade BRUTA de produtos (Visual)
-        pontosSku: 0,    // Quantidade CAPADA de pontos gerados pelas caixas
-        op: 0, 
-        pedidos: 0, 
-        bonusPedidos: 0, 
-        decrescimo: 0,   
-        pontos: 0, 
-        eventos: [], 
+        skus: 0, pontosSku: 0, op: 0, pedidos: 0, 
+        bonusPedidos: 0, decrescimo: 0, pontos: 0, eventos: [],
+        pointEvents: [], 
         uid: u.uid
       };
     });
 
-    // 2. Processa as Ordens de Produção (50 pontos cada)
+    // 2. Processa as Ordens de Produção
     opsDoDia.forEach(op => {
        if (op.responsavelUid && userStats[op.responsavelUid]) {
           userStats[op.responsavelUid].op += 1;
           userStats[op.responsavelUid].pontos += 50;
           
-          const time = op.createdAt?.toMillis ? op.createdAt.toMillis() : currentTime;
+          let time = op.createdAt?.toMillis ? op.createdAt.toMillis() : tempoReferencia;
+          time = Math.max(inicioDoDiaAtivo, Math.min(tempoReferencia, time));
+          
           userStats[op.responsavelUid].eventos.push({ start: time, end: time });
+          userStats[op.responsavelUid].pointEvents.push({ 
+            time, delta: 50, 
+            label: '🏭 Ordem de Produção', 
+            detalhe: 'Registro rápido concluído'
+          });
        }
     });
 
-    // 3. Processa os Pedidos / Romaneios (SKUs Limitados + 100 Bônus)
+    // 3. Processa os Pedidos
     pedidosProcessados.forEach(pedido => {
       let skusReais = 0;
       let pontosSKU = 0;
 
-      // O PULO DO GATO: Conta e limita a pontuação por CAIXA, não pelo pedido todo
       (pedido.documentos || []).forEach(d => {
          (d.caixas || []).forEach(cx => {
             let skusNaCaixa = 0;
             (cx.produtos || []).forEach(p => skusNaCaixa += parseInt(p.quantidade) || 0);
-            
             skusReais += skusNaCaixa;
-            pontosSKU += Math.min(skusNaCaixa, 300); // Limita os pontos a 300 por caixa
+            pontosSKU += Math.min(skusNaCaixa, 300); 
          });
       });
 
       const participantes = pedido.uidsVinculados || [pedido.criadorUid];
+      const numParticipantes = participantes.length || 1; 
       
+      const skusDivididos = Math.round(skusReais / numParticipantes);
+      const pontosSkuDivididos = Math.round(pontosSKU / numParticipantes);
+      const bonusDividido = Math.round(100 / numParticipantes);
+
       participantes.forEach(uid => {
          if (userStats[uid]) {
             if (pedido.efetivado) {
-               userStats[uid].skus += skusReais; // Mantém histórico da volumetria real
-               userStats[uid].pontosSku += pontosSKU; // Guarda os pontos filtrados pela regra
+               userStats[uid].skus += skusDivididos;
+               userStats[uid].pontosSku += pontosSkuDivididos;
                userStats[uid].pedidos += 1;
-               userStats[uid].bonusPedidos += 100; 
-               userStats[uid].pontos += pontosSKU; // Aplica no total apenas os pontos permitidos
-               userStats[uid].pontos += 100; // Aplica o bônus de corrida
+               userStats[uid].bonusPedidos += bonusDividido; 
+               userStats[uid].pontos += pontosSkuDivididos; 
+               userStats[uid].pontos += bonusDividido; 
             }
             
-            const start = pedido.createdAt?.toMillis ? pedido.createdAt.toMillis() : currentTime;
-            let end = currentTime; 
+            let startRaw = pedido.createdAt?.toMillis ? pedido.createdAt.toMillis() : tempoReferencia;
+            let endRaw = tempoReferencia; 
             
             if (pedido.efetivado && pedido.completedAt) {
-               end = pedido.completedAt?.toMillis ? pedido.completedAt.toMillis() : currentTime;
+               endRaw = pedido.completedAt?.toMillis ? pedido.completedAt.toMillis() : tempoReferencia;
             } else if (pedido.isPaused && pedido.lastPauseStart) {
-               end = pedido.lastPauseStart; 
+               endRaw = pedido.lastPauseStart; 
             }
             
-            userStats[uid].eventos.push({ start, end });
+            let startClamped = Math.max(inicioDoDiaAtivo, startRaw);
+            let endClamped = Math.min(tempoReferencia, endRaw);
+            if (endClamped < startClamped) endClamped = startClamped;
+
+            userStats[uid].eventos.push({ start: startClamped, end: endClamped });
+            
+            // REGISTRO NO GRÁFICO: Início da Separação (Delta 0)
+            userStats[uid].pointEvents.push({ 
+                 time: startClamped, delta: 0, 
+                 label: `📦 Início: ${pedido.romaneio || 'S/N'}`,
+                 detalhe: 'Iniciou a separação do romaneio'
+            });
+
+            // REGISTRO NO GRÁFICO: Fim da Separação ou Pausa
+            if (pedido.efetivado) {
+               userStats[uid].pointEvents.push({ 
+                 time: endClamped, delta: pontosSkuDivididos + bonusDividido, 
+                 label: `✅ Fim: ${pedido.romaneio || 'S/N'}`,
+                 detalhe: `+${pontosSkuDivididos} pts (SKUs) e +${bonusDividido} pts (Bônus)`
+               });
+            } else if (pedido.isPaused) {
+               userStats[uid].pointEvents.push({ 
+                 time: endClamped, delta: 0, 
+                 label: `⏸️ Pausa: ${pedido.romaneio || 'S/N'}`,
+                 detalhe: pedido.motivoPausa || 'Cronômetro pausado'
+               });
+            }
          }
       });
     });
 
-    // 4. Calcula o Decréscimo de Ociosidade (Buracos + Tempo Real)
+    // 4. Calcula o Decréscimo de Ociosidade
     const DEZ_MINUTOS_MS = 10 * 60 * 1000;
     
     Object.values(userStats).forEach(user => {
@@ -1380,45 +1417,109 @@ const handlePlanejamentoUpload = (e, dIdx) => {
        
        const merged = [];
        user.eventos.forEach(ev => {
-          if (merged.length === 0) {
-             merged.push({...ev});
-             return;
-          }
+          if (merged.length === 0) { merged.push({...ev}); return; }
           const last = merged[merged.length - 1];
-          if (ev.start <= last.end) {
-             last.end = Math.max(last.end, ev.end);
-          } else {
-             merged.push({...ev});
-          }
+          if (ev.start <= last.end) { last.end = Math.max(last.end, ev.end); } 
+          else { merged.push({...ev}); }
        });
 
        for (let i = 1; i < merged.length; i++) {
           const gapMs = merged[i].start - merged[i-1].end;
-          
           if (gapMs > DEZ_MINUTOS_MS) {
              const excessoMs = gapMs - DEZ_MINUTOS_MS;
-             const minutosExcedentes = Math.floor(excessoMs / 60000);
-             const penalidade = minutosExcedentes * 10;
+             const penalidade = Math.floor(excessoMs / 60000) * 10;
              user.decrescimo += penalidade; 
              user.pontos -= penalidade; 
+             
+             // REGISTRO NO GRÁFICO: Marca o momento exato que acabou a tolerância
+             user.pointEvents.push({ 
+               time: merged[i-1].end + DEZ_MINUTOS_MS, 
+               delta: 0, 
+               label: '⏱️ Fim da Tolerância', 
+               detalhe: 'A pausa permitida de 10 min acabou aqui. Iniciando perda de pontos.'
+             });
+
+             // REGISTRO NO GRÁFICO: Queda na hora que ele voltou a trabalhar
+             user.pointEvents.push({ 
+               time: merged[i].start, 
+               delta: -penalidade, 
+               label: '❌ Multa Aplicada (Retorno)', 
+               detalhe: `Perdeu ${penalidade} pts (Ficou ocioso por ${Math.floor(gapMs / 60000)} minutos totais)`
+             });
           }
        }
        
-       if (merged.length > 0) {
+       if (merged.length > 0 && isHoje) {
           const ultimaTarefa = merged[merged.length - 1];
           if (ultimaTarefa.end < currentTime) {
              const ociosidadeAtualMs = currentTime - ultimaTarefa.end;
              if (ociosidadeAtualMs > DEZ_MINUTOS_MS) {
                 const excessoMs = ociosidadeAtualMs - DEZ_MINUTOS_MS;
-                const minutosExcedentes = Math.floor(excessoMs / 60000);
-                const penalidade = minutosExcedentes * 10;
+                const penalidade = Math.floor(excessoMs / 60000) * 10;
                 user.decrescimo += penalidade;
                 user.pontos -= penalidade;
+                
+                // Marca o fim da tolerância para fazer o gráfico cair apenas DEPOIS dos 10 min
+                user.pointEvents.push({ 
+                  time: ultimaTarefa.end + DEZ_MINUTOS_MS, 
+                  delta: 0, 
+                  label: '⏱️ Fim da Tolerância', 
+                  detalhe: 'Iniciou o sangramento de pontos.'
+                });
+
+                // Queda contínua até o momento atual
+                user.pointEvents.push({ 
+                  time: currentTime, 
+                  delta: -penalidade, 
+                  label: '⚠️ Sangramento Atual', 
+                  detalhe: `Parado há ${Math.floor(ociosidadeAtualMs / 60000)} min. Pontos caindo em tempo real!`
+                });
              }
           }
        }
+       user.eventosMesclados = merged; 
+       if (user.pontos < 0) user.pontos = 0;
+       // ===============================================
+       // 5. PROCESSA OS DADOS PARA O RECHARTS
+       // ===============================================
+       user.pointEvents.sort((a, b) => a.time - b.time);
        
-       if (user.pontos < 0) user.pontos = 0; 
+       let pontuacaoCorrente = 0;
+       user.chartData = [];
+       
+       if (user.pointEvents.length > 0) {
+         const primeiroTempo = new Date(user.pointEvents[0].time - 60000);
+         user.chartData.push({ 
+           timeStr: `${String(primeiroTempo.getHours()).padStart(2,'0')}:${String(primeiroTempo.getMinutes()).padStart(2,'0')}`, 
+           timestamp: primeiroTempo.getTime(), // <--- ADICIONADO: Tempo real em milissegundos
+           score: 0, label: 'Início do Expediente', detalhe: 'Início da contagem de atividades', delta: 0, isEvent: false 
+         });
+       }
+
+       user.pointEvents.forEach(ev => {
+         pontuacaoCorrente = Math.max(0, pontuacaoCorrente + ev.delta);
+         const d = new Date(ev.time);
+         
+         user.chartData.push({
+           timeStr: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
+           timestamp: ev.time, // <--- ADICIONADO: Tempo real em milissegundos
+           score: pontuacaoCorrente,
+           label: ev.label,
+           detalhe: ev.detalhe,
+           delta: ev.delta,
+           isEvent: true
+         });
+       });
+
+       // Se ainda estamos no dia de hoje, adiciona o "Agora" para manter a linha atualizada
+       if (isHoje && user.chartData.length > 0) {
+         const agora = new Date(currentTime);
+         user.chartData.push({
+           timeStr: `${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`,
+           timestamp: currentTime, // <--- ADICIONADO: Tempo real em milissegundos
+           score: pontuacaoCorrente, label: 'Tempo Real', detalhe: 'Momento exato da operação', delta: 0, isEvent: false
+         });
+       }
     });
 
     return Object.values(userStats)
@@ -1426,7 +1527,50 @@ const handlePlanejamentoUpload = (e, dIdx) => {
        .sort((a, b) => b.pontos - a.pontos)
        .map((u, idx) => ({ ...u, posicao: idx + 1 }));
 
-  }, [pedidosProcessados, opsDoDia, usuarios, currentTime]);
+  }, [pedidosProcessados, opsDoDia, usuarios, currentTime, dataOperacaoAtiva]);
+  
+
+  // ==========================================
+  // AUTO-SAVE SEGURO DO RANKING (Protegendo a cota do Firebase)
+  // ==========================================
+  // Para evitar usar a variável "rankingCalculado" diretamente no useEffect (o que dispararia a cada 1 segundo),
+  // usamos uma ref para guardar o valor mais recente do ranking silenciosamente.
+  const rankingRef = React.useRef(rankingCalculado);
+  
+  useEffect(() => {
+    rankingRef.current = rankingCalculado;
+  }, [rankingCalculado]);
+
+  useEffect(() => {
+    const salvarRankingConsolidado = async () => {
+      const rankingAtual = rankingRef.current;
+      if (!rankingAtual || rankingAtual.length === 0) return;
+
+      try {
+        const rankingMap = {};
+        rankingAtual.forEach(user => {
+          rankingMap[user.nome] = user.pontos;
+        });
+
+        const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
+        await setDoc(refDia, { ranking: rankingMap }, { merge: true });
+        
+      } catch (error) {
+        console.error("Aviso: Falha ao sincronizar ranking com o Dashboard.", error);
+      }
+    };
+
+    // Dispara a gravação a cada 5 MINUTOS (300.000 milissegundos)
+    const timer = setInterval(() => {
+      salvarRankingConsolidado();
+    }, 300000); 
+
+    // Dispara uma última gravação instantânea caso o usuário feche a aba ou mude de página
+    return () => {
+      clearInterval(timer);
+      salvarRankingConsolidado();
+    };
+  }, [dataOperacaoAtiva]); // A dependência travada na data impede que o relógio dispare o efeito
 
   // ==========================================
   // ESTADOS E FUNÇÕES DO ALERTA DE PESO ZERO
@@ -1539,6 +1683,24 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           <div><h1>{titulo}</h1><span><FileText size={14}/> Gerenciamento de Romaneios</span></div>
         </div>
         <div className="op-actions">
+          
+          {/* NOVO FILTRO DE DATA */}
+          {/* NOVO FILTRO DE DATA CORRIGIDO */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <Clock size={16} color="#64748b" />
+            <input 
+              type="date" 
+              value={dataOperacaoAtiva} 
+              onChange={(e) => {
+                if (e.target.value) {
+                  // Pega a rota atual dinamicamente e só injeta a data!
+                  navigate(`${location.pathname}?date=${e.target.value}`);
+                }
+              }}
+              style={{ border: 'none', outline: 'none', color: '#475569', fontWeight: 'bold', background: 'transparent' }}
+            />
+          </div>
+
           <div className="search-bar-op">
             <Search size={16} />
             <input 
@@ -1882,6 +2044,8 @@ const handlePlanejamentoUpload = (e, dIdx) => {
               rankingCalculado={rankingCalculado}
               rankingExpandido={rankingExpandido}
               setRankingExpandido={setRankingExpandido}
+              currentTime={currentTime}           
+              dataOperacaoAtiva={dataOperacaoAtiva} 
             />
 
             <div className="op-side-indicators">
