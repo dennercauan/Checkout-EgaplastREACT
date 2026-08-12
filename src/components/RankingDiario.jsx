@@ -7,9 +7,12 @@ export default function RankingDiario({
   rankingExpandido,
   setRankingExpandido,
   currentTime,
-  dataOperacaoAtiva
+  dataOperacaoAtiva,
+  onDeleteEvent, // <-- NOVO
+  isAdminMode    // <-- NOVO
 }) {
   const [modalUser, setModalUser] = useState(null);
+  const [eventoSelecionado, setEventoSelecionado] = useState(null); // <-- O NOVO MODAL DE CLIQUE
 
   const formatTime = (ms) => {
     if (!ms) return '';
@@ -45,20 +48,23 @@ export default function RankingDiario({
   };
 
   const CustomLabelDot = (props) => {
-    const { cx, cy, payload } = props;
-    if (!payload || payload.delta === 0 || payload.delta === undefined) {
-       return <circle cx={cx} cy={cy} r={2} fill="#38bdf8" opacity={0.5} style={{ pointerEvents: 'none' }} />;
-    }
-    const isNegative = payload.delta < 0;
+    const { cx, cy, payload, isAdminMode, isActive } = props;
+
+    // Se for um evento, ele se torna clicável para podermos ver os detalhes
+    const isClickable = isAdminMode && payload && payload.isEvent;
+    const radius = isActive ? 8 : (isClickable ? 6 : 4);
+
     return (
-      <g style={{ pointerEvents: 'none' }}>
-        <circle cx={cx} cy={cy} r={4} fill={isNegative ? '#ef4444' : '#10b981'} stroke="#fff" strokeWidth={2} />
-        <text x={cx} y={isNegative ? cy + 20 : cy - 12} fill="#fff" fontSize={11} fontWeight="900" textAnchor="middle" stroke="#fff" strokeWidth={4} strokeLinejoin="round">
-          {isNegative ? payload.delta : `+${payload.delta}`}
-        </text>
-        <text x={cx} y={isNegative ? cy + 20 : cy - 12} fill={isNegative ? '#ef4444' : '#10b981'} fontSize={11} fontWeight="900" textAnchor="middle">
-          {isNegative ? payload.delta : `+${payload.delta}`}
-        </text>
+      <g 
+        onClick={(e) => {
+          if (isClickable) {
+            e.stopPropagation();
+            setEventoSelecionado(payload); // Abre o modal bonito com os dados da bolinha!
+          }
+        }}
+        style={{ cursor: isClickable ? 'pointer' : 'default', pointerEvents: 'all' }}
+      >
+        <circle cx={cx} cy={cy} r={radius} fill={isClickable ? "#f59e0b" : "#0ea5e9"} stroke="#fff" strokeWidth={isActive ? 2 : 1} />
       </g>
     );
   };
@@ -136,7 +142,7 @@ export default function RankingDiario({
           <span className="ranking-subtitle">Top Conferentes do Dia</span>
         </div>
         <div className="ranking-list">
-          {rankingCalculado.map((user, idx) => (
+          {rankingCalculado?.filter(user => user && user.uid).map((user, idx) => (
             <div key={`${user.uid}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               
               <div 
@@ -207,7 +213,8 @@ export default function RankingDiario({
                       
                       <div 
                         style={{ width: '100%', height: '180px', marginLeft: '-15px', cursor: 'zoom-in' }}
-                        onClick={() => setModalUser(user)}
+                        // ADICIONADO e.stopPropagation() para não fechar a sanfona!
+                        onClick={(e) => { e.stopPropagation(); setModalUser(user); }}
                       >
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={user.chartData} margin={{ top: 25, right: 15, left: 0, bottom: 25 }}>
@@ -219,27 +226,20 @@ export default function RankingDiario({
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                             <XAxis 
-                              dataKey="timestamp" 
-                              type="number" 
-                              scale="time" 
-                              domain={['dataMin', 'dataMax']} 
+                              dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']} 
                               tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                              tick={{ fontSize: 10, fill: '#94a3b8' }} 
-                              axisLine={false} 
-                              tickLine={false} 
-                              minTickGap={20} 
+                              tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} minTickGap={20} 
                             />
                             <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={40} />
-                            <RechartsTooltip content={<EvolucaoTooltip />} cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                            
+                            {/* ADICIONADO wrapperStyle={{ pointerEvents: 'none' }} PARA DEIXAR CLICAR NA BOLINHA */}
+                            <RechartsTooltip content={<EvolucaoTooltip />} wrapperStyle={{ pointerEvents: 'none' }} cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                            
                             <Area 
-                              type="linear" 
-                              dataKey="score" 
-                              stroke="#0284c7" 
-                              strokeWidth={2} 
-                              fillOpacity={1} 
-                              fill={`url(#colorEvolucao_${user.uid})`}
-                              dot={<CustomLabelDot />}
-                              activeDot={{ r: 6, strokeWidth: 0, fill: '#0ea5e9' }}
+                              type="linear" dataKey="score" stroke="#0284c7" strokeWidth={2} fillOpacity={1} 
+                              fill={`url(#colorEvolucao_${user.uid})`} 
+                              dot={(props) => <CustomLabelDot {...props} onDeleteEvent={onDeleteEvent} isAdminMode={isAdminMode} />}
+                              activeDot={(props) => <CustomLabelDot {...props} onDeleteEvent={onDeleteEvent} isAdminMode={isAdminMode} isActive={true} />}
                             />
                           </AreaChart>
                         </ResponsiveContainer>
@@ -254,76 +254,94 @@ export default function RankingDiario({
         </div>
       </div>
 
-      {/* MODAL DE GRÁFICO EXPANDIDO (COM CORREÇÃO DE ALTURA) */}
+     {/* 1. MODAL DE GRÁFICO EXPANDIDO (Forçado em Tela Cheia) */}
       {modalUser && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '1100px', height: 'auto', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+        <div 
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 9998, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }} 
+          onClick={() => setModalUser(null)}
+        >
+          <div 
+            style={{ background: '#fff', width: '90%', maxWidth: '800px', borderRadius: '12px', padding: '20px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a' }}>Evolução de {modalUser.nome}</h3>
+              <button onClick={() => setModalUser(null)} style={{ background: '#f1f5f9', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 'bold', color: '#64748b' }}>X</button>
+            </div>
             
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <TrendingUp color="#0284c7" />
-                  Evolução Detalhada: {modalUser.nome}
-                </h2>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-                  Total atual: <strong style={{ color: '#0ea5e9' }}>{modalUser.pontos} pontos</strong>
-                </p>
-              </div>
+            <div style={{ width: '100%', height: '400px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={modalUser.chartData} margin={{ top: 30, right: 30, left: 10, bottom: 20 }}>
+                  <defs>
+                    <linearGradient id={`colorEvolucaoModal_${modalUser.uid}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
+                      <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={true} stroke="#e2e8f0" opacity={0.5} />
+                  <XAxis 
+                    dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']} 
+                    tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} minTickGap={40} 
+                  />
+                  <YAxis tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} axisLine={false} tickLine={false} width={50} />
+                  <RechartsTooltip content={<EvolucaoTooltip />} wrapperStyle={{ pointerEvents: 'none' }} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                  <Area 
+                    type="linear" dataKey="score" stroke="#0284c7" strokeWidth={3} fillOpacity={1} 
+                    fill={`url(#colorEvolucaoModal_${modalUser.uid})`}
+                    dot={(props) => <CustomLabelDot {...props} isAdminMode={isAdminMode} />}
+                    activeDot={(props) => <CustomLabelDot {...props} isAdminMode={isAdminMode} isActive={true} />}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. NOVO MODAL: INFORMAÇÕES DO EVENTO (Clique na Bolinha) */}
+      {eventoSelecionado && (
+        <div 
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.6)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }} 
+          onClick={() => setEventoSelecionado(null)}
+        >
+          <div 
+            style={{ background: '#fff', width: '90%', maxWidth: '400px', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 15px 0', color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>Detalhes do Lançamento</h3>
+            
+            <div style={{ marginBottom: '20px', color: '#475569', fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <p style={{ margin: 0 }}><strong>Horário:</strong> {eventoSelecionado.timeStr}</p>
+              <p style={{ margin: 0 }}><strong>Ação:</strong> {eventoSelecionado.label}</p>
+              <p style={{ margin: 0 }}><strong>Motivo/Detalhe:</strong> {eventoSelecionado.detalhe}</p>
+              <p style={{ margin: 0 }}>
+                <strong>Impacto:</strong> <span style={{ color: eventoSelecionado.delta > 0 ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>{eventoSelecionado.delta > 0 ? `+${eventoSelecionado.delta}` : eventoSelecionado.delta} pts</span>
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button 
-                onClick={() => setModalUser(null)}
-                style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}
-                onMouseOver={(e) => e.currentTarget.style.background = '#e2e8f0'}
-                onMouseOut={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                onClick={() => setEventoSelecionado(null)} 
+                style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: '600' }}
               >
-                <X size={20} />
+                Voltar
+              </button>
+              <button 
+                onClick={() => {
+                  // A Trava de Segurança que te avisa do problema
+                  if (!eventoSelecionado.sourceId || !eventoSelecionado.sourceType) {
+                     alert("ERRO DE DADOS: O script que gerou o ranking esqueceu de salvar o 'sourceId' e 'sourceType' dentro desta bolinha. Sem eles, o botão não sabe qual documento apagar no Firebase!");
+                  } else {
+                     onDeleteEvent(eventoSelecionado);
+                     setEventoSelecionado(null);
+                  }
+                }} 
+                style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: '600' }}
+              >
+                Excluir Registro
               </button>
             </div>
-
-            {/* CORREÇÃO AQUI: height definida rigidamente para 500px, impedindo que o gráfico suma! */}
-            <div style={{ padding: '30px 20px', flex: 1, overflowX: 'auto', display: 'flex' }}>
-              <div style={{ minWidth: '800px', width: '100%', height: '500px' }}> 
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={modalUser.chartData} margin={{ top: 30, right: 30, left: 10, bottom: 20 }}>
-                    <defs>
-                      <linearGradient id={`colorEvolucaoModal_${modalUser.uid}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
-                        <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={true} stroke="#e2e8f0" opacity={0.5} />
-                    <XAxis 
-                      dataKey="timestamp" 
-                      type="number" 
-                      scale="time" 
-                      domain={['dataMin', 'dataMax']} 
-                      tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                      tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} 
-                      axisLine={{ stroke: '#cbd5e1' }} 
-                      tickLine={false} 
-                      minTickGap={40} 
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} 
-                      axisLine={false} 
-                      tickLine={false} 
-                      width={50} 
-                    />
-                    <RechartsTooltip content={<EvolucaoTooltip />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                    <Area 
-                      type="linear" 
-                      dataKey="score" 
-                      stroke="#0284c7" 
-                      strokeWidth={3} 
-                      fillOpacity={1} 
-                      fill={`url(#colorEvolucaoModal_${modalUser.uid})`}
-                      dot={<CustomLabelDot />}
-                      activeDot={{ r: 8, strokeWidth: 2, stroke: '#fff', fill: '#0ea5e9' }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
           </div>
         </div>
       )}

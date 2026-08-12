@@ -1383,7 +1383,9 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           userStats[op.responsavelUid].pointEvents.push({ 
             time, delta: 50, 
             label: '🏭 Ordem de Produção', 
-            detalhe: 'Registro rápido concluído'
+            detalhe: 'Registro rápido concluído',
+            sourceId: op.id,          // NOVO: Guarda o ID da OP
+            sourceType: 'op'          // NOVO: Identifica que é uma OP
           });
        }
     });
@@ -1556,14 +1558,18 @@ const handlePlanejamentoUpload = (e, dIdx) => {
                time, 
                delta: ajuste.pontos, 
                label: '🛡️ Perdão de Ociosidade', 
-               detalhe: `A liderança devolveu ${ajuste.pontos} pts${motivoAdicional}`
+               detalhe: `A liderança devolveu ${ajuste.pontos} pts${motivoAdicional}`,
+               sourceId: ajuste.id,       // NOVO
+               sourceType: 'ajuste'       // NOVO
              });
            } else {
              user.pointEvents.push({
                time, 
                delta: ajuste.pontos, 
                label: '⭐ Bônus / Ajuste ADM', 
-               detalhe: `${ajuste.pontos > 0 ? '+' : ''}${ajuste.pontos} pts${motivoAdicional}`
+               detalhe: `${ajuste.pontos > 0 ? '+' : ''}${ajuste.pontos} pts${motivoAdicional}`,
+               sourceId: ajuste.id,       // NOVO
+               sourceType: 'ajuste'       // NOVO
              });
            }
          }
@@ -1592,12 +1598,15 @@ const handlePlanejamentoUpload = (e, dIdx) => {
          
          user.chartData.push({
            timeStr: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
-           timestamp: ev.time, // <--- ADICIONADO: Tempo real em milissegundos
+           timestamp: ev.time, 
            score: pontuacaoCorrente,
            label: ev.label,
            detalhe: ev.detalhe,
            delta: ev.delta,
-           isEvent: true
+           isEvent: true,
+           // ✅ A MÁGICA FINAL: Repassando os IDs para a bolinha do gráfico!
+           sourceId: ev.sourceId,
+           sourceType: ev.sourceType
          });
        });
 
@@ -1621,46 +1630,73 @@ const handlePlanejamentoUpload = (e, dIdx) => {
   
 
   // ==========================================
-  // AUTO-SAVE EM TEMPO REAL (EVENT-DRIVEN)
+  // AUTO-SAVE EM TEMPO REAL (O EXTERMINADOR DE FANTASMAS)
   // ==========================================
-  const rankingRef = React.useRef(rankingCalculado);
   
-  useEffect(() => {
-    rankingRef.current = rankingCalculado;
-  }, [rankingCalculado]);
+  const tick10s = Math.floor(currentTime / 10000); 
 
   useEffect(() => {
-    const salvarRankingConsolidado = async () => {
-      const rankingAtual = rankingRef.current;
-      if (!rankingAtual || rankingAtual.length === 0) return;
-
+    const salvarDadosNoFirebase = async () => {
+      // 🚨 REMOVIDA A TRAVA DE SEGURANÇA! 
+      // Agora, mesmo se o ranking estiver vazio (alguém apagou a última O.P. do dia),
+      // o sistema vai avisar o Firebase para zerar a tela ADM também.
+      
       try {
         const rankingMap = {};
-        rankingAtual.forEach(user => {
+        (rankingCalculado || []).forEach(user => {
           rankingMap[user.nome] = {
             pontos: user.pontos || 0,
             skus: user.skus || 0,
             op: user.op || 0,
-            decrescimo: user.decrescimo || 0
+            pedidos: user.pedidos || 0, 
+            decrescimo: user.decrescimo || 0,
+            chartData: user.chartData || [],
+            pointEvents: user.pointEvents || [],
+            eventosMesclados: user.eventosMesclados || []
           };
         });
 
+        let totalPedidos = 0;
+        let totalCaixas = 0;
+        
+        pedidosProcessados.forEach(p => {
+           if (p.efetivado) {
+              const temNfOuMinuta = (p.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
+              if (temNfOuMinuta) totalPedidos++;
+              
+              (p.documentos || []).forEach(d => {
+                 totalCaixas += (d.caixas || []).length;
+              });
+           }
+        });
+
+        const pacoteSeguroFirebase = JSON.parse(JSON.stringify(rankingMap));
         const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-        // Envia o pacote instantaneamente
-        await setDoc(refDia, { ranking: rankingMap }, { merge: true });
+        
+        const payload = { 
+          ranking: pacoteSeguroFirebase,
+          totalNfMinuta: totalPedidos,
+          totalCaixas: totalCaixas
+        };
+
+        // 🚨 A MÁGICA: Substitui completamente o ranking ao invés de mesclar!
+        try {
+          // Tenta esmagar os dados antigos e substituir pelos novos (limpando quem zerou)
+          await updateDoc(refDia, payload);
+        } catch (e) {
+          // Se o documento de hoje ainda não existir no banco, ele cria do zero
+          await setDoc(refDia, payload);
+        }
         
       } catch (error) {
-        console.error("Aviso: Falha ao sincronizar ranking com o Dashboard.", error);
+        console.error("Aviso: Falha ao sincronizar motor com o ADM.", error);
       }
     };
 
-    // O PULO DO GATO: Em vez de um setInterval de 5 minutos, a função é disparada 
-    // no exato milissegundo em que uma O.P. ou Pedido sofre qualquer edição no banco!
-    salvarRankingConsolidado();
+    const timer = setTimeout(salvarDadosNoFirebase, 500);
+    return () => clearTimeout(timer);
 
-  // O React fica vigiando essas duas variáveis abaixo. Se elas mudarem, ele salva.
-}, [pedidosProcessados, opsDoDia, dataOperacaoAtiva, ajustesDoDia]);
-
+  }, [pedidosProcessados, opsDoDia, ajustesDoDia, dataOperacaoAtiva, tick10s]);
   // ==========================================
   // ESTADOS E FUNÇÕES DO ALERTA DE PESO ZERO
   // ==========================================

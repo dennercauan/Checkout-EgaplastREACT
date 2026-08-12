@@ -553,7 +553,7 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
             <div className="ranking-list free-list">
               {rankingDataCompleto.slice(0, 5).length === 0 ? <div style={{color: '#999', fontSize: '13px'}}>Nenhum dado no período.</div> : rankingDataCompleto.slice(0, 5).map((u, i) => (
                 <div key={`${u.nome}-${i}`} className={`ranking-row ${i === 0 ? 'first' : 'shadow-sm'}`}>
-                  <span className="rank-pos">{i + 1}º</span><span className="rank-name">{u.nome}</span><span className="rank-points">{u.pontos.toFixed(0)} pts</span></div>
+                  <span className="rank-pos">{i + 1}º</span><span className="rank-name">{u.nome}</span><span className="rank-points">{Number(u.pontos || 0).toFixed(0)} pts</span></div>
               ))}
             </div>
 
@@ -561,7 +561,7 @@ const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 'bold' }}>LISTA COMPLETA DO PERÍODO</div>
               {rankingDataCompleto.map((u, i) => (
                  <div key={`${u.nome}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: i === 0 ? 'var(--primary)' : '#f8fafc', color: i === 0 ? '#fff' : 'var(--text-main)', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
-                    <span style={{ display: 'flex', gap: '10px' }}><span style={{ opacity: 0.7 }}>{i + 1}º</span>{u.nome}</span><span>{u.pontos.toFixed(0)} pts</span>
+                    <span style={{ display: 'flex', gap: '10px' }}><span style={{ opacity: 0.7 }}>{i + 1}º</span>{u.nome}</span><span>{Number(u.pontos || 0).toFixed(0)} pts</span>
                  </div>
               ))}
             </div>
