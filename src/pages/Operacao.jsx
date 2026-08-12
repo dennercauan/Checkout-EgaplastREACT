@@ -40,6 +40,7 @@ export default function Operacao({ isAdmin }) {
 
   const [titulo, setTitulo] = useState('Carregando...');
   const [ajustesDoDia, setAjustesDoDia] = useState([]);
+  const [controlePausas, setControlePausas] = useState({}); // <--- ADICIONE ESTA LINHA
   const [localUser, setLocalUser] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   
@@ -575,6 +576,16 @@ export default function Operacao({ isAdmin }) {
     const qAjustes = query(collection(db, 'ajustesDiarios'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubAjustes = onSnapshot(qAjustes, (snap) => {
       setAjustesDoDia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // 👇 ADICIONE ESTE BLOCO NOVO AQUI 👇
+    const refPausas = doc(db, 'controlePausas', dataOperacaoAtiva);
+    const unsubPausas = onSnapshot(refPausas, (snap) => {
+      if (snap.exists()) {
+        setControlePausas(snap.data());
+      } else {
+        setControlePausas({});
+      }
     });
 
     // ATUALIZE A LINHA DO RETURN PARA DESLIGAR ESTE TAMBÉM:
@@ -1467,6 +1478,44 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       });
     });
 
+    // ===============================================
+    // 👇 3.5 PROCESSA AS PAUSAS DA LIDERANÇA 👇
+    // ===============================================
+    Object.keys(controlePausas).forEach(nomeUsuario => {
+      const u = usuarios.find(usr => usr.email.split('@')[0] === nomeUsuario);
+      
+      if (u && userStats[u.uid]) {
+         const pausas = controlePausas[nomeUsuario].history || [];
+         
+         pausas.forEach(p => {
+            const start = p.start;
+            const end = p.end || tempoReferencia; // Se ainda pausado, estica o escudo até o momento atual
+            
+            // AQUI É O PULO DO GATO: Injeta a pausa como se fosse um trabalho para não gerar buracos!
+            userStats[u.uid].eventos.push({ start, end });
+            
+            // Registra no gráfico para o usuário ver
+            userStats[u.uid].pointEvents.push({
+              time: start,
+              delta: 0,
+              label: '☕ Pausa de Ociosidade',
+              detalhe: 'Cronômetro pausado pela liderança',
+              sourceType: 'pausa_adm'
+            });
+            
+            if (p.end) {
+              userStats[u.uid].pointEvents.push({
+                time: end,
+                delta: 0,
+                label: '▶️ Retorno à Operação',
+                detalhe: 'Contador de ociosidade reativado',
+                sourceType: 'pausa_adm'
+              });
+            }
+         });
+      }
+    });
+
     // 4. Calcula o Decréscimo de Ociosidade (AGORA COM 20 MINUTOS)
     const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000; // 20 Minutos
     
@@ -1626,7 +1675,8 @@ const handlePlanejamentoUpload = (e, dIdx) => {
        .sort((a, b) => b.pontos - a.pontos)
        .map((u, idx) => ({ ...u, posicao: idx + 1 }));
 
-  }, [pedidosProcessados, opsDoDia, usuarios, currentTime, dataOperacaoAtiva, ajustesDoDia]);
+  // No final do useMemo do rankingCalculado:
+  }, [pedidosProcessados, opsDoDia, usuarios, currentTime, dataOperacaoAtiva, ajustesDoDia, controlePausas]); // <--- ADICIONE AQUI
   
 
   // ==========================================

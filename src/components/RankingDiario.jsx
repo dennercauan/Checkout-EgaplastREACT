@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, Medal, CheckCircle2, Factory, TrendingUp, Clock, Maximize2, X } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -134,6 +134,27 @@ export default function RankingDiario({
     );
   };
 
+  // LÓGICA DE ESPAÇAMENTO VISUAL PARA O GRÁFICO
+  const dadosGraficoEspacados = useMemo(() => {
+    if (!modalUser || !modalUser.chartData) return [];
+    
+    // Clona os dados para não mexer no banco real e garante a ordem
+    const dados = JSON.parse(JSON.stringify(modalUser.chartData)).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Define um distanciamento visual mínimo de 3 minutos (180.000 ms)
+    const DISTANCIA_MINIMA = 3 * 60 * 1000; 
+    
+    for (let i = 1; i < dados.length; i++) {
+      const diferenca = dados[i].timestamp - dados[i-1].timestamp;
+      if (diferenca < DISTANCIA_MINIMA) {
+        // Empurra a bolinha no eixo X apenas visualmente
+        dados[i].timestamp = dados[i-1].timestamp + DISTANCIA_MINIMA;
+      }
+    }
+    
+    return dados;
+  }, [modalUser]);
+
   return (
     <>
       <div className="op-ranking-container">
@@ -261,7 +282,7 @@ export default function RankingDiario({
           onClick={() => setModalUser(null)}
         >
           <div 
-            style={{ background: '#fff', width: '90%', maxWidth: '800px', borderRadius: '12px', padding: '20px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} 
+            style={{ background: '#fff', width: '100%', maxWidth: '1200px', borderRadius: '12px', padding: '20px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} 
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
@@ -270,31 +291,32 @@ export default function RankingDiario({
             </div>
             
             <div style={{ width: '100%', height: '400px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={modalUser.chartData} margin={{ top: 30, right: 30, left: 10, bottom: 20 }}>
-                  <defs>
-                    <linearGradient id={`colorEvolucaoModal_${modalUser.uid}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
-                      <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={true} stroke="#e2e8f0" opacity={0.5} />
-                  <XAxis 
-                    dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']} 
-                    tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} minTickGap={40} 
-                  />
-                  <YAxis tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} axisLine={false} tickLine={false} width={50} />
-                  <RechartsTooltip content={<EvolucaoTooltip />} wrapperStyle={{ pointerEvents: 'none' }} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                  <Area 
-                    type="linear" dataKey="score" stroke="#0284c7" strokeWidth={3} fillOpacity={1} 
-                    fill={`url(#colorEvolucaoModal_${modalUser.uid})`}
-                    dot={(props) => <CustomLabelDot {...props} isAdminMode={isAdminMode} />}
-                    activeDot={(props) => <CustomLabelDot {...props} isAdminMode={isAdminMode} isActive={true} />}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+  <ResponsiveContainer width="100%" height="100%">
+    {/* 👇 O gráfico agora consome os dados com espaçamento visual 👇 */}
+    <AreaChart data={dadosGraficoEspacados} margin={{ top: 30, right: 30, left: 10, bottom: 20 }}>
+      <defs>
+        <linearGradient id={`colorEvolucaoModal_${modalUser.uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
+          <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+        </linearGradient>
+      </defs>
+      <CartesianGrid strokeDasharray="3 3" vertical={true} stroke="#e2e8f0" opacity={0.5} />
+      <XAxis 
+        dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']} 
+        tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+        tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} minTickGap={40} 
+      />
+      <YAxis tick={{ fontSize: 12, fill: '#64748b', fontWeight: '500' }} axisLine={false} tickLine={false} width={50} />
+      <RechartsTooltip content={<EvolucaoTooltip />} wrapperStyle={{ pointerEvents: 'none' }} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }} />
+      <Area 
+        type="linear" dataKey="score" stroke="#0284c7" strokeWidth={3} fillOpacity={1} 
+        fill={`url(#colorEvolucaoModal_${modalUser.uid})`}
+        dot={(props) => <CustomLabelDot {...props} isAdminMode={isAdminMode} />}
+        activeDot={(props) => <CustomLabelDot {...props} isAdminMode={isAdminMode} isActive={true} />}
+      />
+    </AreaChart>
+  </ResponsiveContainer>
+</div>
           </div>
         </div>
       )}
