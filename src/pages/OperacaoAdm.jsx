@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Clock, ShieldCheck, ClipboardList, Package, MapPin, Users, FileText, Settings, Play, Pause, CheckCircle2, Search, MoreVertical, X, Check, Trash2, Info, Activity, Coffee, Briefcase, AlertTriangle } from 'lucide-react';
+import { useMotorRanking } from '../hooks/useMotorRanking';
+import React, { useState, useEffect, useMemo } from 'react'
+import Papa from 'papaparse';
+import { ArrowLeft, Clock, ShieldCheck, ClipboardList, Package, MapPin, Users, FileText, Settings, Play, Pause, CheckCircle2, Search, MoreVertical, X, Check, Trash2, Info, Activity, Coffee, Briefcase, AlertTriangle, Moon, PackagePlus, Edit } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { doc, onSnapshot, deleteDoc, getDoc, updateDoc, setDoc, collection, query, where, getDocs, collectionGroup, Timestamp, serverTimestamp, deleteField } from 'firebase/firestore';
 import { db } from '../firebase'; 
@@ -7,6 +9,8 @@ import { db } from '../firebase';
 import AdmControlesManuais from '../components/AdmControlesManuais';
 import AdmEstatisticasGerais from '../components/AdmEstatisticasGerais';
 import RankingDiario from '../components/RankingDiario'; 
+import ModalCriarEditarPedido from '../components/ModalCriarEditarPedido';
+import ModalDetalhesPedido from '../components/ModalDetalhesPedido';
 import '../css/Operacao.css'; 
 
 export default function OperacaoAdm() {
@@ -25,7 +29,6 @@ export default function OperacaoAdm() {
   const [rankingArrayFirebase, setRankingArrayFirebase] = useState([]);
   
   const [controlePausas, setControlePausas] = useState({});
-  
   const [showModalIntervencao, setShowModalIntervencao] = useState(false);
   
   const [usuarios, setUsuarios] = useState([]);
@@ -34,10 +37,65 @@ export default function OperacaoAdm() {
   const [buscaRomaneio, setBuscaRomaneio] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(null);
 
+  const [opsDoDia, setOpsDoDia] = useState([]);
+  const [ajustesDoDia, setAjustesDoDia] = useState([]);
+
+  // ==========================================
+  // STATES PARA CONTROLE DE PEDIDOS E MODAIS
+  // ==========================================
+  const [showModalPedido, setShowModalPedido] = useState(false);
+  const [showDetalhesModal, setShowDetalhesModal] = useState(false);
+  const [isClosingModal, setIsClosingModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [pedidoModal, setPedidoModal] = useState(null);
+  
+  // States do Formulário de Criação/Edição
+  const [editingId, setEditingId] = useState(null);
+  const [romaneio, setRomaneio] = useState('');
+  const [loja, setLoja] = useState('');
+  const [local, setLocal] = useState('DF');
+  const [uf, setUf] = useState('');
+  const [isCaixaMaster, setIsCaixaMaster] = useState(false);
+  const [observacoes, setObservacoes] = useState('');
+  const [docsTemporarios, setDocsTemporarios] = useState([]);
+  const [docTipo, setDocTipo] = useState('Nota Fiscal');
+  const [docResponsavel, setDocResponsavel] = useState('');
+
+  // States de Apoio para o Modal de Detalhes não quebrar
+  const [activeTab, setActiveTab] = useState('resumo');
+  const [wmsSessions, setWmsSessions] = useState({});
+  const [buscasDocumentos, setBuscasDocumentos] = useState({});
+  const [wmsPreResumoAberto, setWmsPreResumoAberto] = useState(null);
+  const [docIndexSelecionado, setDocIndexSelecionado] = useState(null);
+  const [skusExpandidos, setSkusExpandidos] = useState({});
+  const [skusExpandidosComum, setSkusExpandidosComum] = useState({});
+  const [isEditingObs, setIsEditingObs] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [caixasMaster, setCaixasMaster] = useState([]);
+
+  // ==========================================
+  // TRAVA DE EXPEDIENTE (17h30)
+  // ==========================================
+  const limiteExpediente = useMemo(() => {
+    const [ano, mes, dia] = dataOperacaoAtiva.split('-');
+    return new Date(ano, mes - 1, dia, 17, 30, 0).getTime();
+  }, [dataOperacaoAtiva]);
+
+  const isExpedienteEncerrado = currentTime >= limiteExpediente;
+  const horaReferenciaAtual = isExpedienteEncerrado ? limiteExpediente : currentTime;
+
   useEffect(() => {
     const closeMenu = () => setDropdownOpen(null);
     document.addEventListener("click", closeMenu);
     return () => document.removeEventListener("click", closeMenu);
+  }, []);
+
+  // BUSCA O DICIONÁRIO DE CAIXAS MASTER
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'caixasMaster'), (snap) => {
+      setCaixasMaster(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -71,9 +129,17 @@ export default function OperacaoAdm() {
             .map(([nome, stats]) => {
               if (!stats) return null;
               return {
-                nome, uid: nome, pontos: stats.pontos || 0, skus: stats.skus || 0, op: stats.op || 0,
-                pedidos: stats.pedidos || 0, decrescimo: stats.decrescimo || 0, chartData: stats.chartData || [],
-                pointEvents: stats.pointEvents || [], eventosMesclados: stats.eventosMesclados || []
+                nome, uid: nome, 
+                pontos: stats.pontos || 0, 
+                skus: stats.skus || 0, 
+                pontosSku: stats.pontosSku || 0,       
+                op: stats.op || 0,
+                pedidos: stats.pedidos || 0, 
+                bonusPedidos: stats.bonusPedidos || 0, 
+                decrescimo: stats.decrescimo || 0, 
+                chartData: stats.chartData || [],
+                pointEvents: stats.pointEvents || [], 
+                eventosMesclados: stats.eventosMesclados || []
               };
             })
             .filter(Boolean) 
@@ -125,7 +191,13 @@ export default function OperacaoAdm() {
       setPedidosLegados(legados);
     });
 
-    return () => { unsubNovo(); unsubLegado(); };
+    const qOp = query(collection(db, 'ordensProducao'), where('dataOperacao', '==', dataOperacaoAtiva));
+    const unsubOp = onSnapshot(qOp, (snap) => setOpsDoDia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+    
+    const qAjustes = query(collection(db, 'ajustesDiarios'), where('dataOperacao', '==', dataOperacaoAtiva));
+    const unsubAjustes = onSnapshot(qAjustes, (snap) => setAjustesDoDia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+
+    return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); };
   }, [dataOperacaoAtiva]);
 
   const pedidosProcessados = useMemo(() => {
@@ -149,12 +221,43 @@ export default function OperacaoAdm() {
     );
   }, [pedidosProcessados, buscaRomaneio]);
 
-  // Equipe Ativa Hoje 
+  // 1. O MOTOR DE CÁLCULO
+  const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, horaReferenciaAtual);
+
+  // 2. AS ESTATÍSTICAS DO TOPO
+  const estatisticasTempoReal = useMemo(() => {
+    let totalPedidos = 0;
+    let totalCaixas = 0;
+
+    pedidosProcessados.forEach(p => {
+       if (p.efetivado) {
+          const qtdDocumentos = p.documentos ? p.documentos.length : 0;
+          totalPedidos += qtdDocumentos > 0 ? qtdDocumentos : 1;
+          
+          (p.documentos || []).forEach(d => {
+             totalCaixas += (d.caixas || []).length;
+          });
+       }
+    });
+
+    const rankingMap = {};
+    (rankingCalculado || []).forEach(user => {
+      rankingMap[user.nome] = user;
+    });
+
+    return { totalNfMinuta: totalPedidos, totalCaixas: totalCaixas, ranking: rankingMap };
+  }, [pedidosProcessados, rankingCalculado]);
+
+  // 3. A EQUIPE ATIVA QUE ESTAVA DANDO ERRO
   const equipeAtivaHoje = useMemo(() => {
     const nomesAtivos = new Set();
     
-    rankingArrayFirebase.forEach(r => nomesAtivos.add(r.nome));
-    Object.keys(controlePausas).forEach(n => nomesAtivos.add(n));
+    if (rankingCalculado) {
+      rankingCalculado.forEach(r => nomesAtivos.add(r.nome));
+    }
+    if (controlePausas) {
+      Object.keys(controlePausas).forEach(n => nomesAtivos.add(n));
+    }
     
     pedidosEmAndamento.forEach(p => {
       const uids = p.uidsVinculados || [p.criadorUid];
@@ -165,45 +268,129 @@ export default function OperacaoAdm() {
     });
 
     return usuarios.filter(u => nomesAtivos.has(u.email.split('@')[0]));
-  }, [rankingArrayFirebase, controlePausas, pedidosEmAndamento, usuarios]);
+  }, [rankingCalculado, controlePausas, pedidosEmAndamento, usuarios]);
 
-  // AÇÕES
+  // ==========================================
+  // FUNÇÕES DE GERENCIAMENTO DE PEDIDOS (CRUD)
+  // ==========================================
+  const resetForm = () => {
+    setEditingId(null); setRomaneio(''); setLoja(''); setLocal('DF'); 
+    setUf(''); setIsCaixaMaster(false); setObservacoes(''); setDocsTemporarios([]);
+  };
+
+  const handleCloseModalPedido = () => {
+    setIsClosingModal(true);
+    setTimeout(() => { setShowModalPedido(false); setIsClosingModal(false); resetForm(); }, 300);
+  };
+
+  const abrirModalNovoPedido = () => {
+    resetForm();
+    setShowModalPedido(true);
+  };
+
+  const abrirModalEditarPedido = (pedido) => {
+    setEditingId(pedido.id);
+    setRomaneio(pedido.romaneio || '');
+    setLoja(pedido.loja || '');
+    setLocal(pedido.local || 'DF');
+    setUf(pedido.uf || '');
+    setIsCaixaMaster(pedido.isCaixaMaster || false);
+    setObservacoes(pedido.observacoes || '');
+    
+    const docs = (pedido.documentos || []).map((d, i) => ({
+      idTemp: Date.now() + i,
+      tipo: d.tipo,
+      responsaveis: d.responsaveis || (d.responsavel ? [d.responsavel] : [])
+    }));
+    setDocsTemporarios(docs);
+    setShowModalPedido(true);
+  };
+
+  const handleAddDoc = () => {
+    if (!docTipo) return alert("Selecione o tipo de documento.");
+    setDocsTemporarios([...docsTemporarios, { idTemp: Date.now(), tipo: docTipo, responsaveis: docResponsavel ? [docResponsavel] : [] }]);
+    setDocResponsavel('');
+  };
+
+  const handleRemoveDoc = (idTemp) => setDocsTemporarios(docsTemporarios.filter(d => d.idTemp !== idTemp));
+
+  const handleSavePedido = async () => {
+    if (!romaneio.trim()) return alert("O número do romaneio é obrigatório!");
+    setIsSaving(true);
+    
+    try {
+      // 👇 NOVO: Traduz os e-mails escolhidos no formulário para os UIDs do Firebase
+      const uidsSet = new Set();
+      docsTemporarios.forEach(d => {
+        (d.responsaveis || []).forEach(email => {
+          const user = usuarios.find(u => u.email === email);
+          if (user) uidsSet.add(user.uid);
+        });
+      });
+      const uidsVinculados = Array.from(uidsSet);
+
+      const payload = {
+        romaneio: romaneio.trim(),
+        loja: loja.trim(),
+        local,
+        uf: uf.trim().toUpperCase(),
+        isCaixaMaster,
+        observacoes: observacoes.trim(),
+        uidsVinculados, // <-- SALVANDO OS UIDs PARA A TELA DA OPERAÇÃO LER
+        criadorUid: uidsVinculados[0] || 'admin', // Trava de segurança
+        documentos: docsTemporarios.map(d => ({
+          tipo: d.tipo,
+          responsaveis: d.responsaveis,
+          responsavel: d.responsaveis[0] || '',
+          caixas: [] 
+        })),
+        dataOperacao: dataOperacaoAtiva,
+        updatedAt: serverTimestamp()
+      };
+
+      if (editingId) {
+        const ref = doc(db, 'pedidos', editingId);
+        await updateDoc(ref, payload);
+      } else {
+        payload.createdAt = serverTimestamp();
+        payload.efetivado = false;
+        await setDoc(doc(collection(db, 'pedidos')), payload);
+      }
+      
+      handleCloseModalPedido();
+    } catch (error) {
+      alert("Erro ao salvar pedido: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
   const handleTogglePausaUsuario = async (nomeUsuario, isCurrentlyPaused) => {
     try {
       const refPausas = doc(db, 'controlePausas', dataOperacaoAtiva);
       const snap = await getDoc(refPausas);
       const agora = Date.now();
 
-      // Estrutura padrão limpa
       let userStatus = { isPaused: false, history: [] };
 
-      // 1. Se já existe, clona os dados de forma segura (desconectando da referência do Firebase)
       if (snap.exists() && snap.data()[nomeUsuario]) {
         userStatus = JSON.parse(JSON.stringify(snap.data()[nomeUsuario]));
       }
 
-      // 2. Trava de segurança: Garante que o array de histórico existe para evitar erro de .push()
       if (!Array.isArray(userStatus.history)) {
         userStatus.history = [];
       }
 
       if (isCurrentlyPaused) {
-        // Despausar (Retomar Operação)
         userStatus.isPaused = false;
         if (userStatus.history.length > 0) {
-          // Fecha o último ciclo de pausa
           userStatus.history[userStatus.history.length - 1].end = agora;
         }
       } else {
-        // Pausar
         userStatus.isPaused = true;
         userStatus.history.push({ start: agora });
       }
 
-      // 3. Usa setDoc com { merge: true } (Modo "Rolo Compressor": não falha se o doc estiver vazio)
-      await setDoc(refPausas, {
-        [nomeUsuario]: userStatus
-      }, { merge: true });
+      await setDoc(refPausas, { [nomeUsuario]: userStatus }, { merge: true });
 
     } catch (error) {
       console.error("Erro crítico no botão de pausa:", error);
@@ -220,13 +407,13 @@ export default function OperacaoAdm() {
   };
 
   const getTempoOcioso = (nomeUser) => {
-    const userStats = rankingArrayFirebase.find(u => u.nome === nomeUser);
+    const userStats = rankingCalculado.find(u => u.nome === nomeUser); 
     if (!userStats || !userStats.eventosMesclados || userStats.eventosMesclados.length === 0) return 0;
     
     const ultimoEvento = userStats.eventosMesclados[userStats.eventosMesclados.length - 1];
     
-    if (currentTime > ultimoEvento.end) {
-      return currentTime - ultimoEvento.end;
+    if (horaReferenciaAtual > ultimoEvento.end) {
+      return horaReferenciaAtual - ultimoEvento.end;
     }
     return 0; 
   };
@@ -242,7 +429,7 @@ export default function OperacaoAdm() {
     } else if (pedido.isPaused && pedido.lastPauseStart) {
       end = pedido.lastPauseStart; 
     } else {
-      end = currentTime; 
+      end = horaReferenciaAtual; 
     }
 
     const diff = Math.max(0, end - start - totalPaused);
@@ -335,6 +522,84 @@ export default function OperacaoAdm() {
     } catch (error) { alert("Erro de permissão ou conexão ao tentar excluir."); }
   };
 
+  // ==========================================
+  // MOTOR DE IMPORTAÇÃO WMS (CSV)
+  // ==========================================
+  const processarArquivoWMS = (event, dIdx) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setDocIndexSelecionado(dIdx);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const data = results.data;
+        const skuMap = {};
+        
+        let lojaEncontrada = '';
+        let romaneioEncontrado = '';
+
+        // 1. Agrupa os itens e soma as quantidades
+        data.forEach(row => {
+          // Ajuste os nomes das colunas de acordo com o padrão do seu CSV do WMS
+          const ref = row['CÓDIGO'] || row['SKU'] || row['Código'] || row['Produto'] || '';
+          const qtd = parseInt(row['QTD'] || row['Quantidade'] || row['Qtd']) || 0;
+          const desc = row['DESCRIÇÃO'] || row['Descrição'] || row['Nome'] || '';
+          
+          if (!lojaEncontrada && row['LOJA']) lojaEncontrada = row['LOJA'];
+          if (!romaneioEncontrado && row['ROMANEIO']) romaneioEncontrado = row['ROMANEIO'];
+
+          if (!ref) return;
+          
+          if (!skuMap[ref]) skuMap[ref] = { ref, desc, qtdTotal: 0 };
+          skuMap[ref].qtdTotal += qtd;
+        });
+
+        // 2. Cruza com o Dicionário de Caixas Master
+        const skusProcessados = Object.values(skuMap).map(sku => {
+          const masterInfo = caixasMaster.find(m => String(m.ref).toUpperCase() === String(sku.ref).toUpperCase() || String(m.id).toUpperCase() === String(sku.ref).toUpperCase());
+          
+          if (masterInfo && masterInfo.variacoes && masterInfo.variacoes.length > 0) {
+            const varSelected = masterInfo.variacoes[0]; // Pega a 1ª variação como padrão
+            return {
+              ...sku,
+              isMissing: false,
+              variacoesDisponiveis: masterInfo.variacoes,
+              variacaoSelecionadaIdx: 0,
+              qtdPadrao: parseInt(varSelected.quantidade) || 0,
+              pesoPadrao: parseFloat(varSelected.peso) || 0,
+              caixaNome: varSelected.caixa || 'CAIXA',
+              codigoBarras: varSelected.codigoBarras || ''
+            };
+          } else {
+            // Se o produto não existe no dicionário, marca como Missing (Faltante)
+            return { ...sku, isMissing: true, qtdPadrao: '', pesoPadrao: '', caixaNome: '' };
+          }
+        });
+
+        // 3. Salva na sessão temporária da tela
+        setWmsSessions(prev => ({
+          ...prev,
+          [dIdx]: {
+            skus: skusProcessados,
+            loja: lojaEncontrada,
+            romaneio: romaneioEncontrado
+          }
+        }));
+
+        setIsUploading(false);
+        event.target.value = ''; // Limpa o input file
+      },
+      error: (err) => {
+        alert("Erro ao ler arquivo CSV: " + err.message);
+        setIsUploading(false);
+      }
+    });
+  };
+
   return (
     <div className="op-wrapper">
       
@@ -371,12 +636,11 @@ export default function OperacaoAdm() {
 
       <main style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '25px' }}>
         
-        {/* 1. ESTATÍSTICAS */}
         <section>
-             <AdmEstatisticasGerais dados={dadosDeEstatisticasFirebase || {}} />
+             <AdmEstatisticasGerais dados={estatisticasTempoReal} />
         </section>
 
-        {/* 2. PAINEL DE COMANDO UNIFICADO (Substitui Equipe + Atividades) */}
+        {/* PAINEL DE COMANDO UNIFICADO */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -387,19 +651,24 @@ export default function OperacaoAdm() {
                 <div className="pulse-dot" style={{ background: '#fff' }}></div> {pedidosEmAndamento.length} Romaneios sendo separados
               </span>
             )}
+            
+            {isExpedienteEncerrado && (
+              <span style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+                <Moon size={14} /> Expediente Encerrado (17h30)
+              </span>
+            )}
           </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '15px', width: '100%' }}>
             {equipeAtivaHoje.length === 0 ? (
               <div style={{ color: '#94a3b8', fontStyle: 'italic', padding: '10px', width: '100%', background: '#f8fafc', borderRadius: '12px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
-                 Nenhum conferente registrou atividade hoje.
+                 Nenhum conferente registrou atividade.
               </div>
             ) : (
               equipeAtivaHoje.map(user => {
                 const nomeUser = user.email.split('@')[0];
                 const isPaused = controlePausas[nomeUser]?.isPaused || false;
                 
-                // Procura se ele está separando algo
                 const pedidoAtivo = pedidosEmAndamento.find(p => {
                    const uids = p.uidsVinculados || [p.criadorUid];
                    return uids.includes(user.uid);
@@ -409,7 +678,20 @@ export default function OperacaoAdm() {
 
                 let statusColor, statusText, statusIcon, conteudoCentral;
                 
-                if (isPaused) {
+                const isDiaConcluido = isExpedienteEncerrado && !pedidoAtivo;
+
+                if (isDiaConcluido) {
+                   statusColor = '#10b981'; 
+                   statusText = 'Dia Concluído';
+                   statusIcon = <CheckCircle2 size={14} />;
+                   conteudoCentral = (
+                     <div style={{ padding: '15px 0', color: '#64748b', fontSize: '0.9rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                        <Moon size={32} color="#10b981" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} />
+                        <div style={{ fontWeight: '500', color: '#334155' }}>Expediente Finalizado</div>
+                        <div style={{ fontSize: '0.8rem' }}>Ociosidade travada às 17h30.</div>
+                     </div>
+                   );
+                } else if (isPaused) {
                    statusColor = '#f59e0b'; 
                    statusText = 'Em Pausa (Protegido)';
                    statusIcon = <Coffee size={14} />;
@@ -424,6 +706,9 @@ export default function OperacaoAdm() {
                    statusColor = '#3b82f6'; 
                    statusText = 'Separando Pedido';
                    statusIcon = <Briefcase size={14} />;
+                   
+                   const tiposDosDocs = pedidoAtivo.documentos?.map(d => d.tipo).filter(Boolean).join(', ') || 'Nenhum listado';
+
                    conteudoCentral = (
                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1 }}>
                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -437,13 +722,13 @@ export default function OperacaoAdm() {
                        <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                          <MapPin size={14} color="#94a3b8" /> {pedidoAtivo.loja || 'Destino Padrão'}
                        </div>
-                       <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                         <FileText size={14} color="#94a3b8" /> {pedidoAtivo.documentos?.length || 0} Documentos na fila
+                       <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }} title={tiposDosDocs}>
+                         <FileText size={14} color="#94a3b8" /> {tiposDosDocs.length > 25 ? tiposDosDocs.substring(0, 25) + '...' : tiposDosDocs}
                        </div>
                      </div>
                    );
                 } else {
-                   const limiteOciosidadeMs = 20 * 60 * 1000; // 20 min
+                   const limiteOciosidadeMs = 20 * 60 * 1000; 
                    const tolerenciaExcedida = tempoOciosoMs > limiteOciosidadeMs;
                    
                    statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; 
@@ -467,9 +752,7 @@ export default function OperacaoAdm() {
 
                 return (
                   <div key={user.uid} style={{ background: '#fff', border: `1px solid ${statusColor}40`, borderRadius: '12px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                    
-                    {/* Cabeçalho do Card */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '1.1rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'capitalize' }}>
                         <Users size={18} color="#94a3b8" /> {nomeUser}
                       </strong>
@@ -477,24 +760,24 @@ export default function OperacaoAdm() {
                         {statusIcon} {statusText}
                       </div>
                     </div>
-                    
-                    {/* Miolo Dinâmico */}
                     {conteudoCentral}
-                    
-                    {/* Botão de Controle */}
-                    <button 
-                      onClick={() => handleTogglePausaUsuario(nomeUser, isPaused)}
-                      style={{
-                        width: '100%', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer',
-                        background: isPaused ? '#f8fafc' : '#f59e0b',
-                        color: isPaused ? '#475569' : '#fff',
-                        border: isPaused ? '1px solid #e2e8f0' : 'none',
-                        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px',
-                        transition: 'all 0.2s', marginTop: '5px'
-                      }}
-                    >
-                      {isPaused ? <><Play size={16} /> Retomar Operação</> : <><Pause size={16} /> Pausar Ociosidade</>}
-                    </button>
+                    {isDiaConcluido ? (
+                      <div style={{ width: '100%', padding: '10px', background: '#f1f5f9', color: '#94a3b8', textAlign: 'center', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem', border: '1px dashed #cbd5e1', marginTop: '5px' }}>
+                        Operação Fechada
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => handleTogglePausaUsuario(nomeUser, isPaused)}
+                        style={{
+                          width: '100%', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer',
+                          background: isPaused ? '#f8fafc' : '#f59e0b', color: isPaused ? '#475569' : '#fff',
+                          border: isPaused ? '1px solid #e2e8f0' : 'none',
+                          display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', transition: 'all 0.2s', marginTop: '5px'
+                        }}
+                      >
+                        {isPaused ? <><Play size={16} /> Retomar Operação</> : <><Pause size={16} /> Pausar Ociosidade</>}
+                      </button>
+                    )}
                   </div>
                 );
               })
@@ -502,9 +785,8 @@ export default function OperacaoAdm() {
           </div>
         </section>
 
-        {/* 3. TABELA HISTÓRICA */}
         <section className="op-history-section" style={{ margin: 0 }}>
-          <div className="history-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <div className="history-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
             <div>
               <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CheckCircle2 size={18} color="var(--primary)"/> Histórico Global de Romaneios
@@ -513,15 +795,19 @@ export default function OperacaoAdm() {
                 {pedidosProcessados.filter(p => p.efetivado).length} finalizados da equipe
               </span>
             </div>
-            <div className="search-bar-op" style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px' }}>
-              <Search size={16} color="#64748b" />
-              <input 
-                type="text" 
-                placeholder="Buscar romaneio..." 
-                value={buscaRomaneio}
-                onChange={(e) => setBuscaRomaneio(e.target.value)}
-                style={{ border: 'none', outline: 'none', marginLeft: '8px', fontSize: '0.9rem' }}
-              />
+            
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+              <div className="search-bar-op" style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px' }}>
+                <Search size={16} color="#64748b" />
+                <input type="text" placeholder="Buscar romaneio..." value={buscaRomaneio} onChange={(e) => setBuscaRomaneio(e.target.value)} style={{ border: 'none', outline: 'none', marginLeft: '8px', fontSize: '0.9rem' }}/>
+              </div>
+              
+              <button 
+                onClick={abrirModalNovoPedido}
+                style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <PackagePlus size={18} /> Novo Romaneio
+              </button>
             </div>
           </div>
           
@@ -559,7 +845,11 @@ export default function OperacaoAdm() {
                     }
 
                     return (
-                      <tr key={pedido.id} className={`clickable-row ${pedido.efetivado ? "efetivado" : ""}`}>
+                      <tr 
+                        key={pedido.id} 
+                        className={`clickable-row ${pedido.efetivado ? "efetivado" : ""}`}
+                        onClick={() => { setPedidoModal(pedido); setShowDetalhesModal(true); }}
+                      >
                         <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start' }}>
                             <div>
@@ -599,6 +889,10 @@ export default function OperacaoAdm() {
                               </button>
                               {dropdownOpen === pedido.id && (
                                 <div className="table-dropdown-menu" style={{ right: 0, left: 'auto' }}>
+                                  <button className="dropdown-item" onClick={() => abrirModalEditarPedido(pedido)}>
+                                    <Edit size={14}/> Editar Dados do Pedido
+                                  </button>
+                                  <div className="dropdown-divider"></div>
                                   <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
                                     {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
                                   </button>
@@ -624,10 +918,10 @@ export default function OperacaoAdm() {
 
       <section className="op-bottom-zone">
          <RankingDiario 
-            rankingCalculado={rankingArrayFirebase}
+            rankingCalculado={rankingCalculado}
             rankingExpandido={rankingExpandido}
             setRankingExpandido={setRankingExpandido}
-            currentTime={currentTime}           
+            currentTime={horaReferenciaAtual} 
             dataOperacaoAtiva={dataOperacaoAtiva} 
             isAdminMode={true}
             onDeleteEvent={handleDeleteEvent}
@@ -663,11 +957,89 @@ export default function OperacaoAdm() {
             </div>
             
             <div style={{ padding: '20px' }}>
-              <AdmControlesManuais dados={rankingArrayFirebase || []} dataFiltro={dataOperacaoAtiva} />
+              <AdmControlesManuais dados={rankingCalculado || []} dataFiltro={dataOperacaoAtiva} />
             </div>
           </div>
         </div>
       )}
+
+      {/* ================= INJEÇÃO DOS MODAIS ADICIONADOS ================= */}
+      <ModalCriarEditarPedido
+        showModal={showModalPedido}
+        isClosingModal={isClosingModal}
+        handleCloseModal={handleCloseModalPedido}
+        isSaving={isSaving}
+        editingId={editingId}
+        romaneio={romaneio} setRomaneio={setRomaneio}
+        loja={loja} setLoja={setLoja}
+        local={local} setLocal={setLocal}
+        uf={uf} setUf={setUf}
+        isCaixaMaster={isCaixaMaster} setIsCaixaMaster={setIsCaixaMaster}
+        observacoes={observacoes} setObservacoes={setObservacoes}
+        docTipo={docTipo} setDocTipo={setDocTipo}
+        docResponsavel={docResponsavel} setDocResponsavel={setDocResponsavel}
+        usuarios={usuarios}
+        localUser={null} // Passamos null pois na ADM qualquer usuário é adicionado manualmente
+        handleAddDoc={handleAddDoc}
+        docsTemporarios={docsTemporarios}
+        handleRemoveDoc={handleRemoveDoc}
+        handleSavePedido={handleSavePedido}
+        handleAddResponsavelToDoc={(id, email) => {
+          setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: [...(d.responsaveis || []), email]} : d));
+        }}
+        handleRemoveResponsavelFromDoc={(id, email) => {
+          setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: d.responsaveis.filter(r => r !== email)} : d));
+        }}
+      />
+
+      <ModalDetalhesPedido 
+        showDetalhesModal={showDetalhesModal}
+        setShowDetalhesModal={setShowDetalhesModal}
+        pedidoModal={pedidoModal}
+        isSaving={isSaving}
+        isUploading={isUploading}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        wmsSessions={wmsSessions}
+        setWmsSessions={setWmsSessions}
+        buscasDocumentos={buscasDocumentos}
+        handleBuscaDocumento={(dIdx, val) => setBuscasDocumentos(p => ({...p, [dIdx]: val}))}
+        wmsPreResumoAberto={wmsPreResumoAberto}
+        setWmsPreResumoAberto={setWmsPreResumoAberto}
+        setShowCaixasEfetivadasModal={() => {}}
+        setAuditModalData={() => {}} 
+        handlePlanejamentoUpload={processarArquivoWMS}
+        handleUploadWMSComum={processarArquivoWMS}
+        docIndexSelecionado={docIndexSelecionado}
+        setDocIndexSelecionado={setDocIndexSelecionado}
+        skusExpandidos={skusExpandidos}
+        setSkusExpandidos={setSkusExpandidos}
+        skusExpandidosComum={skusExpandidosComum}
+        setSkusExpandidosComum={setSkusExpandidosComum}
+        handleInputManual={() => {}}
+        abrirModalSalvarManual={() => {}}
+        handleMudarVariacao={() => {}}
+        isEditingObs={isEditingObs}
+        setIsEditingObs={setIsEditingObs}
+        observacoes={observacoes}
+        setObservacoes={setObservacoes}
+        docTipo={docTipo}
+        setDocTipo={setDocTipo}
+        docResponsavel={docResponsavel}
+        setDocResponsavel={setDocResponsavel}
+        localUser={null}
+        usuarios={usuarios}
+        handleAddDoc={handleAddDoc}
+        docsTemporarios={docsTemporarios}
+        handleRemoveDoc={handleRemoveDoc}
+        handleAddResponsavelToDoc={(id, email) => {
+          setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: [...(d.responsaveis || []), email]} : d));
+        }}
+        handleRemoveResponsavelFromDoc={(id, email) => {
+          setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: d.responsaveis.filter(r => r !== email)} : d));
+        }}
+        handleSalvarEdicaoTab1={() => alert('Edições pela ADM salvas!')}
+      />
 
     </div>
   );

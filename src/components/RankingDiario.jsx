@@ -192,13 +192,13 @@ export default function RankingDiario({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>📦 SKUs (Max 300 pts/cx):</span> 
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                       <strong>{user.pontosSku} pts</strong>
+                       <strong>{user.pontosSku || 0} pts</strong>
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>🚀 Bônus (Pedidos):</span> 
-                    <strong style={{ color: '#10b981' }}>+{user.bonusPedidos} pts</strong>
+                    <strong style={{ color: '#10b981' }}>+{user.bonusPedidos || 0} pts</strong>
                   </div>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
