@@ -12,21 +12,24 @@ export default function ModalOrdemProducao({
   localUser,
   dataOperacaoAtiva
 }) {
-  // Os estados vieram para dentro do componente!
   const [opForm, setOpForm] = useState({ numero: '', responsavelEmail: '' });
   const [isSavingOp, setIsSavingOp] = useState(false);
 
-  // Auto-preenche o responsável ao abrir o modal
+  // 👇 CORREÇÃO: Impede que o "admin" seja selecionado como fantasma
   useEffect(() => {
-    if (showOpModal && localUser?.email) {
-      setOpForm(prev => ({ ...prev, responsavelEmail: String(localUser.email).toLowerCase().trim() }));
+    if (showOpModal) {
+      if (localUser?.email && localUser.email !== 'admin') {
+        setOpForm(prev => ({ ...prev, responsavelEmail: String(localUser.email).toLowerCase().trim() }));
+      } else {
+        setOpForm(prev => ({ ...prev, responsavelEmail: '' })); // Zera para obrigar a escolha na ADM
+      }
     }
   }, [showOpModal, localUser]);
 
   if (!showOpModal) return null;
 
   const handleSaveOp = async () => {
-    if (!opForm.numero || !opForm.responsavelEmail) { return alert("Preencha o Nº do Romaneio e o Responsável."); }
+    if (!opForm.numero || !opForm.responsavelEmail) { return alert("Preencha o Nº do Romaneio e selecione um Responsável."); }
     setIsSavingOp(true);
     try {
       const targetUser = usuarios.find(u => u.email === opForm.responsavelEmail);
@@ -80,7 +83,9 @@ export default function ModalOrdemProducao({
               </div>
               <div className="input-group-op" style={{ margin: 0 }}>
                 <label>Responsável</label>
-                <select value={opForm.responsavelEmail} onChange={(e) => setOpForm({...opForm, responsavelEmail: e.target.value})} disabled={isSavingOp}>
+                {/* 👇 CORREÇÃO: Adicionada opção vazia para forçar seleção na ADM */}
+                <select value={opForm.responsavelEmail} onChange={(e) => setOpForm({...opForm, responsavelEmail: e.target.value})} disabled={isSavingOp} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }}>
+                  <option value="">Selecione o Conferente...</option>
                   {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
                 </select>
               </div>
@@ -106,7 +111,7 @@ export default function ModalOrdemProducao({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <div style={{ background: '#e0e7ff', color: '#4f46e5', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.85rem' }}>{op.numero}</div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ color: '#64748b', fontSize: '0.75rem' }}><User size={10} style={{ display: 'inline', marginRight: '2px' }}/> {op.responsavelEmail?.split('@')[0]}</span>
+                      <span style={{ color: '#64748b', fontSize: '0.75rem' }}><User size={10} style={{ display: 'inline', marginRight: '2px' }}/> {op.responsavelEmail?.split('@')[0] || 'Desconhecido'}</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>

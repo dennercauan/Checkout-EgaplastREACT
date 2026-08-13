@@ -331,15 +331,19 @@ export default function Operacao({ isAdmin }) {
         if (linhas.length <= 1) throw new Error("Arquivo vazio");
 
         let separador = linhas[0].includes(';') ? ';' : ',';
-        const cabecalho = linhas[0].split(separador).map(c => c.trim().toUpperCase().replace(/"/g, ''));
         
-        // Mapeamento otimizado para as colunas do seu WMS
+        // 👇 A MÁGICA: Normaliza os acentos para não perder a coluna "EXPEDIÇÃO"
+        const cabecalho = linhas[0].split(separador).map(c => 
+          c.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/"/g, '')
+        );
+        
         const idxCaixa = cabecalho.findIndex(c => c.includes("TIPO EMBALAGEM") || c.includes("CAIXA") || c.includes("VOLUME"));
         const idxPeso = cabecalho.findIndex(c => c.includes("PESO"));
-        const idxIdUnico = cabecalho.findIndex(c => c.includes("ID EMBALAGEM") || c === "ID" || c.includes("RASTREIO"));
-        const idxRef = cabecalho.findIndex(c => c === "PRODUTO" || c.includes("CÓDIGO") || c === "REF");
-        const idxDesc = cabecalho.findIndex(c => c.includes("DESCRIÇÃO") || c.includes("DESCRICAO"));
-        const idxQtd = cabecalho.findIndex(c => c.includes("QUANTIDADE") || c.includes("QTDE"));
+        // Busca inteligente que ignora formatação
+        const idxIdUnico = cabecalho.findIndex(c => c.includes("ID EMBALAGEM") || c === "ID" || c.includes("RASTREIO") || c.includes("EXPEDICAO"));
+        const idxRef = cabecalho.findIndex(c => c === "PRODUTO" || c.includes("CODIGO") || c === "REF" || c === "SKU");
+        const idxDesc = cabecalho.findIndex(c => c.includes("DESCRICAO") || c.includes("NOME"));
+        const idxQtd = cabecalho.findIndex(c => c.includes("QUANTIDADE") || c.includes("QTDE") || c === "QTD");
 
         if (idxRef === -1 || idxQtd === -1 || idxCaixa === -1) {
           throw new Error("Colunas obrigatórias (Caixa, Código Produto, Quantidade) não encontradas.");
@@ -354,7 +358,11 @@ export default function Operacao({ isAdmin }) {
           const nomeCaixa = cols[idxCaixa] || `CAIXA S/N`;
           const pesoCaixa = idxPeso !== -1 ? parseFloat(String(cols[idxPeso]).replace(',', '.')) || 0 : 0;
           
-          const idUnico = idxIdUnico !== -1 && cols[idxIdUnico] ? cols[idxIdUnico] : `S/N-linha-${i}`;
+          // 👇 Captura blindada do ID (Evita que caixas fiquem com ID vazio no banco)
+          let idUnicoStr = `S/N-linha-${i}`;
+          if (idxIdUnico !== -1 && cols[idxIdUnico] && cols[idxIdUnico].trim() !== '') {
+            idUnicoStr = cols[idxIdUnico].trim();
+          }
           
           const ref = cols[idxRef];
           const desc = idxDesc !== -1 ? cols[idxDesc] : "Produto";
@@ -362,24 +370,23 @@ export default function Operacao({ isAdmin }) {
 
           if (!ref || qtd <= 0) continue;
 
-          if (!caixasMap[idUnico]) {
-            caixasMap[idUnico] = { num: nomeCaixa, peso: pesoCaixa, idUnico: idUnico, produtos: [] };
+          if (!caixasMap[idUnicoStr]) {
+            // Salva idUnico e idExpedicao para garantir compatibilidade com o modal
+            caixasMap[idUnicoStr] = { num: nomeCaixa, peso: pesoCaixa, idUnico: idUnicoStr, idExpedicao: idUnicoStr, produtos: [] };
           } else {
-            caixasMap[idUnico].peso = Math.max(caixasMap[idUnico].peso, pesoCaixa);
+            caixasMap[idUnicoStr].peso = Math.max(caixasMap[idUnicoStr].peso, pesoCaixa);
           }
           
-          const prodExistente = caixasMap[idUnico].produtos.find(p => p.referencia === ref);
-          
+          const prodExistente = caixasMap[idUnicoStr].produtos.find(p => p.referencia === ref);
           if (prodExistente) {
             prodExistente.quantidade += qtd; 
           } else {
-            caixasMap[idUnico].produtos.push({ referencia: ref, descricao: desc, quantidade: qtd }); 
+            caixasMap[idUnicoStr].produtos.push({ referencia: ref, descricao: desc, quantidade: qtd }); 
           }
         }
 
         const caixasFinais = Object.values(caixasMap);
 
-        // 👇 TRAVA DE SEGURANÇA: Peso 0.0
         const caixasComZero = caixasFinais.filter(c => parseFloat(c.peso) === 0);
         if (caixasComZero.length > 0) {
           setAlertaPesoZero({
@@ -391,16 +398,15 @@ export default function Operacao({ isAdmin }) {
           });
           setIsUploading(false);
           if (e.target) e.target.value = null; 
-          return; // Interrompe o fluxo para exibir o Alerta
+          return; 
         }
 
-        // Se passar limpo, salva normalmente
         await finalizarImportacaoComum(dIdx, caixasFinais);
 
       } catch (error) {
-      console.error("Erro completo na importação:", error);
-      alert("Erro ao salvar caixas importadas: " + error.message);
-    } finally {
+        console.error("Erro completo na importação:", error);
+        alert("Erro ao salvar caixas importadas: " + error.message);
+      } finally {
         setIsUploading(false);
         if (e.target) e.target.value = null; 
       }
@@ -1627,13 +1633,19 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
                   <tr><td colSpan="5" style={{textAlign: 'center', padding: '30px', color: '#94a3b8'}}>{buscaRomaneio ? 'Nenhum romaneio ou loja encontrada.' : 'Nenhum pedido processado hoje.'}</td></tr>
                 ) : (
                   pedidosFiltrados.map(pedido => {
-                    let docsCount = pedido.documentos?.length || 0;
-                    let caixasCount = 0;
-                    let skusCount = 0;
-                    (pedido.documentos || []).forEach(d => {
-                      caixasCount += (d.caixas || []).length;
-                      (d.caixas || []).forEach(cx => { (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); });
-                    });
+                    let caixasCount = 0; 
+let skusCount = 0;
+const listaDocumentos = []; // Agora guardamos cada documento em uma lista
+
+(pedido.documentos || []).forEach(d => {
+  // Adiciona o tipo de documento na lista toda vez que encontra um
+  listaDocumentos.push(d.tipo || 'S/N');
+  
+  caixasCount += (d.caixas || []).length;
+  (d.caixas || []).forEach(cx => { 
+    (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); 
+  });
+});
 
                     const temPermissao = isAdmin || pedido.criadorUid === localUser?.uid;
 
@@ -1836,12 +1848,26 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
                         </td>
                         
                         <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px' }}>{docsCount} Docs</span>
-                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{caixasCount} Caixas</span>
-                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{skusCount} SKUs</span>
-                          </div>
-                        </td>
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+    
+    {/* Gera um badge colorido individual para CADA documento do romaneio */}
+    {listaDocumentos.map((tipo, idx) => {
+      let corFundo = '#3b82f6'; // Azul padrão (Nota Fiscal)
+      if (tipo === 'Minuta') corFundo = '#8b5cf6'; // Roxo
+      if (tipo === 'Bonificação') corFundo = '#ec4899'; // Rosa
+      if (tipo === 'Troca') corFundo = '#f59e0b'; // Laranja
+      
+      return (
+        <span key={idx} className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: corFundo, color: '#fff', border: 'none', fontWeight: 'bold' }}>
+          {tipo}
+        </span>
+      );
+    })}
+
+    <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{caixasCount} Caixas</span>
+    <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{skusCount} SKUs</span>
+  </div>
+</td>
 
                         <td className="actions-cell" style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
                           <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
@@ -1961,6 +1987,32 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
         handleRemoveResponsavelFromDoc={handleRemoveResponsavelFromDoc}
         handleSalvarEdicaoTab1={handleSalvarEdicaoTab1}
       />
+
+     {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
+      <ModalDetalhesPedido 
+        showDetalhesModal={showDetalhesModal}
+        setShowDetalhesModal={setShowDetalhesModal}
+        // ... (todas as outras props que já estão aí)
+        handleSalvarEdicaoTab1={handleSalvarEdicaoTab1}
+      />
+
+      {/* 👇 COLE ESTE BLOCO NOVO AQUI 👇 */}
+      {/* MODAL DE RESUMO E EDIÇÃO DE CAIXAS */}
+      <ModalCaixasEfetivadas 
+        showCaixasEfetivadasModal={showCaixasEfetivadasModal}
+        setShowCaixasEfetivadasModal={setShowCaixasEfetivadasModal}
+        pedidoModal={pedidoModal}
+        edicaoCaixa={edicaoCaixa}
+        setEdicaoCaixa={setEdicaoCaixa}
+        formCaixa={formCaixa}
+        setFormCaixa={setFormCaixa}
+        salvarCaixaManual={salvarCaixaManual}
+        isSaving={isSaving}
+        toggleBonificacaoCaixa={toggleBonificacaoCaixa}
+        abrirFormCaixa={abrirFormCaixa}
+        excluirCaixaManual={excluirCaixaManual}
+      />
+      {/* 👆 FIM DO BLOCO NOVO 👆 */}
 
       {/* SUB-MODAL 1: AUDITORIA WMS (Upload -> Relatório) */}
       <AuditoriaWms 

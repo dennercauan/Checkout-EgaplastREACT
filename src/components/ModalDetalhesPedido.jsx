@@ -194,7 +194,7 @@ export default function ModalDetalhesPedido({
                           </label>
                         </div>
                       ) : (
-                        /* ESTÁGIO 2: TABELA DE GERENCIAMENTO (DESIGN FIEL À IMAGEM) */
+                        /* ESTÁGIO 2: TABELA DE GERENCIAMENTO */
                         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                           
                           {/* TOOLBAR CONECTADA E FUNCIONAL */}
@@ -251,9 +251,6 @@ export default function ModalDetalhesPedido({
                                 <button onClick={async () => {
                                   if(!window.confirm("Deseja realmente descartar este planejamento?")) return;
                                   setWmsSessions(prev => { const n = {...prev}; delete n[dIdx]; return n; });
-                                  
-                                  // Update Firebase correctly logic goes here for parent if needed, 
-                                  // but inline is fine as we pass setWmsSessions
                                 }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
                                   <Trash2 size={16}/>
                                 </button>
@@ -614,24 +611,48 @@ export default function ModalDetalhesPedido({
                   {(pedidoModal.documentos || []).map((doc, dIdx) => {
                     const caixas = doc.caixas || [];
 
+                    // 👇 LÓGICA DE AGRUPAMENTO INTELIGENTE ADICIONADA AQUI 👇
                     const skusAgrupados = caixas.reduce((acc, cx) => {
                       (cx.produtos || []).forEach(p => {
-                        if (!acc[p.referencia]) acc[p.referencia] = { ref: p.referencia, desc: p.descricao, qtdTotal: 0, caixasDetalhadas: [] };
-                        acc[p.referencia].qtdTotal += parseInt(p.quantidade) || 0;
-                        acc[p.referencia].caixasDetalhadas.push({
-                          idUnico: cx.idUnico || cx.idExpedicao || '-',
-                          tipoCaixa: cx.num || 'CAIXA',
-                          peso: cx.peso || 0,
-                          qtdNestaCaixa: parseInt(p.quantidade) || 0
-                        });
+                        const ref = p.referencia || p.sku; // Garantia para legado
+                        if (!acc[ref]) {
+                          acc[ref] = { ref: ref, desc: p.descricao || p.desc, qtdTotal: 0, caixasDetalhadasMap: {} };
+                        }
+                        
+                        const qtd = parseInt(p.quantidade) || 0;
+                        acc[ref].qtdTotal += qtd;
+                        
+                        const chaveCaixa = cx.idExpedicao || cx.idUnico || cx.num || 'CX-S/N';
+                        
+                        if (!acc[ref].caixasDetalhadasMap[chaveCaixa]) {
+                          acc[ref].caixasDetalhadasMap[chaveCaixa] = {
+                            idUnico: cx.idExpedicao || cx.idUnico || '-',
+                            tipoCaixa: cx.num || 'CAIXA',
+                            peso: parseFloat(cx.peso) || 0,
+                            qtdNestaCaixa: qtd
+                          };
+                        } else {
+                          // Mescla a mesma caixa fragmentada no banco legado
+                          acc[ref].caixasDetalhadasMap[chaveCaixa].qtdNestaCaixa += qtd;
+                          acc[ref].caixasDetalhadasMap[chaveCaixa].peso = Math.max(
+                            acc[ref].caixasDetalhadasMap[chaveCaixa].peso, 
+                            parseFloat(cx.peso) || 0
+                          );
+                        }
                       });
                       return acc;
                     }, {});
-                   const listaSkus = Object.values(skusAgrupados);
+
+                    // Converte o Map de volta para Array para o React mapear na tela
+                    const listaSkus = Object.values(skusAgrupados).map(sku => ({
+                      ...sku,
+                      caixasDetalhadas: Object.values(sku.caixasDetalhadasMap)
+                    }));
+                    // 👆 FIM DA CORREÇÃO 👆
 
                     const termoBusca = (buscasDocumentos[dIdx] || '').toLowerCase();
                     const skusFiltrados = listaSkus.filter(sku => 
-                      sku.ref.toLowerCase().includes(termoBusca) || 
+                      (sku.ref && sku.ref.toLowerCase().includes(termoBusca)) || 
                       (sku.desc && sku.desc.toLowerCase().includes(termoBusca))
                     );
 
