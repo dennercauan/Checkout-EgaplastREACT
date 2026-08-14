@@ -3,8 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
-import { collectionGroup, query, where, getDocs, doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { Search, Power, Loader2, MapPin, CheckCircle, Clock, ExternalLink, ShieldAlert, AlertTriangle, SearchX, UserCircle, Settings, Palette, Image as ImageIcon, Camera } from 'lucide-react';
+import { collection, collectionGroup, query, where, getDocs, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { 
+  Search, Power, Loader2, MapPin, CheckCircle, Clock, ExternalLink, 
+  ShieldAlert, AlertTriangle, SearchX, UserCircle, Settings, Palette, 
+  Image as ImageIcon, Camera, FileText, Factory, Package 
+} from 'lucide-react';
 
 import logoEgaplast from '../img/egaplast.png';
 
@@ -59,47 +63,53 @@ export default function Navbar({ user, isAdmin }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
- const aplicarTemaGlobal = (tema) => {
+  const aplicarTemaGlobal = (tema) => {
     const root = document.documentElement;
+
     if (tema === 'dark') {
-      // MODO ESCURO (Gradiente Dark Premium)
-      root.style.setProperty('--bg-main', 'linear-gradient(135deg, #000000 0%, #18181b 50%, #000000 100%)');
-      root.style.setProperty('--bg-card', '#121212');
-      root.style.setProperty('--text-main', '#ffffff');
+      // MODO ESCURO (Premium: Preto Fosco para Carvão Profundo)
+      root.style.setProperty('--bg-main', 'linear-gradient(145deg, #050505 0%, #0f0f13 50%, #18181b 100%)');
+      root.style.setProperty('--bg-card', '#0e0e11');
+      root.style.setProperty('--text-main', '#f8fafc');
       root.style.setProperty('--text-muted', '#a1a1aa');
-      root.style.setProperty('--border-color', '#27272a');
+      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.08)'); // Borda suavizada
       root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
+      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
+      root.style.setProperty('--checkout-logo-blend', 'screen');
       root.style.setProperty('color-scheme', 'dark');
-      
       root.style.setProperty('--text-highlight', '#ffffff'); 
       root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #18181b 0%, #09090b 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.08)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.1)'); 
+
     } else if (tema === 'dark-blue') {
-      // AZUL ESCURO (Gradiente Midnight Blue)
-      root.style.setProperty('--bg-main', 'linear-gradient(135deg, #020617 0%, #0f172a 60%, #020617 100%)');
-      root.style.setProperty('--bg-card', '#0f172a');
-      root.style.setProperty('--text-main', '#f1f5f9');
+      // MODO AZUL ESCURO (Corporativo: Meia-noite Escuro para Navy Sutil)
+      root.style.setProperty('--bg-main', 'linear-gradient(145deg, #020617 0%, #061124 50%, #0b1936 100%)');
+      root.style.setProperty('--bg-card', '#0a1226'); // Card levemente camuflado com o fundo
+      root.style.setProperty('--text-main', '#f8fafc');
       root.style.setProperty('--text-muted', '#94a3b8');
-      root.style.setProperty('--border-color', '#1e293b');
+      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.12)'); // Borda suavizada
       root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
+      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
+      root.style.setProperty('--checkout-logo-blend', 'screen');
       root.style.setProperty('color-scheme', 'dark');
-      
-      root.style.setProperty('--text-highlight', '#f1f5f9'); 
-      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.1)');
+      root.style.setProperty('--text-highlight', '#38bdf8'); 
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.15)');
+
     } else {
-      // MODO CLARO (Gradiente Cinza Muito Suave)
-      root.style.setProperty('--bg-main', 'linear-gradient(135deg, #f0f2f5 0%, #e2e8f0 100%)');
+      // MODO CLARO (Limpo: Slate Gelo para Off-White)
+      root.style.setProperty('--bg-main', 'linear-gradient(145deg, #e2e8f0 0%, #eef2f6 50%, #f8fafc 100%)');
       root.style.setProperty('--bg-card', '#ffffff');
-      root.style.setProperty('--text-main', '#334155');
+      root.style.setProperty('--text-main', '#0f172a');
       root.style.setProperty('--text-muted', '#64748b');
-      root.style.setProperty('--border-color', '#e2e8f0');
+      root.style.setProperty('--border-color', '#cbd5e1');
       root.style.setProperty('--logo-filter', 'none'); 
+      root.style.setProperty('--checkout-logo-filter', 'none'); 
+      root.style.setProperty('--checkout-logo-blend', 'multiply');
       root.style.setProperty('color-scheme', 'light');
-      
       root.style.setProperty('--text-highlight', 'var(--primary)'); 
-      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.2)');
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #0d3269 0%, #1d4ed8 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.25)');
     }
   };
   
@@ -109,12 +119,10 @@ export default function Navbar({ user, isAdmin }) {
     setIsProfileMenuOpen(false);
   };
 
-  // Transforma a imagem em texto (Base64) para salvar direto no Firestore
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Trava de segurança: Limita a imagem a 1MB para não estourar o limite do Firestore
     if (file.size > 1024 * 1024) {
       alert("A imagem é muito pesada. Escolha uma imagem de até 1MB.");
       return;
@@ -164,46 +172,160 @@ export default function Navbar({ user, isAdmin }) {
     setShowLogoutConfirm(false);
   };
 
+  // Função auxiliar para extrair string YYYY-MM-DD em FUSO LOCAL
+  const extrairDataIso = (docData) => {
+    if (docData.dataOperacao && typeof docData.dataOperacao === 'string' && docData.dataOperacao.includes('-')) {
+      return docData.dataOperacao.trim();
+    }
+
+    const ts = docData.createdAt || docData.updatedAt || docData.completedAt || docData.primeiraEfetivacao;
+    if (ts) {
+      let dateObj = null;
+      if (typeof ts.toDate === 'function') {
+        dateObj = ts.toDate();
+      } else if (ts.seconds) {
+        dateObj = new Date(ts.seconds * 1000);
+      } else if (typeof ts === 'string' || typeof ts === 'number') {
+        dateObj = new Date(ts);
+      }
+
+      if (dateObj && !isNaN(dateObj.getTime())) {
+        const ano = dateObj.getFullYear();
+        const mes = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const dia = String(dateObj.getDate()).padStart(2, '0');
+        return `${ano}-${mes}-${dia}`;
+      }
+    }
+
+    return null;
+  };
+
   const handleSearch = async (e) => {
     e.preventDefault(); 
-    if (searchTerm.trim() === '') return;
+    if (!searchTerm.trim()) return;
 
     setIsSearching(true);
     const termoExato = searchTerm.trim();
 
     try {
+      // 1. Busca na coleção principal 'pedidos'
+      const qPedidos = query(collection(db, 'pedidos'), where('romaneio', '==', termoExato));
+      const snapPedidos = await getDocs(qPedidos);
+
+      if (!snapPedidos.empty) {
+        const docEncontrado = snapPedidos.docs[0];
+        const data = docEncontrado.data();
+        let dataFinal = extrairDataIso(data);
+
+        if (!dataFinal) {
+          const hoje = new Date();
+          dataFinal = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+        }
+
+        setSearchResult({
+          tipo: 'Romaneio / Pedido',
+          id: docEncontrado.id,
+          isRoot: true,
+          dataCalculada: dataFinal,
+          ...data
+        });
+        setIsSearching(false);
+        setSearchTerm('');
+        return;
+      }
+
+      // 2. Busca nas Ordens de Produção 'ordensProducao'
+      const qOps = query(collection(db, 'ordensProducao'), where('numero', '==', termoExato));
+      const snapOps = await getDocs(qOps);
+
+      if (!snapOps.empty) {
+        const docEncontrado = snapOps.docs[0];
+        const dataOp = docEncontrado.data();
+        let dataFinal = extrairDataIso(dataOp);
+
+        if (!dataFinal) {
+          const hoje = new Date();
+          dataFinal = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+        }
+
+        setSearchResult({
+          tipo: 'Ordem de Produção (O.P.)',
+          id: docEncontrado.id,
+          isOp: true,
+          romaneio: dataOp.numero,
+          criadorEmail: dataOp.responsavelEmail,
+          criadorUid: dataOp.responsavelUid || dataOp.criadorUid,
+          efetivado: true,
+          dataCalculada: dataFinal,
+          ...dataOp
+        });
+        setIsSearching(false);
+        setSearchTerm('');
+        return;
+      }
+
+      // 3. Busca nas Pastas Legadas (pedidosMultiDocumento)
       const qPedidosMulti = query(collectionGroup(db, 'pedidosMultiDocumento'), where('romaneio', '==', termoExato));
       const snapMulti = await getDocs(qPedidosMulti);
 
       if (!snapMulti.empty) {
         const docEncontrado = snapMulti.docs[0];
-        setSearchResult({ tipo: 'Pedido de Separação', id: docEncontrado.id, elementoId: docEncontrado.ref.path.split('/')[3], ...docEncontrado.data() });
-        setIsSearching(false); setSearchTerm(''); return;
+        const dataLegada = docEncontrado.data();
+        const pathSegments = docEncontrado.ref.path.split('/');
+        const uidDono = pathSegments[1];
+        const elemIdOriginal = pathSegments[3];
+
+        let dataFinal = extrairDataIso(dataLegada);
+
+        // Se for legado e não tiver timestamp no pedido, busca o título da pasta (ex: "13/08")
+        if (!dataFinal && uidDono && elemIdOriginal) {
+          try {
+            const elemSnap = await getDoc(doc(db, 'usuarios', uidDono, 'elementos', elemIdOriginal));
+            if (elemSnap.exists()) {
+              const tituloElem = elemSnap.data().titulo;
+              if (tituloElem && tituloElem.includes('/')) {
+                const [d, m] = tituloElem.split('/');
+                const anoAtual = new Date().getFullYear();
+                dataFinal = `${anoAtual}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+              }
+            }
+          } catch (errElem) {
+            console.error("Erro ao buscar elemento pai:", errElem);
+          }
+        }
+
+        if (!dataFinal) {
+          const hoje = new Date();
+          dataFinal = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+        }
+
+        setSearchResult({ 
+          tipo: 'Pedido (Legado)', 
+          id: docEncontrado.id, 
+          elementoId: elemIdOriginal, 
+          criadorUid: uidDono,
+          _isLegacy: true,
+          dataCalculada: dataFinal,
+          ...dataLegada 
+        });
+        setIsSearching(false); 
+        setSearchTerm(''); 
+        return;
       }
 
-      const qPedidosLegados = query(collectionGroup(db, 'pedidos'), where('romaneio', '==', termoExato));
-      const snapLegados = await getDocs(qPedidosLegados);
-
-      if (!snapLegados.empty) {
-        const docEncontrado = snapLegados.docs[0];
-        setSearchResult({ tipo: 'Pedido Legado', id: docEncontrado.id, elementoId: docEncontrado.ref.path.split('/')[3], ...docEncontrado.data() });
-        setIsSearching(false); setSearchTerm(''); return;
-      }
-
-      const qOrdens = query(collectionGroup(db, 'ordens'), where('romaneio', '==', termoExato));
-      const snapOrdens = await getDocs(qOrdens);
-
-      if (!snapOrdens.empty) {
-        const docEncontrado = snapOrdens.docs[0];
-        setSearchResult({ tipo: 'Ordem de Produção', id: docEncontrado.id, elementoId: docEncontrado.ref.path.split('/')[3], ...docEncontrado.data() });
-        setIsSearching(false); setSearchTerm(''); return;
-      }
-
-      setSearchError({ tipo: 'not_found', titulo: 'Não Encontrado', mensagem: `O documento "${termoExato}" não foi encontrado. Lembre-se de digitar a numeração exatamente como foi cadastrada.` });
+      setSearchError({ 
+        tipo: 'not_found', 
+        titulo: 'Não Encontrado', 
+        mensagem: `O romaneio ou O.P. "${termoExato}" não foi encontrado.` 
+      });
 
     } catch (error) {
       console.error("Erro na busca global:", error);
-      setSearchError({ tipo: 'firebase_error', titulo: 'Erro de Busca', mensagem: 'A busca falhou porque o Firebase exige a criação de um Índice para esta pesquisa. Abra o Console (F12) e clique no link azul para autorizar.' });
+      setSearchError({ 
+        tipo: 'firebase_error', 
+        titulo: 'Falha na Busca', 
+        mensagem: error.message || 'Ocorreu um erro ao consultar os dados.' 
+      });
     } finally {
       setIsSearching(false);
     }
@@ -223,7 +345,7 @@ export default function Navbar({ user, isAdmin }) {
             onClick={() => window.location.reload()}
             style={{ 
               cursor: 'pointer', 
-              filter: 'var(--logo-filter, none)', // A mágica da logo branca acontece aqui!
+              filter: 'var(--logo-filter, none)',
               transition: 'filter 0.3s ease' 
             }}
           />
@@ -236,7 +358,7 @@ export default function Navbar({ user, isAdmin }) {
             <input 
               type="text" 
               className="search-expandable" 
-              placeholder="Buscar OP e dar Enter..." 
+              placeholder="Buscar Romaneio ou O.P..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               disabled={isSearching}
@@ -248,7 +370,7 @@ export default function Navbar({ user, isAdmin }) {
             )}
           </form>
 
-          {/* NOVO MENU DROPDOWN DE PERFIL POSICIONADO À DIREITA */}
+          {/* MENU DROPDOWN DE PERFIL */}
           <div className="user-profile-section" ref={dropdownRef} style={{ position: 'relative' }}>
             <div 
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
@@ -257,7 +379,6 @@ export default function Navbar({ user, isAdmin }) {
               onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             >
               <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'right' }}>
-                {/* 👇 A cor aqui agora é var(--text-highlight) */}
                 <span style={{ fontWeight: 'bold', color: 'var(--text-highlight)', fontSize: '0.95rem', lineHeight: '1.2' }}>{displayName}</span>
                 <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{isAdmin ? 'Administrador' : 'Conferente'}</span>
               </div>
@@ -320,7 +441,7 @@ export default function Navbar({ user, isAdmin }) {
 
             <div style={{ padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
-              {/* ÁREA DE FOTO DE PERFIL (COM UPLOAD DE ARQUIVO) */}
+              {/* ÁREA DE FOTO DE PERFIL */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ position: 'relative' }}>
                   {formProfile.photoURL ? (
@@ -415,14 +536,13 @@ export default function Navbar({ user, isAdmin }) {
       )}
 
       {/* ==========================================
-          MODAIS (RESULTADOS, LOGOUT E ERROS) - MANTIDOS DA VERSÃO ANTERIOR
+          MODAIS (RESULTADOS, LOGOUT E ERROS)
           ========================================== */}
       {(searchResult || searchError || showLogoutConfirm) && (
         <div className="modal-overlay-search" onClick={fecharModal}>
           <div className="modal-content-search" onClick={(e) => e.stopPropagation()}>
             
             {showLogoutConfirm ? (
-              // --- TELA DE CONFIRMAÇÃO DE LOGOUT ---
               <div style={{ padding: '45px 30px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <div style={{ background: '#fff5f5', padding: '20px', borderRadius: '50%', marginBottom: '20px', border: '1px solid #ffebeb' }}>
                   <Power size={48} color="#dc3545" />
@@ -453,7 +573,6 @@ export default function Navbar({ user, isAdmin }) {
               </div>
 
             ) : searchError ? (
-              // --- TELA DE ERRO ---
               <div style={{ padding: '45px 30px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <div style={{ background: searchError.tipo === 'not_found' ? '#fff8e6' : '#fff5f5', padding: '20px', borderRadius: '50%', marginBottom: '20px', border: `1px solid ${searchError.tipo === 'not_found' ? '#ffecb3' : '#ffebeb'}` }}>
                   {searchError.tipo === 'not_found' ? (
@@ -481,15 +600,14 @@ export default function Navbar({ user, isAdmin }) {
               </div>
 
             ) : showAccessDenied ? (
-              // --- TELA DE ACESSO NEGADO ---
               <div style={{ padding: '45px 30px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <div style={{ background: '#fff5f5', padding: '20px', borderRadius: '50%', marginBottom: '20px', border: '1px solid #ffebeb' }}>
                   <ShieldAlert size={48} color="#dc3545" />
                 </div>
                 <h3 style={{ fontSize: '1.6rem', color: '#dc3545', margin: '0 0 10px 0', fontWeight: '800' }}>Acesso Restrito</h3>
                 <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
-                  Este romaneio está sob a responsabilidade de outro setor ou usuário.<br/><br/>
-                  Você pode visualizar o status da separação nesta tela, mas não possui permissão para acessar ou alterar a operação.
+                  Este romaneio está sob a responsabilidade de outro conferente.<br/><br/>
+                  Você pode visualizar o status da separação, mas não possui permissão para acessá-lo.
                 </p>
                 
                 <div style={{ display: 'flex', gap: '15px', width: '100%' }}>
@@ -511,10 +629,11 @@ export default function Navbar({ user, isAdmin }) {
               </div>
               
             ) : (
-              // --- TELA NORMAL DO PEDIDO (QUICK VIEW) ---
               <>
                 <div className="search-modal-header">
-                  <div className="search-badge">{searchResult.tipo}</div>
+                  <div className="search-badge" style={{ background: searchResult.isOp ? '#e0e7ff' : 'var(--primary)', color: searchResult.isOp ? '#4f46e5' : '#fff' }}>
+                    {searchResult.tipo}
+                  </div>
                   <h2 className="search-title">{searchResult.romaneio}</h2>
                   <button className="btn-close-search" onClick={fecharModal}>×</button>
                 </div>
@@ -533,8 +652,10 @@ export default function Navbar({ user, isAdmin }) {
                   <div className="info-row">
                     <FileText size={18} className="info-icon" />
                     <div>
-                      <span className="info-label">Criado por</span>
-                      <strong className="info-value">{searchResult.criadorEmail ? searchResult.criadorEmail.split('@')[0].toUpperCase() : 'Sistema'}</strong>
+                      <span className="info-label">Responsável</span>
+                      <strong className="info-value">
+                        {searchResult.criadorEmail ? searchResult.criadorEmail.split('@')[0].toUpperCase() : 'SISTEMA'}
+                      </strong>
                     </div>
                   </div>
 
@@ -545,7 +666,7 @@ export default function Navbar({ user, isAdmin }) {
                       <Clock size={18} style={{ color: 'var(--secondary)' }} className="info-icon" />
                     )}
                     <div>
-                      <span className="info-label">Status da Separação</span>
+                      <span className="info-label">Status</span>
                       <strong className="info-value" style={{ color: searchResult.efetivado ? '#28a745' : 'var(--secondary)' }}>
                         {searchResult.efetivado ? 'Finalizado' : 'Em andamento'}
                       </strong>
@@ -561,17 +682,29 @@ export default function Navbar({ user, isAdmin }) {
                   <button 
                     className="btn-access-search" 
                     onClick={() => {
+                      const dataStr = searchResult.dataCalculada || searchResult.dataOperacao;
+                      const numRomaneio = String(searchResult.romaneio || searchResult.numero || '').trim();
+
+                      fecharModal();
+
+                      if (isAdmin) {
+                        navigate(`/operacao-adm?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`);
+                        return;
+                      }
+
                       const isOwner = searchResult.criadorUid === user.uid;
                       const isLinked = searchResult.uidsVinculados && searchResult.uidsVinculados.includes(user.uid);
                       
-                      const canAccess = isAdmin || isOwner || isLinked;
-
-                      if (!canAccess) {
+                      if (!isOwner && !isLinked) {
                         setShowAccessDenied(true); 
                         return;
                       }
 
-                      navigate(`/elemento?id=${searchResult.elementoId}`);
+                      if (searchResult._isLegacy && searchResult.elementoId) {
+                        navigate(`/elemento?id=${searchResult.elementoId}`);
+                      } else {
+                        navigate(`/operacao?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`);
+                      }
                     }} 
                   >
                     Acessar Operação <ExternalLink size={16} />

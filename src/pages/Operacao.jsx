@@ -501,6 +501,7 @@ export default function Operacao({ isAdmin }) {
   };
   
 
+
   useEffect(() => {
     const timerInterval = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(timerInterval);
@@ -608,6 +609,31 @@ export default function Operacao({ isAdmin }) {
       return timeB - timeA;
     });
   }, [pedidosNovos, pedidosLegados]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const romaneioParaAbrir = params.get('openRomaneio');
+
+    if (romaneioParaAbrir && pedidosProcessados && pedidosProcessados.length > 0) {
+      const termoLimpo = decodeURIComponent(romaneioParaAbrir).trim().toLowerCase();
+      
+      const pedidoAlvo = pedidosProcessados.find(p => 
+        String(p.romaneio || p.numero || '').trim().toLowerCase() === termoLimpo
+      );
+
+      if (pedidoAlvo) {
+        setPedidoModal(pedidoAlvo);
+        setObservacoes(pedidoAlvo.observacoes || '');
+        setDocsTemporarios(pedidoAlvo.documentos || []);
+        setIsEditingObs(false);
+        setActiveTab('resumo');
+        setShowDetalhesModal(true);
+
+        const dataAtiva = params.get('date') || dataHojeStr;
+        window.history.replaceState({}, '', `${location.pathname}?date=${dataAtiva}`);
+      }
+    }
+  }, [location.search, pedidosProcessados]);
 
   // 1. O "ÓCULOS" DO USUÁRIO: Separa apenas os pedidos que pertencem a ele (ou tudo, se for Admin)
   const pedidosVisiveis = useMemo(() => {
@@ -1399,25 +1425,47 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
         // Contagem de totais para o painel
         let totalPedidos = 0;
         let totalCaixas = 0;
-        
-        pedidosProcessados.forEach(p => {
+       pedidosProcessados.forEach(p => {
            if (p.efetivado) {
               const temNfOuMinuta = (p.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
               if (temNfOuMinuta) totalPedidos++;
               
               (p.documentos || []).forEach(d => {
-                 totalCaixas += (d.caixas || []).length;
+                  totalCaixas += (d.caixas || []).length;
               });
            }
         });
 
-        // Mantendo a proteção contra "Ghost Data": Full Overwrite do documento!
-        await setDoc(refDia, {
-          ranking: rankingParaSalvar,
-          totalNfMinuta: totalPedidos,
-          totalCaixas: totalCaixas,
+        // 1. Sanitiza o mapa de ranking garantindo que nada passe como undefined
+        const rankingSanitizado = {};
+        if (rankingParaSalvar && typeof rankingParaSalvar === 'object') {
+          Object.entries(rankingParaSalvar).forEach(([nome, stats]) => {
+            if (!stats) return;
+            rankingSanitizado[nome] = {
+              pontos: Number(stats.pontos) || 0,
+              skus: Number(stats.skus) || 0,
+              pontosSku: Number(stats.pontosSku) || 0,
+              op: Number(stats.op) || 0,
+              pedidos: Number(stats.pedidos) || 0,
+              bonusPedidos: Number(stats.bonusPedidos) || 0,
+              decrescimo: Number(stats.decrescimo) || 0,
+              chartData: Array.isArray(stats.chartData) ? stats.chartData : [],
+              pointEvents: Array.isArray(stats.pointEvents) ? stats.pointEvents : [],
+              eventosMesclados: Array.isArray(stats.eventosMesclados) ? stats.eventosMesclados : []
+            };
+          });
+        }
+
+        // 2. Payload blindado (JSON.parse remove qualquer chave residual com undefined)
+        const payloadFinal = JSON.parse(JSON.stringify({
+          ranking: rankingSanitizado,
+          totalNfMinuta: totalPedidos || 0,
+          totalCaixas: totalCaixas || 0,
           ultimaAtualizacao: Date.now()
-        });
+        }));
+
+        // 3. Gravação com sobrescrita protegida
+        await setDoc(refDia, payloadFinal);
 
       } catch (error) {
         console.error("Falha na transmissão do ranking para a ADM:", error);

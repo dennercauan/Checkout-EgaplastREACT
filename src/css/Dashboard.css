@@ -15,15 +15,28 @@
   --shadow-hover: 0 20px 45px rgba(13, 50, 105, 0.1);
 }
 
-/* Fundo dinâmico do Dashboard */
+/* Fundo dinâmico controlado 100% pelo tema do usuário */
 .dashboard-layout {
   background: var(--bg-main);
   background-attachment: fixed;
+  background-size: cover;
   color: var(--text-main);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   min-height: 100vh;
   width: 100%;
-  transition: background 0.3s ease;
+  transition: background 0.4s ease;
+}
+
+/* Garante que os cards tenham contraste e profundidade correta */
+.hero-card,
+.free-block,
+.ranking-zone,
+.media-zone,
+.volume-zone,
+.bottom-zone {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
 .app-container { 

@@ -1,7 +1,8 @@
-import React from 'react';
+// src/components/AdmEstatisticasGerais.jsx
+import React, { useMemo } from 'react';
 import { Package, FileText, TrendingDown, Award, ShoppingCart, Boxes } from 'lucide-react';
 
-export default function AdmEstatisticasGerais({ dados, dataFiltro }) {
+export default function AdmEstatisticasGerais({ dados, dataFiltro, pedidos = [] }) {
   // Garantimos a leitura quer os dados venham direto do objeto ou de dentro de 'ranking'
   const arrayUsuarios = Object.values(dados?.ranking || dados || {});
 
@@ -15,27 +16,49 @@ export default function AdmEstatisticasGerais({ dados, dataFiltro }) {
     };
   }, { skus: 0, op: 0, pontos: 0, decrescimo: 0 });
 
-  // Busca totais de Pedidos e Caixas do documento geral do dia.
-  // Se ainda não estiverem salvos na raiz de estatisticasDiarias, renderiza 0.
-  const totalPedidos = dados?.totalNfMinuta || 0;
-  const totalCaixas = dados?.totalCaixas || 0;
+  // Contagem em tempo real priorizando a lista ativa de pedidos (abertos e finalizados)
+  const { totalPedidosValidos, totalCaixasGerais } = useMemo(() => {
+    if (pedidos && pedidos.length > 0) {
+      let nfsMinutas = 0;
+      let caixas = 0;
+
+      pedidos.forEach(p => {
+        (p.documentos || []).forEach(docItem => {
+          const tipo = String(docItem.tipo || '').trim();
+          // Bonificações e outros tipos são ignorados na contagem de pedidos
+          if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
+            nfsMinutas++;
+          }
+          caixas += (docItem.caixas || []).length;
+        });
+      });
+
+      return { totalPedidosValidos: nfsMinutas, totalCaixasGerais: caixas };
+    }
+
+    // Fallback: se não receber o array de pedidos, lê do consolidado gravado
+    return {
+      totalPedidosValidos: dados?.totalNfMinuta ?? dados?.totalPedidos ?? 0,
+      totalCaixasGerais: dados?.totalCaixas ?? 0
+    };
+  }, [pedidos, dados]);
 
   return (
     <div style={{ marginBottom: '15px' }}>
       
-      {/* GRID COMPACTO: minmax reduzido para 160px para caber até 6 cards na mesma linha em telas maiores */}
+      {/* GRID COMPACTO */}
       <div style={{ 
         display: 'grid', 
         gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
         gap: '12px' 
       }}>
         
-        {/* CARD 1: TOTAL PEDIDOS (NFs e Minutas) */}
+        {/* CARD 1: TOTAL PEDIDOS (Apenas NFs e Minutas - Em aberto e Finalizados) */}
         <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #8b5cf6', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>PEDIDOS (NF/MIN)</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totalPedidos}</h2>
+              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totalPedidosValidos}</h2>
             </div>
             <div style={{ background: '#ede9fe', padding: '6px', borderRadius: '6px' }}>
               <ShoppingCart size={18} color="#8b5cf6" />
@@ -48,7 +71,7 @@ export default function AdmEstatisticasGerais({ dados, dataFiltro }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>TOTAL DE CAIXAS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totalCaixas}</h2>
+              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totalCaixasGerais}</h2>
             </div>
             <div style={{ background: '#cffafe', padding: '6px', borderRadius: '6px' }}>
               <Boxes size={18} color="#06b6d4" />

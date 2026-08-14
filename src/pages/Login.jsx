@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { Mail, Lock, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import '../css/Login.css';
@@ -21,6 +22,59 @@ export default function Login() {
   const [userName, setUserName] = useState('');
 
   const navigate = useNavigate();
+
+  const aplicarTemaGlobal = (tema) => {
+    const root = document.documentElement;
+
+    if (tema === 'dark') {
+      root.style.setProperty('--bg-main', 'linear-gradient(140deg, #050505 0%, #18181b 45%, #27272a 100%)');
+      root.style.setProperty('--bg-card', '#0e0e11');
+      root.style.setProperty('--text-main', '#f8fafc');
+      root.style.setProperty('--text-muted', '#a1a1aa');
+      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.12)');
+      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
+      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
+      root.style.setProperty('--checkout-logo-blend', 'screen'); // Faz o fundo preto da imagem sumir
+      root.style.setProperty('color-scheme', 'dark');
+      root.style.setProperty('--text-highlight', '#ffffff'); 
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #27272a 0%, #09090b 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.1)'); 
+
+    } else if (tema === 'dark-blue') {
+      root.style.setProperty('--bg-main', 'linear-gradient(140deg, #020617 0%, #0c2340 45%, #1e40af 100%)');
+      root.style.setProperty('--bg-card', '#0b1329');
+      root.style.setProperty('--text-main', '#f8fafc');
+      root.style.setProperty('--text-muted', '#94a3b8');
+      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.2)');
+      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
+      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
+      root.style.setProperty('--checkout-logo-blend', 'screen'); // Faz o fundo preto da imagem sumir
+      root.style.setProperty('color-scheme', 'dark');
+      root.style.setProperty('--text-highlight', '#38bdf8'); 
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.2)');
+
+    } else {
+      root.style.setProperty('--bg-main', 'linear-gradient(140deg, #bfdbfe 0%, #dbeafe 40%, #f1f5f9 100%)');
+      root.style.setProperty('--bg-card', '#ffffff');
+      root.style.setProperty('--text-main', '#0f172a');
+      root.style.setProperty('--text-muted', '#64748b');
+      root.style.setProperty('--border-color', '#cbd5e1');
+      root.style.setProperty('--logo-filter', 'none'); 
+      root.style.setProperty('--checkout-logo-filter', 'none'); 
+      root.style.setProperty('--checkout-logo-blend', 'multiply'); // Faz o fundo branco original da imagem sumir
+      root.style.setProperty('color-scheme', 'light');
+      root.style.setProperty('--text-highlight', 'var(--primary)'); 
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #0d3269 0%, #1d4ed8 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.25)');
+    }
+  };
+
+  useEffect(() => {
+    // Carrega o último tema salvo no dispositivo
+    const temaSalvo = localStorage.getItem('egaplast_user_theme') || 'light';
+    aplicarTemaGlobal(temaSalvo);
+  }, []);
 
   useEffect(() => {
     const fadeTimer = setTimeout(() => {
@@ -53,6 +107,18 @@ export default function Login() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
+      // Busca tema no Firestore para sincronizar com localStorage
+      try {
+        const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
+        if (userDoc.exists() && userDoc.data().theme) {
+          const userTheme = userDoc.data().theme;
+          localStorage.setItem('egaplast_user_theme', userTheme);
+          aplicarTemaGlobal(userTheme);
+        }
+      } catch (err) {
+        console.error("Erro ao sincronizar tema:", err);
+      }
+
       if (rememberMe) {
         localStorage.setItem('egaplast_saved_email', email);
       } else {
@@ -71,7 +137,6 @@ export default function Login() {
       setShowSuccessScreen(true);
       sessionStorage.setItem('justLoggedIn', 'true');
 
-      // SEM FADE OUT: Segura a tela escura e redireciona direto após 2.5s
       setTimeout(() => {
         navigate(targetUrl);
       }, 2500); 
@@ -98,7 +163,6 @@ export default function Login() {
     );
   }
 
-  // Removida a classe isExiting do wrapper
   return (
     <div className="login-wrapper">
       <Toaster />
@@ -127,7 +191,11 @@ export default function Login() {
       <div className="form-side">
         <div className="form-content">
           <div className="logo-container">
-            <img src="/src/img/checkout-logo.png" alt="Egaplast Logo" />
+            <img 
+              src="/src/img/checkout-logo.png" 
+              alt="Egaplast Logo" 
+              className="checkout-logo-theme"
+            />
           </div>
           
           <div className="login-header">
