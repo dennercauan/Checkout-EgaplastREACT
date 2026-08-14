@@ -19,6 +19,8 @@
   --text-hero: #ffffff;
   --text-hero-muted: rgba(255, 255, 255, 0.8);
   --bg-hero-badge: rgba(255, 255, 255, 0.2);
+  --hero-border: transparent;
+  --hero-shadow: 0 15px 30px -10px rgba(13, 50, 105, 0.3);
 }
 
 /* ==========================================
@@ -34,6 +36,7 @@
   background-size: cover;
   font-family: 'Inter', -apple-system, sans-serif;
   transition: background 0.4s ease;
+  animation: fadeInDash 0.8s ease-out forwards;
 }
 
 .dashboard-free-layout {
@@ -52,15 +55,16 @@
   display: flex;
   flex-direction: column;
   color: var(--text-main);
-  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.4s ease;
+  animation: slideUpFadeDash 0.6s ease-out backwards;
 }
 
 /* Posições no Grid */
 .hero-card { grid-column: span 8; }
-.volume-zone { grid-column: span 4; }
-.media-zone { grid-column: span 4; }
-.ranking-zone { grid-column: span 4; }
-.bottom-zone { grid-column: span 4; }
+.volume-zone { grid-column: span 4; animation-delay: 0.2s !important; }
+.media-zone { grid-column: span 4; animation-delay: 0.3s !important; }
+.ranking-zone { grid-column: span 4; animation-delay: 0.4s !important; }
+.bottom-zone { grid-column: span 4; animation-delay: 0.5s !important; }
 
 @media (max-width: 1024px) {
   .hero-card { grid-column: span 12; }
@@ -85,6 +89,7 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 25px;
+  animation: slideUpFadeDash 0.8s ease-out 0.2s backwards;
 }
 
 .dash-title-area {
@@ -176,16 +181,18 @@
   justify-content: space-between;
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
-  transition: background 0.4s ease, border-color 0.4s ease;
+  border: 1px solid var(--hero-border, var(--border-color)) !important;
+  box-shadow: var(--hero-shadow, 0 10px 25px rgba(0, 0, 0, 0.25)) !important;
+  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  animation: popInDash 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s backwards !important;
 }
 
 .hero-badge {
-  background: var(--bg-hero-badge, rgba(255, 255, 255, 0.2));
-  backdrop-filter: blur(5px);
+  background: var(--bg-hero-badge, rgba(255, 255, 255, 0.2)) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: var(--text-hero, #ffffff) !important;
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 700;
@@ -193,6 +200,7 @@
   display: inline-block;
   align-self: flex-start;
   margin-bottom: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   transition: background 0.3s ease;
 }
 
@@ -354,7 +362,14 @@
   font-size: 0.9rem;
   font-weight: 600;
   transition: transform 0.2s ease, background 0.2s ease;
+  animation: slideUpFadeDash 0.4s ease-out backwards;
 }
+
+.ranking-row:nth-child(1) { animation-delay: 0.5s; }
+.ranking-row:nth-child(2) { animation-delay: 0.6s; }
+.ranking-row:nth-child(3) { animation-delay: 0.7s; }
+.ranking-row:nth-child(4) { animation-delay: 0.8s; }
+.ranking-row:nth-child(5) { animation-delay: 0.9s; }
 
 .ranking-row.first {
   background: var(--primary);
@@ -397,29 +412,6 @@
   color: var(--primary);
   font-weight: 600;
   gap: 15px;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: var(--bg-card);
-  border-radius: 16px;
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.25);
-  border: 1px solid var(--border-color);
 }
 
 .modal-header {
@@ -565,31 +557,7 @@
 }
 
 /* ==========================================
-   8. ANIMAÇÕES
-   ========================================== */
-@keyframes fadeInDash { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUpFadeDash { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes popInDash { from { opacity: 0; transform: scale(0.92) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-
-.dashboard-wrapper { animation: fadeInDash 0.8s ease-out forwards; }
-.dash-header-container { animation: slideUpFadeDash 0.8s ease-out 0.2s backwards; }
-.hero-card { animation: popInDash 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.3s backwards; }
-.free-block { animation: slideUpFadeDash 0.8s ease-out backwards; transition: all 0.4s ease; }
-
-.volume-zone { animation-delay: 0.4s; }
-.media-zone { animation-delay: 0.5s; }
-.ranking-zone { animation-delay: 0.6s; }
-.bottom-zone { animation-delay: 0.7s; }
-
-/* Modais */
-.modal-overlay, .modal-overlay-search { animation: modalOverlayIn 0.3s ease-out forwards; }
-.modal-content, .modal-content-search { animation: modalContentIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-
-.modal-overlay.modal-closing, .modal-overlay-search.modal-closing { animation: modalOverlayOut 0.3s ease-in forwards; }
-.modal-overlay.modal-closing .modal-content, .modal-overlay-search.modal-closing .modal-content-search { animation: modalContentOut 0.3s ease-in forwards; }
-
-/* ==========================================
-   9. EFEITO EXPANSÃO / ZOOM
+   8. EFEITO EXPANSÃO / ZOOM
    ========================================== */
 .expandable-card {
   position: relative;
@@ -614,74 +582,54 @@
 .expand-icon { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .expandable-card:hover .expand-icon { transform: rotate(180deg); color: var(--primary) !important; }
 
-/* =========================================
-   ANIMAÇÕES DE ENTRADA (CASCATA)
-   ========================================= */
-
-@keyframes popInDash {
-  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-@keyframes slideUpFadeDash {
-  0% { opacity: 0; transform: translateY(20px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-/* Aplicando o tempo sequencial nas classes que já existem no seu JSX */
-.hero-card { 
-  animation: popInDash 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s backwards !important; 
-}
-
-.volume-zone { 
-  animation: slideUpFadeDash 0.6s ease-out 0.2s backwards !important; 
-}
-
-.media-zone { 
-  animation: slideUpFadeDash 0.6s ease-out 0.3s backwards !important; 
-}
-
-.ranking-zone { 
-  animation: slideUpFadeDash 0.6s ease-out 0.4s backwards !important; 
-}
-
-.bottom-zone { 
-  animation: slideUpFadeDash 0.6s ease-out 0.5s backwards !important; 
-}
-
-/* Animação para a lista do Ranking Geral (surgimento linha a linha) */
-.ranking-row {
-  animation: slideUpFadeDash 0.4s ease-out backwards;
-}
-.ranking-row:nth-child(1) { animation-delay: 0.5s; }
-.ranking-row:nth-child(2) { animation-delay: 0.6s; }
-.ranking-row:nth-child(3) { animation-delay: 0.7s; }
-.ranking-row:nth-child(4) { animation-delay: 0.8s; }
-.ranking-row:nth-child(5) { animation-delay: 0.9s; }
+/* ==========================================
+   9. ANIMAÇÕES GERAIS DE ENTRADA
+   ========================================== */
+@keyframes fadeInDash { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUpFadeDash { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes popInDash { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
 /* =========================================
-   SISTEMA DE ANIMAÇÃO DE MODAIS DE ALTO IMPACTO
+   10. SISTEMA DE ANIMAÇÃO DE MODAIS DE ALTO IMPACTO
    ========================================= */
 
-/* 1. Backdrop com desfoque dinâmico e escurecimento gradual */
-.modal-overlay {
+.modal-overlay, .modal-overlay-search {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
   animation: backdropEnter 0.4s ease-out forwards;
 }
 
-.modal-overlay.modal-closing {
+.modal-content {
+  background: var(--bg-card);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+}
+
+.modal-overlay.modal-closing,
+.modal-overlay-search.modal-closing {
   animation: backdropExit 0.35s ease-in forwards;
 }
 
-/* 2. Janela com Pop Elástico e Profundidade 3D */
 .modal-overlay .modal-content,
-.modal-overlay .modal-container-window {
+.modal-overlay .modal-container-window,
+.modal-overlay-search .modal-content-search {
   transform-origin: center center;
   animation: modalPopInExpressive 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   will-change: transform, opacity;
 }
 
 .modal-overlay.modal-closing .modal-content,
-.modal-overlay.modal-closing .modal-container-window {
+.modal-overlay.modal-closing .modal-container-window,
+.modal-overlay-search.modal-closing .modal-content-search {
   animation: modalPopOutExpressive 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
@@ -740,5 +688,49 @@
   100% {
     opacity: 0;
     transform: perspective(1000px) translateY(35px) scale(0.9) rotateX(-5deg);
+  }
+}
+
+/* =========================================
+   TRANSIÇÃO CINEMATOGRÁFICA DE SAÍDA (DASHBOARD)
+   ========================================= */
+
+/* O Dashboard inteiro recua suavemente */
+.dashboard-wrapper.dashboard-fading-out {
+  pointer-events: none;
+  animation: dashRecedeOut 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+@keyframes dashRecedeOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.97);
+    filter: blur(8px);
+  }
+}
+
+/* O Hero-card ganha elevação e foco antes da dissolução */
+.hero-card.hero-launching {
+  animation: heroCardSmoothZoom 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+  z-index: 999;
+}
+
+@keyframes heroCardSmoothZoom {
+  0% {
+    transform: scale(1) translateY(0);
+    box-shadow: var(--hero-shadow, 0 10px 25px rgba(0,0,0,0.3));
+  }
+  40% {
+    transform: scale(1.02) translateY(-4px);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  }
+  100% {
+    transform: scale(1.04) translateY(-10px);
+    opacity: 0;
   }
 }

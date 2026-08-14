@@ -1,7 +1,11 @@
 // src/components/PersonalDashboard.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, documentId, getDocs, doc, getDoc, collectionGroup, Timestamp } from 'firebase/firestore';
+import { 
+  collection, query, where, onSnapshot, addDoc, 
+  serverTimestamp, documentId, getDocs, doc, getDoc, 
+  collectionGroup, Timestamp 
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { 
   Calendar as CalendarIcon, ChevronRight, ChevronLeft, ChevronDown, 
@@ -29,16 +33,18 @@ export default function PersonalDashboard({ user, isAdmin }) {
   const [modalVolumeAberto, setModalVolumeAberto] = useState(false);
   const [modalFaturamentoAberto, setModalFaturamentoAberto] = useState(false);
   const [modalRankingAberto, setModalRankingAberto] = useState(false);
+  
   const [isModalTopOrdersOpen, setIsModalTopOrdersOpen] = useState(false);
+  const [isClosingTopOrders, setIsClosingTopOrders] = useState(false);
 
   const handleCloseTopOrders = () => {
-  if (isClosingTopOrders) return;
-  setIsClosingTopOrders(true);
-  setTimeout(() => {
-    setIsModalTopOrdersOpen(false);
-    setIsClosingTopOrders(false);
-  }, 350); // Sincronizado com os 350ms do CSS
-};
+    if (isClosingTopOrders) return;
+    setIsClosingTopOrders(true);
+    setTimeout(() => {
+      setIsModalTopOrdersOpen(false);
+      setIsClosingTopOrders(false);
+    }, 350); // Sincronizado com os 350ms do CSS
+  };
 
   // Estados de Hover dos Cards (Flutuando para cima)
   const [isTopOrdersExpanded, setIsTopOrdersExpanded] = useState(false);
@@ -68,20 +74,75 @@ export default function PersonalDashboard({ user, isAdmin }) {
 
   const [todayElement, setTodayElement] = useState(null);
   const todayTitle = today.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-  const [isClosingTopOrders, setIsClosingTopOrders] = useState(false);
 
   // Maiores Pedidos
   const [maioresPedidosBrutos, setMaioresPedidosBrutos] = useState([]);
   const [loadingTopOrders, setLoadingTopOrders] = useState(false);
+  
+
+  // MÁGICA AQUI: Congela os Top 5 na memória para não resetar a animação do gráfico
+  const top5MaioresPedidos = useMemo(() => {
+    return maioresPedidosBrutos.slice(0, 5);
+  }, [maioresPedidosBrutos]);
 
   // Card Principal (Pedidos de Hoje)
   const [meusPedidosCount, setMeusPedidosCount] = useState(0);
-  const [loadingOperacao, setLoadingOperacao] = useState(false);
+  const [loadingOperacao, setLoadingOperacao] = useState(true); // Inicializa como true para não piscar no início
+
+  // Estados independentes para evitar recriar a query no Firebase
+  const [pedidosRaizDia, setPedidosRaizDia] = useState([]);
+  const [pedidosLegadosDia, setPedidosLegadosDia] = useState([]);
 
   // Faturamento e Volume Mensal
   const [dadosFaturamento, setDadosFaturamento] = useState([]);
   const [volumeDataCompleto, setVolumeDataCompleto] = useState([]);
 
+  // ==========================================
+  // MAPA GLOBAL DE USUÁRIOS (FOTO E APELIDO/NOME)
+  // ==========================================
+  const [mapaUsuarios, setMapaUsuarios] = useState({});
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
+      const mapa = {};
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const info = {
+          photoURL: data.photoURL || '',
+          nickname: data.nickname || '',
+          nome: data.nickname || data.nome || data.displayName || (data.email ? data.email.split('@')[0] : '')
+        };
+
+        const emailCompleto = (data.email || '').toLowerCase().trim();
+        const emailPrefix = emailCompleto.split('@')[0];
+        const nickKey = (data.nickname || '').toLowerCase().trim();
+        const docIdKey = docSnap.id.toLowerCase().trim();
+
+        // Indexa por todas as chaves possíveis para garantir o casamento exato dos dados
+        mapa[docSnap.id] = info;
+        if (docIdKey) mapa[docIdKey] = info;
+        if (emailCompleto) mapa[emailCompleto] = info;
+        if (emailPrefix) mapa[emailPrefix] = info;
+        if (nickKey) mapa[nickKey] = info;
+      });
+      setMapaUsuarios(mapa);
+    });
+
+    return () => unsub();
+  }, []);
+
+  // Estado para transição cinematográfica
+  const [isNavigatingOut, setIsNavigatingOut] = useState(false);
+
+  const handleHeroNavigation = (destino) => {
+    if (isNavigatingOut) return;
+    setIsNavigatingOut(true);
+    
+    // 580ms permite que a animação de recuo e fade complete com suavidade
+    setTimeout(() => {
+      navigate(destino);
+    }, 580);
+  };
   // ==========================================
   // BUSCA DADOS DE FATURAMENTO DIÁRIO
   // ==========================================
@@ -121,123 +182,102 @@ export default function PersonalDashboard({ user, isAdmin }) {
     return { totalValor, totalPedidos, sparkline };
   }, [dadosFaturamento, ano, mes]);
 
-  const handleClose = () => {
-  if (isClosing) return;
-  setIsClosing(true);
-  setTimeout(() => {
-    setShowModal(false); // ou setIsModalTopOrdersOpen(false)
-    setIsClosing(false);
-  }, 350); // Sincronizado com os 350ms do CSS
-};
-
- // ==========================================
-  // BUSCA CARD PRINCIPAL (HOJE) - ADMIN GLOBAL VS CONFERENTE INDIVIDUAL
+  // ==========================================
+  // 1. ESCUTA DE PEDIDOS DO DIA (INDEPENDENTE E BLINDADA)
   // ==========================================
   useEffect(() => {
     if (!user) return;
-    setLoadingOperacao(true);
 
     const [anoStr, mesStr, diaStr] = dataHojeLocal.split('-');
     const startOfDay = new Date(Number(anoStr), Number(mesStr) - 1, Number(diaStr), 0, 0, 0);
     const endOfDay = new Date(Number(anoStr), Number(mesStr) - 1, Number(diaStr), 23, 59, 59);
 
-    const meuEmail = String(user?.email || '').toLowerCase().trim();
-    const meuPrefixoEmail = meuEmail.split('@')[0];
-    const meuNome = String(user?.displayName || meuPrefixoEmail || '').toLowerCase().trim();
-
-    let listaRaiz = [];
-    let listaLegados = [];
-
-    const consolidarContagem = () => {
-      const mapaUnico = new Map();
-
-      // Agrupa pedidos de ambas as fontes evitando duplicatas por ID
-      [...listaRaiz, ...listaLegados].forEach(p => {
-        if (p && p.id) mapaUnico.set(p.id, p);
-      });
-
-      let contagemNfMinuta = 0;
-
-      mapaUnico.forEach(pedido => {
-        const docs = pedido.documentos || [];
-        
-        docs.forEach(docItem => {
-          const tipo = String(docItem.tipo || '').trim();
-          // Regra de negócio: Apenas Nota Fiscal ou Minuta contam
-          const isDocValido = tipo === 'Nota Fiscal' || tipo === 'Minuta';
-          if (!isDocValido) return;
-
-          if (isAdmin) {
-            // ADMIN: Conta tudo o que foi gerado na operação hoje
-            contagemNfMinuta++;
-          } else {
-            // CONFERENTE: Valida se o documento pertence a ele
-            const responsaveisLista = (docItem.responsaveis || []).map(r => String(r).toLowerCase().trim());
-            const responsavelUnico = String(docItem.responsavel || docItem.conferente || docItem.separador || '').toLowerCase().trim();
-
-            const ehResponsavelPeloDoc = 
-              responsaveisLista.includes(meuEmail) ||
-              responsaveisLista.includes(meuPrefixoEmail) ||
-              responsaveisLista.includes(meuNome) ||
-              responsavelUnico === meuEmail ||
-              responsavelUnico === meuPrefixoEmail ||
-              responsavelUnico === meuNome;
-
-            const ehCriadorOuVinculado = 
-              pedido.criadorUid === user?.uid ||
-              (pedido.uidsVinculados && pedido.uidsVinculados.includes(user?.uid));
-
-            if (ehResponsavelPeloDoc || (docs.length === 1 && ehCriadorOuVinculado)) {
-              contagemNfMinuta++;
-            }
-          }
-        });
-      });
-
-      // Fallback para Admin caso a lista esteja vazia mas haja dados consolidados nas estatísticas
-      if (isAdmin && contagemNfMinuta === 0 && estatisticasPeriodo && estatisticasPeriodo.length > 0) {
-        const estHoje = estatisticasPeriodo.find(e => e.id === dataHojeLocal);
-        if (estHoje) {
-          contagemNfMinuta = Number(estHoje.totalNfMinuta || estHoje.totalPedidos || 0);
-        }
-      }
-
-      setMeusPedidosCount(contagemNfMinuta);
-      setLoadingOperacao(false);
-    };
-
-    // 1. Escuta pedidos gravados na raiz
+    // Listener 1: Pedidos na raiz
     const qRaiz = query(
       collection(db, 'pedidos'), 
       where('dataOperacao', '==', dataHojeLocal)
     );
     const unsubRaiz = onSnapshot(qRaiz, (snap) => {
-      listaRaiz = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      consolidarContagem();
-    }, (err) => {
-      console.error("Erro busca pedidos raiz:", err);
-      setLoadingOperacao(false);
-    });
+      setPedidosRaizDia(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error("Erro busca pedidos raiz:", err));
 
-    // 2. Escuta pedidos gravados em subpastas legadas no dia de hoje
+    // Listener 2: Pedidos em subpastas legadas
     const qLegado = query(
       collectionGroup(db, 'pedidosMultiDocumento'),
       where('createdAt', '>=', Timestamp.fromDate(startOfDay)),
       where('createdAt', '<=', Timestamp.fromDate(endOfDay))
     );
     const unsubLegado = onSnapshot(qLegado, (snap) => {
-      listaLegados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      consolidarContagem();
-    }, (err) => {
-      console.error("Erro busca pedidos legados:", err);
-      setLoadingOperacao(false);
-    });
+      setPedidosLegadosDia(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error("Erro busca pedidos legados:", err));
 
     return () => {
       unsubRaiz();
       unsubLegado();
     };
-  }, [user, isAdmin, dataHojeLocal, estatisticasPeriodo]);
+  }, [user, dataHojeLocal]); // A mágica acontece aqui: as estatísticas foram removidas da dependência.
+
+  // ==========================================
+  // 2. CONSOLIDAÇÃO DOS DADOS (SEM PISCAR O LOADER)
+  // ==========================================
+  useEffect(() => {
+    if (!user) return;
+
+    const meuEmail = String(user?.email || '').toLowerCase().trim();
+    const meuPrefixoEmail = meuEmail.split('@')[0];
+    const meuNome = String(user?.displayName || meuPrefixoEmail || '').toLowerCase().trim();
+
+    const mapaUnico = new Map();
+    [...pedidosRaizDia, ...pedidosLegadosDia].forEach(p => {
+      if (p && p.id) mapaUnico.set(p.id, p);
+    });
+
+    let contagemNfMinuta = 0;
+
+    mapaUnico.forEach(pedido => {
+      const docs = pedido.documentos || [];
+      
+      docs.forEach(docItem => {
+        const tipo = String(docItem.tipo || '').trim();
+        const isDocValido = tipo === 'Nota Fiscal' || tipo === 'Minuta';
+        if (!isDocValido) return;
+
+        if (isAdmin) {
+          contagemNfMinuta++;
+        } else {
+          const responsaveisLista = (docItem.responsaveis || []).map(r => String(r).toLowerCase().trim());
+          const responsavelUnico = String(docItem.responsavel || docItem.conferente || docItem.separador || '').toLowerCase().trim();
+
+          const ehResponsavelPeloDoc = 
+            responsaveisLista.includes(meuEmail) ||
+            responsaveisLista.includes(meuPrefixoEmail) ||
+            responsaveisLista.includes(meuNome) ||
+            responsavelUnico === meuEmail ||
+            responsavelUnico === meuPrefixoEmail ||
+            responsavelUnico === meuNome;
+
+          const ehCriadorOuVinculado = 
+            pedido.criadorUid === user?.uid ||
+            (pedido.uidsVinculados && pedido.uidsVinculados.includes(user?.uid));
+
+          if (ehResponsavelPeloDoc || (docs.length === 1 && ehCriadorOuVinculado)) {
+            contagemNfMinuta++;
+          }
+        }
+      });
+    });
+
+    // Fallback para Admin caso não haja dados novos, mas o consolidado já exista
+    if (isAdmin && contagemNfMinuta === 0 && estatisticasPeriodo && estatisticasPeriodo.length > 0) {
+      const estHoje = estatisticasPeriodo.find(e => e.id === dataHojeLocal);
+      if (estHoje) {
+        contagemNfMinuta = Number(estHoje.totalNfMinuta || estHoje.totalPedidos || 0);
+      }
+    }
+
+    setMeusPedidosCount(contagemNfMinuta);
+    setLoadingOperacao(false); // Aqui nós APENAS desativamos o loading. Sem recriar true!
+  }, [pedidosRaizDia, pedidosLegadosDia, isAdmin, estatisticasPeriodo, dataHojeLocal, user]);
 
   // ==========================================
   // BUSCA MAIORES PEDIDOS
@@ -341,7 +381,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
     if (!startDate || !endDate) return;
     setLoading(true);
     
-    // O \uf8ff garante que todos os dados do dia final sejam lidos perfeitamente no Firebase
     const qEstatisticas = query(
       collection(db, 'estatisticasDiarias'), 
       where(documentId(), '>=', startDate), 
@@ -394,7 +433,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   }, []);
 
   // ==========================================
-  // RANKING CALCULADO DO PERÍODO (BLINDADO E SEM FILTROS)
+  // RANKING CALCULADO DO PERÍODO COM FOTO E NICKNAME INJETADOS
   // ==========================================
   const rankingDataCompleto = useMemo(() => {
     const mapa = {};
@@ -415,7 +454,17 @@ export default function PersonalDashboard({ user, isAdmin }) {
           if (!item || (!item.nome && !item.uid)) return;
           const nomeChave = String(item.nome || item.uid).toLowerCase().trim();
 
-          if (!mapa[nomeChave]) mapa[nomeChave] = { nome: nomeChave, pontos: 0, pedidos: 0, op: 0, skus: 0 };
+          if (!mapa[nomeChave]) {
+            mapa[nomeChave] = { 
+              nome: nomeChave, 
+              originalKey: item.nome || item.uid,
+              uid: item.uid || '',
+              pontos: 0, 
+              pedidos: 0, 
+              op: 0, 
+              skus: 0 
+            };
+          }
           
           mapa[nomeChave].pontos += Number(item.pontos || item.totalPontos || item.score || 0);
           mapa[nomeChave].pedidos += Number(item.pedidos || 0);
@@ -423,7 +472,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
           mapa[nomeChave].skus += Number(item.skus || item.pontosSku || 0);
         });
       } 
-      // 2. Tratamento se o Firebase gravou como Objeto (Padrão Antigo e Novo)
+      // 2. Tratamento se o Firebase gravou como Objeto
       else if (typeof rawRanking === 'object') {
         Object.entries(rawRanking).forEach(([chave, stats]) => {
           if (stats === null || stats === undefined) return;
@@ -433,14 +482,21 @@ export default function PersonalDashboard({ user, isAdmin }) {
           
           const nomeChave = String(nomeRaw).toLowerCase().trim();
 
-          if (!mapa[nomeChave]) mapa[nomeChave] = { nome: nomeChave, pontos: 0, pedidos: 0, op: 0, skus: 0 };
+          if (!mapa[nomeChave]) {
+            mapa[nomeChave] = { 
+              nome: nomeChave, 
+              originalKey: nomeRaw,
+              uid: (typeof stats === 'object' && stats.uid) ? stats.uid : '',
+              pontos: 0, 
+              pedidos: 0, 
+              op: 0, 
+              skus: 0 
+            };
+          }
 
-          // Se for só um número bruto
           if (typeof stats === 'number') {
             mapa[nomeChave].pontos += stats;
-          } 
-          // Se for o objeto complexo do motor
-          else if (typeof stats === 'object') {
+          } else if (typeof stats === 'object') {
             mapa[nomeChave].pontos += Number(stats.pontos || stats.totalPontos || stats.score || 0);
             mapa[nomeChave].pedidos += Number(stats.pedidos || 0);
             mapa[nomeChave].op += Number(stats.op || 0);
@@ -450,9 +506,21 @@ export default function PersonalDashboard({ user, isAdmin }) {
       }
     });
 
-    // Retorna a lista completa para o Card. Não cortamos "pontos = 0"
-    return Object.values(mapa).sort((a, b) => b.pontos - a.pontos);
-  }, [estatisticasPeriodo, DATA_INICIO_NOVO_SISTEMA]);
+    // Injeta a foto de perfil e o nickname cadastrado no Firestore
+    return Object.values(mapa).map(userItem => {
+      const chaveBusca = userItem.nome.toLowerCase().trim();
+      const userDoc = mapaUsuarios[userItem.uid] || mapaUsuarios[chaveBusca] || {};
+
+      const nomeExibicao = userDoc.nickname || userDoc.nome || userItem.originalKey || userItem.nome;
+      const fotoPerfil = userDoc.photoURL || '';
+
+      return {
+        ...userItem,
+        nome: nomeExibicao,
+        photoURL: fotoPerfil
+      };
+    }).sort((a, b) => b.pontos - a.pontos);
+  }, [estatisticasPeriodo, DATA_INICIO_NOVO_SISTEMA, mapaUsuarios]);
 
   // ==========================================
   // FUNÇÕES DE NAVEGAÇÃO E CALENDÁRIO
@@ -577,34 +645,42 @@ export default function PersonalDashboard({ user, isAdmin }) {
       ) : (
         <div className="dashboard-free-layout">
           
-          {/* HERO CARD PRINCIPAL */}
-          <div className="hero-card" style={isAdmin ? { boxShadow: '0 10px 25px rgba(0, 0, 0, 0.4)' } : {}}>
-            <div className="hero-content">
-              <div className="hero-badge" style={isAdmin ? { background: 'rgba(242, 101, 34, 0.9)' } : {}}>
-                {isAdmin ? 'OPERAÇÃO GLOBAL - HOJE' : 'SUA OPERAÇÃO - HOJE'}
-              </div>
-              <h2 className="hero-title">{getDayOfWeek()}</h2>
-              <div className="hero-stats">
-                <div className="stat-box">
-                  <h1 style={{ fontSize: '4rem', margin: '0', lineHeight: '1.2' }}>
-                    {loadingOperacao ? (
-                      <Loader2 className="fa-spin" size={48} style={{ animation: 'spin 1s linear infinite' }} />
-                    ) : (
-                      meusPedidosCount
-                    )}
-                  </h1>
-                  <span className="stat-label">{isAdmin ? 'Total de Pedidos Processados' : 'Meus Pedidos Hoje'}</span>
-                </div>
-              </div>
-              <div className="hero-footer">
-                <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
-                <button className="btn-access hero-btn" onClick={() => isAdmin ? navigate(`/operacao-adm`) : handleAccessToday()}>
-                  {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
-                </button>
-              </div>
+        {/* HERO CARD PRINCIPAL */}
+      <div 
+        className={`hero-card ${isNavigatingOut ? 'hero-launching' : ''}`}
+        style={isAdmin ? { boxShadow: 'var(--hero-shadow, 0 10px 25px rgba(0, 0, 0, 0.4))' } : {}}
+      >
+        <div className="hero-content">
+          <div className="hero-badge" style={isAdmin ? { background: 'rgba(242, 101, 34, 0.9)' } : {}}>
+            {isAdmin ? 'OPERAÇÃO GLOBAL - HOJE' : 'SUA OPERAÇÃO - HOJE'}
+          </div>
+          <h2 className="hero-title">{getDayOfWeek()}</h2>
+          <div className="hero-stats">
+            <div className="stat-box">
+              <h1 style={{ fontSize: '4rem', margin: '0', lineHeight: '1.2' }}>
+                {loadingOperacao ? (
+                  <Loader2 className="fa-spin" size={48} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  meusPedidosCount
+                )}
+              </h1>
+              <span className="stat-label">{isAdmin ? 'Total de Pedidos Processados' : 'Meus Pedidos Hoje'}</span>
             </div>
           </div>
-
+          <div className="hero-footer">
+            <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
+            <button 
+              className="btn-access hero-btn" 
+              onClick={() => {
+                const destino = isAdmin ? '/operacao-adm' : (todayElement ? `/elemento?id=${todayElement.id}` : '/operacao');
+                handleHeroNavigation(destino);
+              }}
+            >
+              {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
           {/* BLOCO 1: VOLUME ESTATÍSTICO MENSAL */}
           <div 
             className="free-block volume-zone expandable-card" 
@@ -621,40 +697,38 @@ export default function PersonalDashboard({ user, isAdmin }) {
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" opacity={0.5} />
                   <XAxis type="number" hide />
                   <YAxis dataKey="mes" type="category" tick={{ fill: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} />
-                  {/* ... código anterior ... */}
-<RechartsTooltip 
-  cursor={false} 
-  contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
-/>
-{/* MODIFIQUE ESTAS DUAS LINHAS: */}
-<Bar 
-  dataKey="caixas" 
-  name="Caixas" 
-  fill="#c4709d" 
-  barSize={8} 
-  radius={[0, 4, 4, 0]} 
-  isAnimationActive={true}
-  animationBegin={200}
-  animationDuration={1200}
-  animationEasing="ease-out"
-/>
-<Bar 
-  dataKey="pedidos" 
-  name="Pedidos" 
-  fill="#0273a3" 
-  barSize={8} 
-  radius={[0, 4, 4, 0]} 
-  isAnimationActive={true}
-  animationBegin={400} /* Começa um pouco depois da barra de caixas */
-  animationDuration={1200}
-  animationEasing="ease-out"
-/>
+                  <RechartsTooltip 
+                    cursor={false} 
+                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
+                  />
+                  <Bar 
+                    dataKey="caixas" 
+                    name="Caixas" 
+                    fill="#c4709d" 
+                    barSize={8} 
+                    radius={[0, 4, 4, 0]} 
+                    isAnimationActive={true}
+                    animationBegin={200}
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                  />
+                  <Bar 
+                    dataKey="pedidos" 
+                    name="Pedidos" 
+                    fill="#0273a3" 
+                    barSize={8} 
+                    radius={[0, 4, 4, 0]} 
+                    isAnimationActive={true}
+                    animationBegin={400}
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* BLOCO 2: FATURAMENTO & PEDIDOS (SUBSTITUIÇÃO DA MÉDIA DIÁRIA) */}
+          {/* BLOCO 2: FATURAMENTO & PEDIDOS */}
           <div 
             className="free-block media-zone expandable-card" 
             onClick={() => setModalFaturamentoAberto(true)}
@@ -686,30 +760,29 @@ export default function PersonalDashboard({ user, isAdmin }) {
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
                     </linearGradient>
                   </defs>
-                 <RechartsTooltip 
-  contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', padding: '4px 8px' }}
-  formatter={(v) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v), 'Faturado']}
-  labelFormatter={(dia) => `Dia ${dia}`}
-/>
-{/* MODIFIQUE ESTA LINHA: */}
-<Area 
-  type="monotone" 
-  dataKey="valor" 
-  stroke="#10b981" 
-  strokeWidth={2} 
-  fillOpacity={1} 
-  fill="url(#cardFatGrad)" 
-  isAnimationActive={true}
-  animationBegin={500}
-  animationDuration={1500}
-  animationEasing="ease-out"
-/>
+                  <RechartsTooltip 
+                    contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', padding: '4px 8px' }}
+                    formatter={(v) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v), 'Faturado']}
+                    labelFormatter={(dia) => `Dia ${dia}`}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="valor" 
+                    stroke="#10b981" 
+                    strokeWidth={2} 
+                    fillOpacity={1} 
+                    fill="url(#cardFatGrad)" 
+                    isAnimationActive={true}
+                    animationBegin={500}
+                    animationDuration={1500}
+                    animationEasing="ease-out"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* BLOCK 3: RANKING GERAL (EXPANSÃO FLUTUANTE SEM SCROLL VERTICAL) */}
+          {/* BLOCO 3: RANKING GERAL */}
           <div 
             className="free-block ranking-zone" 
             style={{ position: 'relative', cursor: 'pointer' }}
@@ -745,7 +818,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
               )}
             </div>
 
-            {/* POPOVER FLUTUANTE EM DIREÇÃO AO CENTRO-TOPO */}
+            {/* POPOVER FLUTUANTE */}
             {isRankingHovered && (
               <div 
                 style={{
@@ -800,7 +873,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
             )}
           </div>
 
-          {/* BLOCK 4: MAIORES PEDIDOS */}
+          {/* BLOCO 4: MAIORES PEDIDOS */}
           <div 
             className="free-block bottom-zone" 
             style={{ position: 'relative', cursor: 'pointer' }}
@@ -832,23 +905,27 @@ export default function PersonalDashboard({ user, isAdmin }) {
               <>
                 <div style={{ height: '220px', width: '100%', marginTop: '10px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={maioresPedidosBrutos.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+                    <BarChart data={top5MaioresPedidos} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
                       <XAxis type="number" hide />
                       <YAxis dataKey="romaneioCurto" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#4a5568', fontWeight: 600}} width={85} />
                       <RechartsTooltip cursor={{fill: 'rgba(242, 101, 34, 0.05)'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-{/* MODIFIQUE ESTA LINHA (mantenha o fechamento com as Cells dentro): */}
-<Bar 
-  dataKey="caixas" 
-  fill="var(--secondary)" 
-  radius={[0, 6, 6, 0]} 
-  barSize={24}
-  isAnimationActive={true}
-  animationBegin={600}
-  animationDuration={1200}
-  animationEasing="ease-out"
->
-  {maioresPedidosBrutos.slice(0, 5).map((e, i) => <Cell key={`cell-${i}`} fill={i === 0 ? 'var(--secondary)' : 'rgba(242, 101, 34, 0.6)'} />)}
-</Bar>
+                      <Bar 
+                        dataKey="caixas" 
+                        fill="var(--secondary)" 
+                        radius={[0, 6, 6, 0]} 
+                        barSize={24}
+                        isAnimationActive={true}
+                        animationBegin={300}
+                        animationDuration={1200}
+                        animationEasing="ease-out"
+                      >
+                        {top5MaioresPedidos.map((e, i) => (
+                          <Cell 
+                            key={`top-order-${e.romaneioCurto}`} 
+                            fill={i === 0 ? 'var(--secondary)' : 'rgba(242, 101, 34, 0.6)'} 
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -865,7 +942,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {maioresPedidosBrutos.slice(0, 5).map((p, i) => (
+                      {top5MaioresPedidos.map((p, i) => (
                          <div 
                            key={`${p.romaneioCurto}-${i}`} 
                            style={{ 
@@ -911,54 +988,52 @@ export default function PersonalDashboard({ user, isAdmin }) {
 
       {/* MODAL DE MAIORES PEDIDOS */}
       {isModalTopOrdersOpen && (
-  <div 
-    className={`modal-overlay ${isClosingTopOrders ? 'modal-closing' : ''}`}
-    onClick={handleCloseTopOrders}
-    style={{
-      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-      background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(4px)',
-      zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center'
-    }}
-  >
-    <div 
-      className="modal-container-window"
-      style={{ 
-        width: '90vw', height: '85vh', background: 'var(--bg-main)', 
-        borderRadius: '16px', display: 'flex', flexDirection: 'column', 
-        overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' 
-      }} 
-      onClick={e => e.stopPropagation()}
-    >
-      <div style={{ padding: '20px 30px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(34, 197, 94, 0.1)', color: '#16a34a' }}>TOP 10 PERÍODO</div>
-          <h2 style={{ marginTop: '8px', fontSize: '1.4rem', color: 'var(--text-main)', margin: 0 }}>Detalhamento de Maiores Pedidos</h2>
-        </div>
-        <button 
+        <div 
+          className={`modal-overlay ${isClosingTopOrders ? 'modal-closing' : ''}`}
           onClick={handleCloseTopOrders}
-          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '5px' }}
+          style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center'
+          }}
         >
-          <X size={28}/>
-        </button>
-      </div>
+          <div 
+            className="modal-container-window"
+            style={{ 
+              width: '90vw', height: '85vh', background: 'var(--bg-main)', 
+              borderRadius: '16px', display: 'flex', flexDirection: 'column', 
+              overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' 
+            }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ padding: '20px 30px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(34, 197, 94, 0.1)', color: '#16a34a' }}>TOP 10 PERÍODO</div>
+                <h2 style={{ marginTop: '8px', fontSize: '1.4rem', color: 'var(--text-main)', margin: 0 }}>Detalhamento de Maiores Pedidos</h2>
+              </div>
+              <button 
+                onClick={handleCloseTopOrders}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '5px' }}
+              >
+                <X size={28}/>
+              </button>
+            </div>
 
             <div style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
               <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  {/* CABEÇALHO DA TABELA DE MAIORES PEDIDOS */}
-<thead style={{ 
-  background: 'var(--bg-main)', /* Fundo dinâmico que obedece o tema */
-  color: 'var(--text-muted)',   /* Texto cinza reativo */
-  borderBottom: '2px solid var(--border-color)' 
-}}>
-  <tr>
-    <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Rank</th>
-    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Cliente & Romaneio</th>
-    <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Caixas</th>
-    <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Produtos</th>
-    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Responsáveis</th>
-  </tr>
-</thead>
+                  <thead style={{ 
+                    background: 'var(--bg-main)', 
+                    color: 'var(--text-muted)', 
+                    borderBottom: '2px solid var(--border-color)' 
+                  }}>
+                    <tr>
+                      <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Rank</th>
+                      <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Cliente & Romaneio</th>
+                      <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Caixas</th>
+                      <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Produtos</th>
+                      <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Responsáveis</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {maioresPedidosBrutos.slice(0, 10).map((p, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>

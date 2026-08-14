@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   X, Award, Trophy, Medal, Package, 
-  Factory, Layers 
+  Factory, Layers, User 
 } from 'lucide-react';
 
 export default function ModalRankingDetalhado({ showModal, setShowModal, rankingData, periodoInicio, periodoFim }) {
@@ -139,14 +139,16 @@ export default function ModalRankingDetalhado({ showModal, setShowModal, ranking
               <p style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold' }}>Nenhum dado registrado para o período.</p>
             </div>
           ) : (
-            rankingData.map((user, index) => {
+            rankingData.map((userItem, index) => {
               const conf = getBadgeRank(index);
-              const pontosNum = Number(user.pontos || 0);
+              const pontosNum = Number(userItem.pontos || 0);
               const porcentagemLargura = Math.max(8, (pontosNum / maxPontos) * 100);
+              const userNome = userItem.nome || 'Conferente';
+              const userFoto = userItem.photoURL || userItem.foto;
 
               return (
                 <div 
-                  key={user.nome || index}
+                  key={userItem.uid || userItem.email || userNome || index}
                   style={{
                     background: conf.rowBg,
                     border: `1px solid ${conf.rowBorder}`,
@@ -158,32 +160,73 @@ export default function ModalRankingDetalhado({ showModal, setShowModal, ranking
                     boxShadow: index === 0 ? '0 4px 15px rgba(245, 158, 11, 0.15)' : '0 2px 5px rgba(0,0,0,0.05)'
                   }}
                 >
-                  {/* LINHA SUPERIOR: POSIÇÃO, NOME, STATS E PONTOS */}
+                  {/* LINHA SUPERIOR: BADGE POSIÇÃO + AVATAR + NOME, STATS E PONTOS */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     
-                    {/* ESQUERDA: BADGE POSIÇÃO + NOME */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {/* ESQUERDA: BADGE POSIÇÃO + FOTO DE PERFIL + NOME */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      {/* Badge de Posição */}
                       <div 
                         style={{
                           background: conf.bg,
                           color: conf.color,
                           border: `1px solid ${conf.border}`,
-                          width: '42px',
-                          height: '42px',
+                          width: '40px',
+                          height: '40px',
                           borderRadius: '10px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           fontWeight: '900',
-                          fontSize: '1rem'
+                          fontSize: '1rem',
+                          flexShrink: 0
                         }}
                       >
                         {conf.icon || `${index + 1}º`}
                       </div>
 
+                      {/* Foto de Perfil do Conferente */}
+                      <div style={{ flexShrink: 0 }}>
+                        {userFoto ? (
+                          <img 
+                            src={userFoto} 
+                            alt={userNome}
+                            style={{
+                              width: '42px',
+                              height: '42px',
+                              borderRadius: '50%',
+                              objectFit: 'cover',
+                              border: index === 0 ? '2px solid #f59e0b' : '2px solid var(--border-color)',
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                              display: 'block'
+                            }} 
+                          />
+                        ) : (
+                          <div 
+                            style={{
+                              width: '42px',
+                              height: '42px',
+                              borderRadius: '50%',
+                              background: index === 0 ? 'rgba(245, 158, 11, 0.2)' : 'var(--bg-main)',
+                              color: index === 0 ? '#f59e0b' : 'var(--text-main)',
+                              border: index === 0 ? '2px solid #f59e0b' : '2px solid var(--border-color)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 'bold',
+                              fontSize: '1.1rem',
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            {userNome.charAt(0).toUpperCase() || <User size={20} />}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Nome e Posição */}
                       <div>
                         <span style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)', textTransform: 'capitalize' }}>
-                          {user.nome}
+                          {userNome}
                         </span>
                         <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
                           {conf.label}
@@ -195,17 +238,17 @@ export default function ModalRankingDetalhado({ showModal, setShowModal, ranking
                     <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                         <Package size={16} color="#38bdf8" />
-                        <span><strong style={{ color: 'var(--text-main)' }}>{user.pedidos || 0}</strong> Romaneios</span>
+                        <span><strong style={{ color: 'var(--text-main)' }}>{userItem.pedidos || 0}</strong> Romaneios</span>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                         <Factory size={16} color="#a855f7" />
-                        <span><strong style={{ color: 'var(--text-main)' }}>{user.op || 0}</strong> O.P.s</span>
+                        <span><strong style={{ color: 'var(--text-main)' }}>{userItem.op || 0}</strong> O.P.s</span>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                         <Layers size={16} color="#ec4899" />
-                        <span><strong style={{ color: 'var(--text-main)' }}>{(user.skus || 0).toLocaleString('pt-BR')}</strong> SKUs</span>
+                        <span><strong style={{ color: 'var(--text-main)' }}>{(userItem.skus || 0).toLocaleString('pt-BR')}</strong> SKUs</span>
                       </div>
                     </div>
 

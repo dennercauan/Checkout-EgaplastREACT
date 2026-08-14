@@ -7,6 +7,7 @@ import {
   query, where, onSnapshot, collectionGroup, Timestamp, deleteField 
 } from 'firebase/firestore';
 import { updateDoc, setDoc, arrayUnion, deleteDoc, getDoc, increment, writeBatch } from 'firebase/firestore';
+import NavbarOperacao from '../components/NavbarOperacao';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase'; 
 import { 
@@ -1580,44 +1581,17 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
 
   // 👇 O SEU RETURN ORIGINAL FICA LOGO AQUI EMBAIXO
   return (
-    <div className="op-wrapper">
-      <header className="op-header">
-        <div className="op-title-group">
-          <button className="btn-back" onClick={() => navigate('/dashboard')} title="Voltar ao Painel"><ArrowLeft size={24} /></button>
-          <div><h1>{titulo}</h1><span><FileText size={14}/> Gerenciamento de Romaneios</span></div>
-        </div>
-        <div className="op-actions">
-          
-          {/* NOVO FILTRO DE DATA */}
-          {/* NOVO FILTRO DE DATA CORRIGIDO */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <Clock size={16} color="#64748b" />
-            <input 
-              type="date" 
-              value={dataOperacaoAtiva} 
-              onChange={(e) => {
-                if (e.target.value) {
-                  // Pega a rota atual dinamicamente e só injeta a data!
-                  navigate(`${location.pathname}?date=${e.target.value}`);
-                }
-              }}
-              style={{ border: 'none', outline: 'none', color: '#475569', fontWeight: 'bold', background: 'transparent' }}
-            />
-          </div>
+    <>
+      <NavbarOperacao 
+        user={localUser} 
+        isAdmin={isAdmin} 
+        dataOperacaoAtiva={dataOperacaoAtiva} 
+        buscaRomaneio={buscaRomaneio} 
+        setBuscaRomaneio={setBuscaRomaneio} 
+        handleOpenModal={handleOpenModal} 
+      />
 
-          <div className="search-bar-op">
-            <Search size={16} />
-            <input 
-              type="text" 
-              placeholder="Buscar romaneio ou loja..." 
-              value={buscaRomaneio}
-              onChange={(e) => setBuscaRomaneio(e.target.value)}
-            />
-          </div>
-          <button className="btn-new-order" onClick={handleOpenModal}><Plus size={18} /> Novo Pedido</button>
-        </div>
-      </header>
-
+      <div className="op-wrapper">
       <main className="op-main-content">
         <section className="op-live-section" style={{ display: 'flex', flexDirection: 'column' }}>
           {atividadeAtual ? (
@@ -2164,9 +2138,9 @@ const listaDocumentos = []; // Agora guardamos cada documento em uma lista
       <ModalSucesso 
         modalSucesso={modalSucesso}
         setModalSucesso={setModalSucesso}
-      />
-
-    </div>
+      /> 
+      </div>
+    </> /* <-- FECHAMENTO DO FRAGMENTO (A MÁGICA ACONTECE AQUI) */
   );
-}
+} // <-- CHAVE FINAL FECHANDO O COMPONENTE OPERACAO
 

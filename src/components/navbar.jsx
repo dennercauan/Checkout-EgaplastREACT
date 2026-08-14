@@ -67,27 +67,32 @@ export default function Navbar({ user, isAdmin }) {
     const root = document.documentElement;
 
     if (tema === 'dark') {
-      // MODO ESCURO (Premium: Preto Fosco para Carvão Profundo)
+      // MODO ESCURO (Black Absoluto com Hero em Titânio/Charcoal Metálico)
       root.style.setProperty('--bg-main', 'linear-gradient(145deg, #050505 0%, #0f0f13 50%, #18181b 100%)');
       root.style.setProperty('--bg-card', '#0e0e11');
       root.style.setProperty('--text-main', '#f8fafc');
       root.style.setProperty('--text-muted', '#a1a1aa');
-      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.08)'); // Borda suavizada
+      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.08)');
       root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
       root.style.setProperty('--checkout-logo-filter', 'invert(1)');
       root.style.setProperty('--checkout-logo-blend', 'screen');
       root.style.setProperty('color-scheme', 'dark');
       root.style.setProperty('--text-highlight', '#ffffff'); 
-      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #18181b 0%, #09090b 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.1)'); 
 
-    } else if (tema === 'dark-blue') {
-      // MODO AZUL ESCURO (Corporativo: Meia-noite Escuro para Navy Sutil)
+      // DESTAQUE HERO CARD: Gradiente Cinza Titânio/Platina descendo para Carvão Profundo
+      root.style.setProperty('--bg-hero', 'linear-gradient(140deg, #3f3f46 0%, #27272a 45%, #141417 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.12)'); 
+      root.style.setProperty('--hero-border', 'rgba(255, 255, 255, 0.22)');
+      root.style.setProperty('--hero-shadow', '0 20px 45px -10px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25)');
+    }
+
+     else if (tema === 'dark-blue') {
+      // MODO AZUL ESCURO (Corporativo Navy)
       root.style.setProperty('--bg-main', 'linear-gradient(145deg, #020617 0%, #061124 50%, #0b1936 100%)');
-      root.style.setProperty('--bg-card', '#0a1226'); // Card levemente camuflado com o fundo
+      root.style.setProperty('--bg-card', '#0a1226');
       root.style.setProperty('--text-main', '#f8fafc');
       root.style.setProperty('--text-muted', '#94a3b8');
-      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.12)'); // Borda suavizada
+      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.12)');
       root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
       root.style.setProperty('--checkout-logo-filter', 'invert(1)');
       root.style.setProperty('--checkout-logo-blend', 'screen');
@@ -95,9 +100,11 @@ export default function Navbar({ user, isAdmin }) {
       root.style.setProperty('--text-highlight', '#38bdf8'); 
       root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)'); 
       root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.15)');
+      root.style.setProperty('--hero-border', 'rgba(56, 189, 248, 0.25)');
+      root.style.setProperty('--hero-shadow', '0 20px 40px -15px rgba(29, 78, 216, 0.4)');
 
     } else {
-      // MODO CLARO (Limpo: Slate Gelo para Off-White)
+      // MODO CLARO (Clean Slate)
       root.style.setProperty('--bg-main', 'linear-gradient(145deg, #e2e8f0 0%, #eef2f6 50%, #f8fafc 100%)');
       root.style.setProperty('--bg-card', '#ffffff');
       root.style.setProperty('--text-main', '#0f172a');
@@ -110,6 +117,8 @@ export default function Navbar({ user, isAdmin }) {
       root.style.setProperty('--text-highlight', 'var(--primary)'); 
       root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #0d3269 0%, #1d4ed8 100%)'); 
       root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.25)');
+      root.style.setProperty('--hero-border', 'transparent');
+      root.style.setProperty('--hero-shadow', '0 15px 30px -10px rgba(13, 50, 105, 0.3)');
     }
   };
   
@@ -344,13 +353,15 @@ export default function Navbar({ user, isAdmin }) {
             className="nav-logo" 
             onClick={() => window.location.reload()}
             style={{ 
+              height: '60px',               /* <-- Adicione a altura aqui (ex: 40px, 42px ou 44px) */
+              width: 'auto',                /* Mantém a proporção correta sem distorcer */
+              objectFit: 'contain',
               cursor: 'pointer', 
               filter: 'var(--logo-filter, none)',
-              transition: 'filter 0.3s ease' 
+              transition: 'filter 0.3s ease, transform 0.2s ease' 
             }}
           />
         </div>
-
         {/* LADO DIREITO: PESQUISA + DROPDOWN DE PERFIL */}
         <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           
@@ -383,10 +394,38 @@ export default function Navbar({ user, isAdmin }) {
                 <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{isAdmin ? 'Administrador' : 'Conferente'}</span>
               </div>
 
+              {/* ÁREA DA FOTO DE PERFIL / INICIAL DO USUÁRIO */}
               {userProfile.photoURL ? (
-                <img src={userProfile.photoURL} alt="Perfil" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
+                <img 
+                  src={userProfile.photoURL} 
+                  alt="Perfil" 
+                  style={{ 
+                    width: '60px', 
+                    height: '60px', 
+                    borderRadius: '50%', 
+                    objectFit: 'cover', 
+                    border: '2px solid var(--primary)',
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+                    flexShrink: 0
+                  }} 
+                />
               ) : (
-                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem' }}>
+                <div 
+                  style={{ 
+                    width: '60px', 
+                    height: '60px', 
+                    borderRadius: '50%', 
+                    background: 'var(--primary)', 
+                    color: '#fff', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    fontWeight: 'bold', 
+                    fontSize: '1.25rem',
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+                    flexShrink: 0
+                  }}
+                >
                   {displayName.charAt(0).toUpperCase()}
                 </div>
               )}
