@@ -1,3 +1,4 @@
+// src/components/ModalDetalhesPedido.jsx
 import React from 'react';
 import { 
   Boxes, Info, X, Layers, Search, Loader2, UploadCloud, 
@@ -23,6 +24,7 @@ export default function ModalDetalhesPedido({
   setAuditModalData,
   handlePlanejamentoUpload,
   handleUploadWMSComum,
+  handleAuditoriaUpload,
   docIndexSelecionado,
   setDocIndexSelecionado,
   skusExpandidos,
@@ -52,7 +54,7 @@ export default function ModalDetalhesPedido({
   if (!showDetalhesModal || !pedidoModal) return null;
 
   // ============================================================================
-  // LÓGICA DO RESUMO GERAL (Trazida da tela principal para ficar isolada aqui!)
+  // LÓGICA DO RESUMO GERAL
   // ============================================================================
   let detalheSkus = 0;
   const cxMapDetalhe = {};
@@ -91,7 +93,7 @@ export default function ModalDetalhesPedido({
     <div className="op-modal-overlay" onClick={() => !isSaving && setShowDetalhesModal(false)}>
       <div className="op-modal-content" style={{width: '98vw', height: '95vh', maxWidth: '1600px', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '12px'}} onClick={(e) => e.stopPropagation()}>
         
-        {/* HEADER FIXO - ADAPTADO PARA O DESIGN DA IMAGEM */}
+        {/* HEADER FIXO */}
         <div className="op-modal-header" style={{flexShrink: 0, padding: '20px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {pedidoModal.isCaixaMaster ? (
@@ -114,7 +116,7 @@ export default function ModalDetalhesPedido({
           <button style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }} onClick={() => setShowDetalhesModal(false)} disabled={isSaving || isUploading}><X size={24}/></button>
         </div>
         
-        {/* Sistema de Abas (OCULTO SE FOR CAIXA MASTER) */}
+        {/* Sistema de Abas */}
         {!pedidoModal.isCaixaMaster && (
           <div className="modal-tabs-container" style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', padding: '0 25px', flexShrink: 0 }}>
             <button 
@@ -137,9 +139,6 @@ export default function ModalDetalhesPedido({
         {/* Corpo do Modal Rolável */}
         <div className="op-modal-body" style={{ flex: 1, padding: '25px', overflowY: 'auto', background: '#f8fafc' }}>
           
-          {/* ======================================================= */}
-          {/* LAYOUT EXCLUSIVO: ESTAÇÃO WMS CAIXA MASTER (TELA CHEIA) */}
-          {/* ======================================================= */}
           {pedidoModal.isCaixaMaster ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
@@ -178,7 +177,6 @@ export default function ModalDetalhesPedido({
                       </div>
 
                       {!wmsSessions[dIdx] ? (
-                        /* ESTÁGIO 1: DROPZONE */
                         <div style={{ textAlign: 'center', padding: '60px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
                           <FileText size={64} color="#94a3b8" style={{ marginBottom: '20px' }} />
                           <h3 style={{ color: 'var(--primary)', margin: '0 0 10px 0', fontSize: '1.5rem' }}>Planejamento de Caixas Master</h3>
@@ -194,10 +192,8 @@ export default function ModalDetalhesPedido({
                           </label>
                         </div>
                       ) : (
-                        /* ESTÁGIO 2: TABELA DE GERENCIAMENTO */
                         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                           
-                          {/* TOOLBAR CONECTADA E FUNCIONAL */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#fff', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '15px' }}>
                             <div>
                               <div style={{ fontSize: '1.3rem', color: '#1e3a8a', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
@@ -244,28 +240,32 @@ export default function ModalDetalhesPedido({
                                 )}
                               </div>
                               
-                                <button onClick={() => setShowCaixasEfetivadasModal(dIdx)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#1e3a8a', cursor: 'pointer', display: 'flex' }} title="Estrutura de Caixas Salvas">
-                                  <Boxes size={16}/>
-                                </button>
+                              <button onClick={() => setShowCaixasEfetivadasModal(dIdx)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#1e3a8a', cursor: 'pointer', display: 'flex' }} title="Estrutura de Caixas Salvas">
+                                <Boxes size={16}/>
+                              </button>
                                 
-                                <button onClick={async () => {
-                                  if(!window.confirm("Deseja realmente descartar este planejamento?")) return;
-                                  setWmsSessions(prev => { const n = {...prev}; delete n[dIdx]; return n; });
-                                }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
-                                  <Trash2 size={16}/>
-                                </button>
-                                
-                                <button onClick={() => {
-                                  const docDb = pedidoModal.documentos[dIdx];
-                                  if (docDb.caixas && docDb.caixas.length > 0) {
-                                    setAuditModalData({ dIdx: dIdx, fileName: docDb.auditoria?.arquivo || 'Arquivo Salvo', caixasReais: docDb.caixas });
-                                  } else {
-                                    setAuditModalData({ dIdx: dIdx });
-                                  }
-                                }} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: pedidoModal.documentos[dIdx].caixas?.length > 0 ? '#0ea5e9' : '#22c55e', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', margin: 0 }}>
-                                  {pedidoModal.documentos[dIdx].caixas?.length > 0 ? <PieChart size={16}/> : <CheckCircle2 size={16}/>}
-                                  {pedidoModal.documentos[dIdx].caixas?.length > 0 ? 'Ver Auditoria' : 'Importar Caixas'}
-                                </button>
+                              <button onClick={async () => {
+                                if(!window.confirm("Deseja realmente descartar este planejamento?")) return;
+                                setWmsSessions(prev => { const n = {...prev}; delete n[dIdx]; return n; });
+                              }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
+                                <Trash2 size={16}/>
+                              </button>
+                              
+                              {/* BOTÃO ATUALIZADO COM O FLUXO UNIFICADO */}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', background: pedidoModal.documentos[dIdx].caixas?.length > 0 ? '#0ea5e9' : '#22c55e', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', margin: 0 }}>
+                                {pedidoModal.documentos[dIdx].caixas?.length > 0 ? <PieChart size={16}/> : <CheckCircle2 size={16}/>}
+                                {pedidoModal.documentos[dIdx].caixas?.length > 0 ? 'Reimportar WMS' : 'Importar Caixas'}
+                                <input 
+  type="file" 
+  accept=".csv" 
+  style={{ display: 'none' }} 
+  onChange={(e) => {
+    setAuditModalData({ dIdx });
+    handleAuditoriaUpload(e, dIdx);
+  }}
+  disabled={isSaving}
+/>
+                              </label>
                             </div>
                           </div>
                           
@@ -443,18 +443,13 @@ export default function ModalDetalhesPedido({
             </div>
           ) : (
             
-            /* ======================================================= */
-            /* LAYOUT PADRÃO: PEDIDO COMUM (COM ABAS)                  */
-            /* ======================================================= */
+            /* LAYOUT PADRÃO: PEDIDO COMUM */
             <>
-              {/* ABA 1: RESUMO GERAL (EDITÁVEL) */}
               {activeTab === 'resumo' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px', height: '100%' }}>
                   
-                  {/* COLUNA ESQUERDA: Observações e Documentos */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', overflow: 'hidden' }}>
                     
-                    {/* OBSERVAÇÕES (Editável com trava) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: '#334155' }}>
@@ -482,7 +477,6 @@ export default function ModalDetalhesPedido({
                       )}
                     </div>
 
-                    {/* DOCUMENTOS (Editável Multi-Colaboradores) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                       <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: '#334155', marginBottom: '12px' }}>
                         <FileText size={18} color="#64748b"/> Documentos
@@ -550,7 +544,6 @@ export default function ModalDetalhesPedido({
                     </div>
                   </div>
 
-                  {/* COLUNA DIREITA: Listagem de Caixas (Altura Total) */}
                   <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexShrink: 0 }}>
                       <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: '#334155' }}>
@@ -605,16 +598,14 @@ export default function ModalDetalhesPedido({
                 </div>
               )}
 
-              {/* ABA 2: CAIXAS COMPLETAS E WMS (ACORDEON COMUM -> NOVO LAYOUT WMS) */}
               {activeTab === 'caixas' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
                   {(pedidoModal.documentos || []).map((doc, dIdx) => {
                     const caixas = doc.caixas || [];
 
-                    // 👇 LÓGICA DE AGRUPAMENTO INTELIGENTE ADICIONADA AQUI 👇
                     const skusAgrupados = caixas.reduce((acc, cx) => {
                       (cx.produtos || []).forEach(p => {
-                        const ref = p.referencia || p.sku; // Garantia para legado
+                        const ref = p.referencia || p.sku;
                         if (!acc[ref]) {
                           acc[ref] = { ref: ref, desc: p.descricao || p.desc, qtdTotal: 0, caixasDetalhadasMap: {} };
                         }
@@ -632,7 +623,6 @@ export default function ModalDetalhesPedido({
                             qtdNestaCaixa: qtd
                           };
                         } else {
-                          // Mescla a mesma caixa fragmentada no banco legado
                           acc[ref].caixasDetalhadasMap[chaveCaixa].qtdNestaCaixa += qtd;
                           acc[ref].caixasDetalhadasMap[chaveCaixa].peso = Math.max(
                             acc[ref].caixasDetalhadasMap[chaveCaixa].peso, 
@@ -643,12 +633,10 @@ export default function ModalDetalhesPedido({
                       return acc;
                     }, {});
 
-                    // Converte o Map de volta para Array para o React mapear na tela
                     const listaSkus = Object.values(skusAgrupados).map(sku => ({
                       ...sku,
                       caixasDetalhadas: Object.values(sku.caixasDetalhadasMap)
                     }));
-                    // 👆 FIM DA CORREÇÃO 👆
 
                     const termoBusca = (buscasDocumentos[dIdx] || '').toLowerCase();
                     const skusFiltrados = listaSkus.filter(sku => 

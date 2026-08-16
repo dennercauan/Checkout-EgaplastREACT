@@ -13,9 +13,8 @@ import { auth, db } from '../firebase';
 import { 
   ArrowLeft, Plus, FileText, CheckCircle2, 
   Clock, MoreVertical, Search, Boxes, X, User, Trash2, PackagePlus, Loader2, Edit, Check, Pause, Play, AlertCircle, MapPin, UploadCloud,
-  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle, Gift} from 'lucide-react';
+  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle, Gift, SearchX} from 'lucide-react';
 import '../css/Operacao.css';
-import AuditoriaWms from '../components/AuditoriaWms';
 import ModalCaixasEfetivadas from '../components/ModalCaixasEfetivadas';
 import ModalCaixasMaster from '../components/ModalCaixasMaster';
 import ModalOrdemProducao from '../components/ModalOrdemProducao';
@@ -23,11 +22,13 @@ import ModalPausa from '../components/ModalPausa';
 import ModalCodigoBarras from '../components/ModalCodigoBarras';
 import ModalCaixaManual from '../components/ModalCaixaManual';
 import ModalAlertaPeso from '../components/ModalAlertaPeso';
-import ModalSucesso from '../components/ModalSucesso';
 import ModalCriarEditarPedido from '../components/ModalCriarEditarPedido';
 import ModalDetalhesPedido from '../components/ModalDetalhesPedido';
 import RankingDiario from '../components/RankingDiario';
-
+import AnimacaoCriacaoPedido from '../components/AnimacaoCriacaoPedido';
+import ModalFluxoImportacaoWMS from '../components/ModalFluxoImportacaoWMS';
+import ModalSucesso from '../components/ModalSucesso';
+import ModalConfirmarExclusao from '../components/ModalConfirmarExclusao';
 
 export default function Operacao({ isAdmin }) {
   const navigate = useNavigate();
@@ -45,7 +46,7 @@ export default function Operacao({ isAdmin }) {
   const [controlePausas, setControlePausas] = useState({}); // <--- ADICIONE ESTA LINHA
   const [localUser, setLocalUser] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
-  
+  const [fluxoImportacao, setFluxoImportacao] = useState(null); // Guarda { etapa, dIdx, fileName, caixasFinais, totalCaixas, totalSkus, pesoTotal, amostraNomes, resumoTexto }
   const [showModal, setShowModal] = useState(false);
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,7 +59,6 @@ export default function Operacao({ isAdmin }) {
   const [docIndexSelecionado, setDocIndexSelecionado] = useState(0);
   const [caixasPrevia, setCaixasPrevia] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
-  
 
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [pedidoToPause, setPedidoToPause] = useState(null);
@@ -70,6 +70,8 @@ export default function Operacao({ isAdmin }) {
   const [caixasMaster, setCaixasMaster] = useState([]);
   const [buscaRomaneio, setBuscaRomaneio] = useState('');
   const [rankingExpandido, setRankingExpandido] = useState(null);
+  const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
+const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
 
 // NOVOS ESTADOS: EXPANSÃO, BUSCA E ADIÇÃO MANUAL
   const [docsExpandidos, setDocsExpandidos] = useState({});
@@ -107,6 +109,9 @@ export default function Operacao({ isAdmin }) {
       setIsSaving(false);
     }
   };
+
+  const [pedidoRecemCriado, setPedidoRecemCriado] = useState(null);
+  const [isIgnitingTracker, setIsIgnitingTracker] = useState(false);
 
   const handleAbrirAddCaixa = (docIdx) => {
     setAddCaixaForm({ docIdx, num: '', peso: '' }); // Removemos sku e quantidade
@@ -316,14 +321,21 @@ export default function Operacao({ isAdmin }) {
     }
   };
 
-  // ==========================================
-  // UPLOAD DE CSV - PEDIDOS COMUNS (WMS DIRETO)
-  // ==========================================
   const handleUploadWMSComum = (e, dIdx) => {
     const file = e.target.files[0];
     if (!file) return;
-    setIsUploading(true);
-    
+
+    // Etapa 1: Inicia a leitura com o fake loading
+    setFluxoImportacao({
+      etapa: 'lendo',
+      dIdx,
+      fileName: file.name,
+      totalCaixas: 0,
+      totalSkus: 0,
+      pesoTotal: 0,
+      amostraNomes: []
+    });
+
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
@@ -332,25 +344,24 @@ export default function Operacao({ isAdmin }) {
         if (linhas.length <= 1) throw new Error("Arquivo vazio");
 
         let separador = linhas[0].includes(';') ? ';' : ',';
-        
-        // 👇 A MÁGICA: Normaliza os acentos para não perder a coluna "EXPEDIÇÃO"
         const cabecalho = linhas[0].split(separador).map(c => 
           c.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/"/g, '')
         );
         
         const idxCaixa = cabecalho.findIndex(c => c.includes("TIPO EMBALAGEM") || c.includes("CAIXA") || c.includes("VOLUME"));
         const idxPeso = cabecalho.findIndex(c => c.includes("PESO"));
-        // Busca inteligente que ignora formatação
         const idxIdUnico = cabecalho.findIndex(c => c.includes("ID EMBALAGEM") || c === "ID" || c.includes("RASTREIO") || c.includes("EXPEDICAO"));
         const idxRef = cabecalho.findIndex(c => c === "PRODUTO" || c.includes("CODIGO") || c === "REF" || c === "SKU");
         const idxDesc = cabecalho.findIndex(c => c.includes("DESCRICAO") || c.includes("NOME"));
         const idxQtd = cabecalho.findIndex(c => c.includes("QUANTIDADE") || c.includes("QTDE") || c === "QTD");
 
         if (idxRef === -1 || idxQtd === -1 || idxCaixa === -1) {
-          throw new Error("Colunas obrigatórias (Caixa, Código Produto, Quantidade) não encontradas.");
+          throw new Error("Colunas obrigatórias não encontradas no CSV.");
         }
 
         const caixasMap = {};
+        let totalUnidadesSkus = 0;
+        let pesoBruto = 0;
 
         for (let i = 1; i < linhas.length; i++) {
           const cols = linhas[i].split(separador).map(c => c.trim().replace(/^"|"$/g, ''));
@@ -359,7 +370,6 @@ export default function Operacao({ isAdmin }) {
           const nomeCaixa = cols[idxCaixa] || `CAIXA S/N`;
           const pesoCaixa = idxPeso !== -1 ? parseFloat(String(cols[idxPeso]).replace(',', '.')) || 0 : 0;
           
-          // 👇 Captura blindada do ID (Evita que caixas fiquem com ID vazio no banco)
           let idUnicoStr = `S/N-linha-${i}`;
           if (idxIdUnico !== -1 && cols[idxIdUnico] && cols[idxIdUnico].trim() !== '') {
             idUnicoStr = cols[idxIdUnico].trim();
@@ -371,9 +381,11 @@ export default function Operacao({ isAdmin }) {
 
           if (!ref || qtd <= 0) continue;
 
+          totalUnidadesSkus += qtd;
+
           if (!caixasMap[idUnicoStr]) {
-            // Salva idUnico e idExpedicao para garantir compatibilidade com o modal
             caixasMap[idUnicoStr] = { num: nomeCaixa, peso: pesoCaixa, idUnico: idUnicoStr, idExpedicao: idUnicoStr, produtos: [] };
+            pesoBruto += pesoCaixa;
           } else {
             caixasMap[idUnicoStr].peso = Math.max(caixasMap[idUnicoStr].peso, pesoCaixa);
           }
@@ -388,31 +400,164 @@ export default function Operacao({ isAdmin }) {
 
         const caixasFinais = Object.values(caixasMap);
 
-        const caixasComZero = caixasFinais.filter(c => parseFloat(c.peso) === 0);
-        if (caixasComZero.length > 0) {
-          setAlertaPesoZero({
-            origem: 'comum',
-            dIdx,
-            caixasProblematicas: caixasComZero,
-            caixasNormais: caixasFinais.filter(c => parseFloat(c.peso) > 0),
-            caixasOriginais: caixasFinais
-          });
-          setIsUploading(false);
-          if (e.target) e.target.value = null; 
-          return; 
-        }
+        // Gera o texto resumido para cópia
+        const resumoContagem = {};
+        caixasFinais.forEach(c => {
+          const k = `${c.num} (${c.peso.toFixed(2)} kg)`;
+          resumoContagem[k] = (resumoContagem[k] || 0) + 1;
+        });
+        const resumoTextoGerado = Object.entries(resumoContagem).map(([k, v]) => `${k}: ${v} Un`).join('\n');
 
-        await finalizarImportacaoComum(dIdx, caixasFinais);
+        // Transita da leitura para a Prévia após 900ms
+        setTimeout(() => {
+          setFluxoImportacao({
+            etapa: 'previa',
+            dIdx,
+            fileName: file.name,
+            caixasFinais,
+            totalCaixas: caixasFinais.length,
+            totalSkus: totalUnidadesSkus,
+            pesoTotal: pesoBruto,
+            amostraNomes: caixasFinais.slice(0, 8).map(c => c.num),
+            resumoTexto: resumoTextoGerado
+          });
+        }, 900);
 
       } catch (error) {
-        console.error("Erro completo na importação:", error);
-        alert("Erro ao salvar caixas importadas: " + error.message);
+        setFluxoImportacao(null);
+        alert("Erro ao ler o CSV: " + error.message);
       } finally {
-        setIsUploading(false);
-        if (e.target) e.target.value = null; 
+        if (e.target) e.target.value = null;
       }
     };
-    reader.readAsText(file, 'ISO-8859-1'); 
+    reader.readAsText(file, 'ISO-8859-1');
+  };
+
+ // Confirmação unificada de gravação no Firestore
+  const handleConfirmarGravacaoWMS = async () => {
+    if (!fluxoImportacao) return;
+    const { tipo, dIdx, fileName } = fluxoImportacao;
+
+    // A) FLUXO: PLANEJAMENTO MASTER
+    if (tipo === 'master_planejamento') {
+      const { skusProcessados } = fluxoImportacao;
+      setFluxoImportacao(prev => ({ ...prev, etapa: 'gravando' }));
+      setIsSaving(true);
+
+      try {
+        const novaSessao = { skus: skusProcessados, fileName: fileName };
+        setWmsSessions(prev => ({ ...prev, [dIdx]: novaSessao }));
+
+        const refFinal = pedidoModal._isLegacy 
+          ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
+          : doc(db, 'pedidos', pedidoModal.id);
+          
+        const novosDocumentos = [...pedidoModal.documentos];
+        novosDocumentos[dIdx] = { ...novosDocumentos[dIdx], planejamentoWms: novaSessao };
+        
+        await updateDoc(refFinal, { documentos: novosDocumentos });
+
+        setTimeout(() => {
+          setIsSaving(false);
+          setFluxoImportacao(prev => ({ ...prev, etapa: 'sucesso' }));
+        }, 700);
+
+      } catch (error) {
+        setIsSaving(false);
+        setFluxoImportacao(null);
+        alert("Erro ao salvar planejamento: " + error.message);
+      }
+      return;
+    }
+
+    // B) FLUXO: CAIXAS COMUNS OU AUDITORIA MASTER
+    const { caixasFinais } = fluxoImportacao;
+    const caixasComZero = caixasFinais.filter(c => parseFloat(c.peso) === 0);
+    if (caixasComZero.length > 0) {
+      setAlertaPesoZero({
+        origem: tipo === 'master_auditoria' ? 'auditoria' : 'comum',
+        dIdx,
+        fileName,
+        caixasProblematicas: caixasComZero,
+        caixasNormais: caixasFinais.filter(c => parseFloat(c.peso) > 0),
+        caixasOriginais: caixasFinais
+      });
+      setFluxoImportacao(null);
+      return;
+    }
+
+    setFluxoImportacao(prev => ({ ...prev, etapa: 'gravando' }));
+    setIsSaving(true);
+
+    try {
+      const novosDocs = [...pedidoModal.documentos];
+
+      if (tipo === 'master_auditoria') {
+        const session = wmsSessions[dIdx] || { skus: [] };
+        let planejado = 0;
+        session.skus.forEach(sku => {
+          if (sku.qtdPadrao > 0) planejado += Math.ceil(sku.qtdTotal / sku.qtdPadrao);
+        });
+
+        novosDocs[dIdx] = { 
+          ...novosDocs[dIdx], 
+          caixas: caixasFinais,
+          auditoria: {
+            arquivo: fileName,
+            planejado: planejado,
+            efetivado: caixasFinais.length,
+            diferenca: planejado - caixasFinais.length,
+            data: new Date().toISOString()
+          }
+        };
+      } else {
+        novosDocs[dIdx] = { ...novosDocs[dIdx], caixas: caixasFinais };
+      }
+
+      const todosPossuemCaixas = novosDocs.every(doc => doc.caixas && doc.caixas.length > 0);
+      const payload = { 
+        documentos: novosDocs,
+        efetivado: true,
+        completedAt: serverTimestamp()
+      };
+
+      const refFinal = pedidoModal._isLegacy
+        ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id)
+        : doc(db, 'pedidos', pedidoModal.id);
+
+      await updateDoc(refFinal, payload);
+
+      if (!pedidoModal.efetivado) {
+        const pedidoAtualizado = { ...pedidoModal, documentos: novosDocs };
+        await atualizarEstatisticasMensais(pedidoAtualizado, true);
+      }
+
+      setForceRender(prev => prev + 1);
+
+      setTimeout(() => {
+        setIsSaving(false);
+        setFluxoImportacao(prev => ({ ...prev, etapa: 'sucesso' }));
+      }, 700);
+
+    } catch (error) {
+      setIsSaving(false);
+      setFluxoImportacao(null);
+      alert("Erro ao gravar caixas: " + error.message);
+    }
+  };
+
+  // Conclui e redireciona suavemente
+  const handleConcluirFluxoWMS = () => {
+    const { tipo, dIdx } = fluxoImportacao || {};
+    setFluxoImportacao(null);
+    
+    if (tipo === 'master_planejamento') {
+      return; // Permanece na tela da estação master pronta
+    }
+
+    if (dIdx !== undefined) {
+      setShowCaixasEfetivadasModal(dIdx);
+    }
   };
 
   // ==========================================
@@ -611,6 +756,9 @@ export default function Operacao({ isAdmin }) {
     });
   }, [pedidosNovos, pedidosLegados]);
 
+  // ==========================================
+  // AUTO-ABERTURA DO MODAL VIA URL (BUSCA GLOBAL)
+  // ==========================================
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const romaneioParaAbrir = params.get('openRomaneio');
@@ -623,13 +771,10 @@ export default function Operacao({ isAdmin }) {
       );
 
       if (pedidoAlvo) {
-        setPedidoModal(pedidoAlvo);
-        setObservacoes(pedidoAlvo.observacoes || '');
-        setDocsTemporarios(pedidoAlvo.documentos || []);
-        setIsEditingObs(false);
-        setActiveTab('resumo');
-        setShowDetalhesModal(true);
+        // Abre o modal com todos os dados carregados
+        handleAbrirDetalhes(pedidoAlvo);
 
+        // Limpa o parâmetro openRomaneio da URL mantendo a data ativa
         const dataAtiva = params.get('date') || dataHojeStr;
         window.history.replaceState({}, '', `${location.pathname}?date=${dataAtiva}`);
       }
@@ -655,22 +800,30 @@ export default function Operacao({ isAdmin }) {
     );
   }, [pedidosVisiveis, buscaRomaneio]);
 
-  // 3. O KPI de Pedidos conta apenas NFs e Minutas dentro dos pedidos VISÍVEIS
-  const totalPedidosKPI = useMemo(() => {
-    return pedidosVisiveis.filter(pedido => {
-      return (pedido.documentos || []).some(doc => 
-        doc.tipo === 'Nota Fiscal' || doc.tipo === 'Minuta'
-      );
-    }).length;
-  }, [pedidosVisiveis]);
+  // ==========================================
+  // CÁLCULO DE KPIS (CONTAGEM INDIVIDUAL DE NF E MINUTA)
+  // ==========================================
+  const { totalPedidosKPI, totalCaixasHoje } = useMemo(() => {
+    let contagemDocsValidos = 0;
+    let contagemCaixas = 0;
 
-  // 4. O KPI de Caixas soma apenas as caixas dos pedidos VISÍVEIS
-  const totalCaixasHoje = useMemo(() => {
-    let count = 0;
-    pedidosVisiveis.forEach(p => { 
-      (p.documentos || []).forEach(d => { count += (d.caixas || []).length; }); 
+    (pedidosVisiveis || []).forEach(pedido => {
+      (pedido.documentos || []).forEach(doc => {
+        // Soma as caixas de qualquer documento
+        contagemCaixas += (doc.caixas || []).length;
+
+        // Soma cada NF e Minuta individualmente
+        const tipoDoc = String(doc.tipo || '').trim();
+        if (tipoDoc === 'Nota Fiscal' || tipoDoc === 'Minuta') {
+          contagemDocsValidos++;
+        }
+      });
     });
-    return count;
+
+    return { 
+      totalPedidosKPI: contagemDocsValidos, 
+      totalCaixasHoje: contagemCaixas 
+    };
   }, [pedidosVisiveis]);
 
   // 5. O Rastreador ao Vivo procura o pendente dentro dos pedidos VISÍVEIS
@@ -751,10 +904,26 @@ export default function Operacao({ isAdmin }) {
     await atualizarEstatisticasMensais(pedido, novoStatus);
   };
 
-  const handleDeletePedido = async (pedido) => {
-    if (!window.confirm("Tem certeza que deseja excluir este pedido definitivamente?")) return;
-    const ref = obterReferenciaDocumento(pedido);
-    await deleteDoc(ref);
+  // Abre o modal de confirmação
+  const handleDeletePedido = (pedido) => {
+    setPedidoParaExcluir(pedido);
+    setDropdownOpen(null);
+  };
+
+  // Executa a remoção definitiva no Firestore
+  const handleConfirmarExclusaoDefinitiva = async () => {
+    if (!pedidoParaExcluir) return;
+    setIsExcluindoPedido(true);
+    try {
+      const ref = obterReferenciaDocumento(pedidoParaExcluir);
+      await deleteDoc(ref);
+      setPedidoParaExcluir(null);
+    } catch (error) {
+      console.error("Erro ao excluir pedido:", error);
+      alert("Houve um erro ao excluir o pedido.");
+    } finally {
+      setIsExcluindoPedido(false);
+    }
   };
 
  const handleAbrirDetalhes = (pedido) => {
@@ -977,8 +1146,18 @@ export default function Operacao({ isAdmin }) {
 const handlePlanejamentoUpload = (e, dIdx) => {
     const file = e.target.files[0];
     if (!file) return;
-    setIsUploading(true);
-    
+
+    setFluxoImportacao({
+      tipo: 'master_planejamento',
+      etapa: 'lendo',
+      dIdx,
+      fileName: file.name,
+      totalSkusCount: 0,
+      totalUnidades: 0,
+      volumesEstimados: 0,
+      skusPendentes: 0
+    });
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -986,7 +1165,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         const linhas = text.trim().split(/\r\n|\n|\r/);
         if (linhas.length <= 1) throw new Error("Arquivo vazio");
 
-        // Identifica o separador (o seu exemplo usa ;)
         let separador = linhas[0].includes(';') ? ';' : ',';
         const cabecalho = linhas[0].split(separador).map(c => c.trim().toUpperCase().replace(/"/g, ''));
         
@@ -999,7 +1177,10 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         }
 
         let skusProcessados = [];
-        
+        let totalUnidades = 0;
+        let volumesEstimados = 0;
+        let skusPendentes = 0;
+
         for (let i = 1; i < linhas.length; i++) {
           const cols = linhas[i].split(separador).map(c => c.trim().replace(/^"|"$/g, ''));
           if (cols.length <= idxRef) continue;
@@ -1008,20 +1189,27 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           const qtd = parseInt(cols[idxQtd] || "0");
           if (!ref || qtd <= 0) continue;
 
-          // Cruza com o Dicionário Master carregado na memória
+          totalUnidades += qtd;
+
           const masterRef = caixasMaster.find(m => 
             String(m.ref).trim() === String(ref).trim() || 
             String(m.ref).trim().replace(/^0+/, '') === String(ref).trim().replace(/^0+/, '')
           );
 
-          // Busca a variação que encaixa perfeitamente na divisão
           const variacoesValidas = masterRef ? masterRef.variacoes.filter(v => {
-            // 👇 AQUI: String(v.quantidade)
             const qtdPadrao = parseInt(String(v.quantidade).replace(/\D/g, '')) || 0;
             return qtdPadrao > 0 && qtd % qtdPadrao === 0;
           }) : [];
 
           const isMissing = variacoesValidas.length === 0;
+          if (isMissing) skusPendentes++;
+
+          const qtdPadrao = !isMissing ? parseInt(String(variacoesValidas[0].quantidade).replace(/\D/g, '')) : 0;
+          const pesoPadrao = !isMissing ? parseFloat(String(variacoesValidas[0].peso).replace(',', '.')) || 0 : 0;
+
+          if (qtdPadrao > 0) {
+            volumesEstimados += Math.ceil(qtd / qtdPadrao);
+          }
 
           skusProcessados.push({
             ref, 
@@ -1030,41 +1218,32 @@ const handlePlanejamentoUpload = (e, dIdx) => {
             variacoesDisponiveis: variacoesValidas, 
             selectedVar: 0,
             caixaNome: !isMissing ? variacoesValidas[0].caixa : "", 
-            // 👇 AQUI: String(variacoesValidas[0].quantidade)
-            qtdPadrao: !isMissing ? parseInt(String(variacoesValidas[0].quantidade).replace(/\D/g, '')) : 0, 
-            // 👇 Aproveitamos para blindar o peso também!
-            pesoPadrao: !isMissing ? parseFloat(String(variacoesValidas[0].peso).replace(',', '.')) || 0 : 0,
+            qtdPadrao: qtdPadrao, 
+            pesoPadrao: pesoPadrao,
             isMissing: isMissing, 
             isOriginalMissing: isMissing
           });
         }
 
-        // Salva na sessão específica do documento
-        setWmsSessions(prev => ({
-          ...prev,
-          [dIdx]: { skus: skusProcessados, fileName: file.name }
-        }));
-
-        
-// Salva na sessão específica do documento
-        const novaSessao = { skus: skusProcessados, fileName: file.name };
-        setWmsSessions(prev => ({ ...prev, [dIdx]: novaSessao }));
-
-        // 👇 SALVAMENTO AUTOMÁTICO NO BANCO (BACKGROUND)
-        const refFinal = pedidoModal._isLegacy 
-          ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
-          : doc(db, 'pedidos', pedidoModal.id);
-          
-        const novosDocumentos = [...pedidoModal.documentos];
-        novosDocumentos[dIdx] = { ...novosDocumentos[dIdx], planejamentoWms: novaSessao };
-        
-        updateDoc(refFinal, { documentos: novosDocumentos }).catch(e => console.error("Erro Auto-Save:", e));
+        setTimeout(() => {
+          setFluxoImportacao({
+            tipo: 'master_planejamento',
+            etapa: 'previa',
+            dIdx,
+            fileName: file.name,
+            skusProcessados,
+            totalSkusCount: skusProcessados.length,
+            totalUnidades,
+            volumesEstimados,
+            skusPendentes
+          });
+        }, 900);
 
       } catch (error) {
+        setFluxoImportacao(null);
         alert("Erro ao ler planejamento: " + error.message);
       } finally {
-        setIsUploading(false);
-        e.target.value = null;
+        if (e.target) e.target.value = null;
       }
     };
     reader.readAsText(file, 'ISO-8859-1');
@@ -1073,10 +1252,23 @@ const handlePlanejamentoUpload = (e, dIdx) => {
   // ==========================================
   // LÊ O CSV FINAL DE CAIXAS DO WMS (AUDITORIA)
   // ==========================================
-  const handleAuditoriaUpload = (e) => {
+  const handleAuditoriaUpload = (e, targetIdx = null) => {
     const file = e.target.files[0];
-    if (!file || !auditModalData) return;
-    const currentIdx = auditModalData.dIdx;
+    if (!file) return;
+    
+    // Prioriza o dIdx passado diretamente pelo input
+    const currentIdx = targetIdx !== null ? targetIdx : (auditModalData?.dIdx ?? 0);
+
+    setFluxoImportacao({
+      tipo: 'master_auditoria',
+      etapa: 'lendo',
+      dIdx: currentIdx,
+      fileName: file.name,
+      totalCaixas: 0,
+      totalSkus: 0,
+      pesoTotal: 0,
+      amostraNomes: []
+    });
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -1087,6 +1279,8 @@ const handlePlanejamentoUpload = (e, dIdx) => {
 
         const cabecalho = linhas.shift().split(';').map(c => c.trim().replace(/"/g, ''));
         const map = {};
+        let totalSkus = 0;
+        let pesoBruto = 0;
 
         linhas.forEach(l => {
           const cols = l.split(';');
@@ -1096,14 +1290,21 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           const idEmbalagem = cols[cabecalho.indexOf("ID Embalagem Expedição")];
           if (!idEmbalagem) return;
           
-          if (!map[idEmbalagem]) map[idEmbalagem] = [];
+          const qtd = parseInt(cols[cabecalho.indexOf("Quantidade")]) || 0;
+          const peso = parseFloat(cols[cabecalho.indexOf("Peso Embalagem")]?.replace(',', '.')) || 0;
+          totalSkus += qtd;
+
+          if (!map[idEmbalagem]) {
+            map[idEmbalagem] = [];
+            pesoBruto += peso;
+          }
           
           map[idEmbalagem].push({
             num: cols[cabecalho.indexOf("Descrição Tipo Embalagem Expedição")],
-            peso: parseFloat(cols[cabecalho.indexOf("Peso Embalagem")]?.replace(',', '.')) || 0,
+            peso: peso,
             ref: cols[cabecalho.indexOf("Produto")],
             desc: cols[cabecalho.indexOf("Descrição Produto")],
-            qtd: cols[cabecalho.indexOf("Quantidade")]
+            qtd: qtd
           });
         });
 
@@ -1121,25 +1322,30 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           };
         });
 
-        // 👇 TRAVA DE SEGURANÇA: Peso 0.0 (Para Pedidos Master)
-        const caixasComZero = caixasReais.filter(c => parseFloat(c.peso) === 0);
-        if (caixasComZero.length > 0) {
-          setAlertaPesoZero({
-            origem: 'auditoria',
+        const resumoContagem = {};
+        caixasReais.forEach(c => {
+          const k = `${c.num} (${c.peso.toFixed(2)} kg)`;
+          resumoContagem[k] = (resumoContagem[k] || 0) + 1;
+        });
+        const resumoTextoGerado = Object.entries(resumoContagem).map(([k, v]) => `${k}: ${v} Un`).join('\n');
+
+        setTimeout(() => {
+          setFluxoImportacao({
+            tipo: 'master_auditoria',
+            etapa: 'previa',
             dIdx: currentIdx,
             fileName: file.name,
-            caixasProblematicas: caixasComZero,
-            caixasNormais: caixasReais.filter(c => parseFloat(c.peso) > 0),
-            caixasOriginais: caixasReais
+            caixasFinais: caixasReais,
+            totalCaixas: caixasReais.length,
+            totalSkus: totalSkus,
+            pesoTotal: pesoBruto,
+            amostraNomes: caixasReais.slice(0, 8).map(c => c.num),
+            resumoTexto: resumoTextoGerado
           });
-          if (e.target) e.target.value = null;
-          return; // Interrompe o fluxo e chama o alerta
-        }
-
-        // Se passar limpo, abre o relatório de auditoria direto
-        setAuditModalData({ dIdx: currentIdx, fileName: file.name, caixasReais: caixasReais });
+        }, 900);
 
       } catch (error) {
+        setFluxoImportacao(null);
         alert("Erro ao ler caixas efetivadas: " + error.message);
       } finally {
         if (e.target) e.target.value = null; 
@@ -1355,7 +1561,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     try {
       const pedidoAlvo = editingId ? pedidosProcessados.find(p => p.id === editingId) : null;
       const documentosLimpos = docsTemporarios.map(({ idTemp, dbIndex, ...rest }) => {
-         // Protege as caixas caso o usuário esteja apenas editando o cabeçalho do pedido na tabela
          let caixasAtualizadas = rest.caixas || [];
          if (editingId && pedidoAlvo && dbIndex !== undefined && pedidoAlvo.documentos[dbIndex]) {
             caixasAtualizadas = pedidoAlvo.documentos[dbIndex].caixas;
@@ -1380,16 +1585,39 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       if (editingId) {
         const ref = doc(db, 'pedidos', editingId);
         await updateDoc(ref, { romaneio, loja, local, uf, observacoes, isCaixaMaster, documentos: documentosLimpos, uidsVinculados });
+        handleCloseModal();
       } else {
         const novoPedido = {
           romaneio, loja, local, uf, observacoes, isCaixaMaster, documentos: documentosLimpos,
           criadorUid: localUser.uid, criadorEmail: localUser.email, dataOperacao: dataOperacaoAtiva, 
           uidsVinculados, createdAt: serverTimestamp(), efetivado: false, isPaused: false, totalPausedTime: 0
         };
+        
+        // Fecha o modal de criação imediatamente
+        handleCloseModal();
+
+        // Salva no Firestore
         await addDoc(collection(db, 'pedidos'), novoPedido);
+
+        // Dispara a transição em tela cheia
+        setPedidoRecemCriado({ romaneio, loja });
+        
+        // Acende o brilho no Tracker Card quando o HUD central começa a sumir
+        setTimeout(() => {
+          setIsIgnitingTracker(true);
+        }, 2400);
+
+        // Encerra e desmonta a camada de animação
+        setTimeout(() => {
+          setPedidoRecemCriado(null);
+          setIsIgnitingTracker(false);
+        }, 2900);
       }
-      handleCloseModal();
-    } catch (error) { alert("Houve um erro ao salvar o pedido."); } finally { setIsSaving(false); }
+    } catch (error) { 
+      alert("Houve um erro ao salvar o pedido."); 
+    } finally { 
+      setIsSaving(false); 
+    }
   };
 
 const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, currentTime);
@@ -1580,7 +1808,7 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
   
 
   // 👇 O SEU RETURN ORIGINAL FICA LOGO AQUI EMBAIXO
-  return (
+ return (
     <>
       <NavbarOperacao 
         user={localUser} 
@@ -1591,380 +1819,373 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
         handleOpenModal={handleOpenModal} 
       />
 
+      {/* WRAPPER COM A ANIMAÇÃO DE ENTRADA */}
       <div className="op-wrapper">
-      <main className="op-main-content">
-        <section className="op-live-section" style={{ display: 'flex', flexDirection: 'column' }}>
+        <main className="op-main-content">
+          <section className="op-live-section">
           {atividadeAtual ? (
-            <div className={`live-tracker-card ${atividadeAtual.isPaused ? 'paused' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div className="live-badge">
-                {atividadeAtual.isPaused ? <><AlertCircle size={14}/> PAUSADO</> : <><div className="pulse-dot"></div> EM SEPARAÇÃO</>}
+            <div className={`live-tracker-card ${atividadeAtual.isPaused ? 'paused' : 'active'} ${isIgnitingTracker ? 'igniting' : ''}`}>
+              
+              {/* TOPO: IDENTIFICAÇÃO E CONTEXTO */}
+              <div className="live-tracker-top">
+                <div className="live-badge">
+                  {atividadeAtual.isPaused ? (
+                    <><AlertCircle size={14}/> Pausado</>
+                  ) : (
+                    <><div className="pulse-dot"></div> Em Separação</>
+                  )}
+                </div>
+                <h2 className="live-romaneio">{atividadeAtual.romaneio || 'S/N'}</h2>
+                <p className="live-loja">{atividadeAtual.loja || 'Destino Padrão'}</p>
+                
+                {/* NOVO BLOCO DE INFORMAÇÕES (DESTINO E DOCS) */}
+                <div className="live-extra-info">
+                  <div className="live-location">
+                    <MapPin size={14} /> 
+                    {atividadeAtual.local || 'DF'} {atividadeAtual.uf ? `- ${atividadeAtual.uf}` : ''}
+                  </div>
+                  
+                  <div className="live-docs-badges">
+                    {atividadeAtual.documentos && atividadeAtual.documentos.length > 0 ? (
+                      Array.from(new Set(atividadeAtual.documentos.map(d => d.tipo || 'S/N'))).map((tipo, idx) => {
+                        let corFundo = '#3b82f6'; // Azul Padrão (NF)
+                        if (tipo === 'Minuta') corFundo = '#8b5cf6'; // Roxo
+                        if (tipo === 'Bonificação') corFundo = '#ec4899'; // Rosa
+                        if (tipo === 'Troca') corFundo = '#f59e0b'; // Laranja
+                        
+                        return (
+                          <span key={idx} style={{ background: corFundo }}>
+                            {tipo}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span style={{ background: '#64748b' }}>Sem Documentos</span>
+                    )}
+                  </div>
+                </div>
+
+                {atividadeAtual.isPaused && (
+                  <div className="pause-reason-box">
+                    <strong>Motivo:</strong> {atividadeAtual.motivoPausa || 'Pausa Operacional'}
+                  </div>
+                )}
               </div>
-              <h2 className="live-romaneio">{atividadeAtual.romaneio}</h2>
-              <p className="live-loja">{atividadeAtual.loja || 'Destino Padrão'}</p>
-              {atividadeAtual.isPaused && <div className="pause-reason-box"><strong>Motivo da Pausa:</strong> {atividadeAtual.motivoPausa}</div>}
-              <div className="live-timer"><Clock size={40} className="timer-icon" /><div className="timer-display">{formatarCronometro(atividadeAtual)}</div></div>
-              <div className="live-stats">
-                <div><strong>{atividadeAtual.totalSkus}</strong> SKUs Mapeados</div>
-                <div><strong>{atividadeAtual.documentos?.reduce((acc, d) => acc + (d.caixas?.length || 0), 0)}</strong> Caixas</div>
+
+              {/* MEIO: CRONÔMETRO E MÉTRICAS (Centralizado) */}
+              <div className="live-tracker-middle">
+                <div className="live-timer">
+                  <Clock size={32} className="timer-icon" />
+                  <div className="timer-display">{formatarCronometro(atividadeAtual)}</div>
+                </div>
+
+                <div className="live-stats">
+                  <div>
+                    <strong>{atividadeAtual.totalSkus || 0}</strong> SKUs Mapeados
+                  </div>
+                  <div>
+                    <strong>{atividadeAtual.documentos?.reduce((acc, d) => acc + (d.caixas?.length || 0), 0) || 0}</strong> Caixas
+                  </div>
+                </div>
               </div>
+
+              {/* BASE: AÇÕES */}
               <div className="live-actions">
                 {atividadeAtual.isPaused ? (
-                  <button className="btn-live-resume" onClick={() => handleResumePedido(atividadeAtual)}><Play size={18}/> Retomar Separação</button>
+                  <button className="btn-live-resume" onClick={() => handleResumePedido(atividadeAtual)}>
+                    <Play size={16}/> Retomar
+                  </button>
                 ) : (
                   <>
-                    <button className="btn-live-pause" onClick={() => handleOpenPauseModal(atividadeAtual)}><Pause size={18}/> Pausar</button>
-                    <button className="btn-live-caixas" onClick={() => handleAbrirDetalhes(atividadeAtual)}><Boxes size={18}/> WMS</button>
-                    <button className="btn-live-finish" onClick={() => handleToggleEfetivado(atividadeAtual)}><CheckCircle2 size={18}/> Finalizar</button>
+                    <button className="btn-live-pause" onClick={() => handleOpenPauseModal(atividadeAtual)}>
+                      <Pause size={16}/> Pausar
+                    </button>
+                    <button className="btn-live-caixas" onClick={() => handleAbrirDetalhes(atividadeAtual)}>
+                      <Boxes size={16}/> WMS
+                    </button>
+                    <button className="btn-live-finish" onClick={() => handleToggleEfetivado(atividadeAtual)}>
+                      <CheckCircle2 size={16}/> Finalizar
+                    </button>
                   </>
                 )}
               </div>
             </div>
           ) : (
-            <div className="live-tracker-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '350px', background: '#f8fafc', borderStyle: 'dashed', flex: 1 }}>
-               <CheckCircle2 size={48} color="#94a3b8" style={{ marginBottom: '15px' }} />
-               <h3 style={{ color: '#475569', margin: '0 0 5px 0' }}>Tudo Limpo!</h3>
-               <p style={{ color: '#94a3b8', fontSize: '0.9rem', textAlign: 'center' }}>Não há nenhum pedido em<br/>andamento no momento.</p>
-            </div>
+            <div className="live-tracker-card empty">
+  <CheckCircle2 size={44} color="var(--text-muted)" style={{ marginBottom: '12px', opacity: 0.6 }} />
+  <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 800 }}>
+    Tudo Limpo!
+  </h3>
+  <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.4 }}>
+    Nenhum romaneio em andamento.<br />Inicie um novo pedido para cronometrar.
+  </p>
+</div>
           )}
 
+          {/* INDICADORES RÁPIDOS */}
           <div className="op-kpi-grid">
-            <div className="op-kpi-card"><span className="kpi-label">Pedidos Hoje</span><span className="kpi-val">{totalPedidosKPI}</span></div>
-            <div className="op-kpi-card"><span className="kpi-label">Caixas Fechadas</span><span className="kpi-val" style={{color: 'var(--secondary)'}}>{totalCaixasHoje}</span></div>
-          </div>
-        </section>
-
-        <section className="op-history-section">
-          <div className="history-header">
-            <h3><CheckCircle2 size={18} color="var(--primary)"/> Romaneios Processados</h3>
-            <span className="history-count">{pedidosProcessados.filter(p => p.efetivado).length} finalizados</span>
-          </div>
-          
-          <div className="op-table-wrapper scrollable-table-wrapper">
-            <table className="op-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: '15%' }}>Romaneio</th>
-                  <th style={{ width: '25%' }}>Destino / UF</th>
-                  <th style={{ width: '25%' }}>Observações</th>
-                  <th style={{ width: '25%' }}>Resumo Rápido</th>
-                  <th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pedidosFiltrados.length === 0 ? (
-                  <tr><td colSpan="5" style={{textAlign: 'center', padding: '30px', color: '#94a3b8'}}>{buscaRomaneio ? 'Nenhum romaneio ou loja encontrada.' : 'Nenhum pedido processado hoje.'}</td></tr>
-                ) : (
-                  pedidosFiltrados.map(pedido => {
-                    let caixasCount = 0; 
-let skusCount = 0;
-const listaDocumentos = []; // Agora guardamos cada documento em uma lista
-
-(pedido.documentos || []).forEach(d => {
-  // Adiciona o tipo de documento na lista toda vez que encontra um
-  listaDocumentos.push(d.tipo || 'S/N');
-  
-  caixasCount += (d.caixas || []).length;
-  (d.caixas || []).forEach(cx => { 
-    (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); 
-  });
-});
-
-                    const temPermissao = isAdmin || pedido.criadorUid === localUser?.uid;
-
-                    let statusBadge;
-                    if (pedido.efetivado) {
-                      statusBadge = <div className="time-badge success"><Check size={12} style={{marginRight:'3px', display:'inline'}}/> Finalizado</div>;
-                    } else if (pedido.isPaused) {
-                      statusBadge = <div className="time-badge paused" title={pedido.motivoPausa}><Pause size={12} style={{marginRight:'3px', display:'inline'}}/> Pausado</div>;
-                    } else {
-                      statusBadge = <div className="time-badge pending"><Clock size={12} style={{marginRight:'3px', display:'inline'}}/> {formatarCronometro(pedido)}</div>;
-                    }
-
-                    const migrarPedidosParaRaizLote = async () => {
-    if (!window.confirm("Deseja iniciar a migração DEFINITIVA dos pedidos legados para a raiz em lotes?")) return;
-    
-    try {
-      console.log("Iniciando leitura dos pedidos legados...");
-      // Busca todos os pedidos legados de todas as subpastas
-      const snapLegados = await getDocs(collectionGroup(db, 'pedidosMultiDocumento'));
-      const totalDocs = snapLegados.docs.length;
-      console.log(`Encontrados ${totalDocs} pedidos para migrar.`);
-
-      if (totalDocs === 0) {
-        alert("Nenhum pedido legado encontrado. Tudo já está na raiz!");
-        return;
-      }
-
-      const tamanhoLote = 250; // Limite máximo do Firebase é 500 por lote
-      let lotesProcessados = 0;
-      let totalMigrados = 0;
-
-      // Loop para quebrar os 2.400 documentos em lotes menores
-      for (let i = 0; i < totalDocs; i += tamanhoLote) {
-        const lote = snapLegados.docs.slice(i, i + tamanhoLote);
-        const batch = writeBatch(db); 
-
-        lote.forEach(docSnap => {
-          const data = docSnap.data();
-          // Define que o destino será a pasta raiz 'pedidos' com o mesmo ID
-          const novoDocRef = doc(db, 'pedidos', docSnap.id);
-          
-          // Adiciona as informações no lote
-          batch.set(novoDocRef, {
-            ...data,
-            _migradoDoLegado: true,
-            elementoIdOriginal: docSnap.ref.path.split('/')[3] || 'desconhecido'
-          }, { merge: true });
-        });
-
-        console.log(`Enviando lote ${lotesProcessados + 1}... (${i + lote.length}/${totalDocs})`);
-        
-        // Dispara o lote para a nuvem
-        await batch.commit();
-        
-        totalMigrados += lote.length;
-        lotesProcessados++;
-
-        // MÁGICA: Pausa a execução por 1.5 segundos para não afogar o Firebase
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-
-      console.log("Migração concluída com sucesso!");
-      alert(`Migração Definitiva concluída! ${totalMigrados} pedidos foram movidos para a raiz.`);
-    } catch (error) {
-      console.error("Erro crítico na migração em lotes:", error);
-      alert("Erro ao migrar dados: " + error.message);
-    }
-  };
-
-  // Expõe para o console
-  window.rodarMigracaoDefinitiva = migrarPedidosParaRaizLote;
-
-  const padronizarDatasLegadas = async () => {
-    if (!window.confirm("Deseja padronizar o campo dataOperacao de todos os pedidos legados?")) return;
-    
-    try {
-      console.log("Iniciando padronização de datas nos pedidos legados...");
-      const snap = await getDocs(collection(db, 'pedidos'));
-      console.log(`Verificando ${snap.size} documentos...`);
-
-      const tamanhoLote = 250;
-      let alterados = 0;
-      let batch = writeBatch(db);
-      let emLote = 0;
-
-      for (const docSnap of snap.docs) {
-        const data = docSnap.data();
-
-        // Se já possui dataOperacao válida no formato YYYY-MM-DD, ignora
-        if (data.dataOperacao && String(data.dataOperacao).length >= 10) continue;
-
-        let dataFormatada = null;
-        if (data.completedAt?.toDate) {
-          const d = data.completedAt.toDate();
-          dataFormatada = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        } else if (data.createdAt?.toDate) {
-          const d = data.createdAt.toDate();
-          dataFormatada = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        }
-
-        if (dataFormatada) {
-          batch.update(docSnap.ref, { dataOperacao: dataFormatada });
-          alterados++;
-          emLote++;
-
-          if (emLote === tamanhoLote) {
-            await batch.commit();
-            console.log(`Lote de ${emLote} atualizações gravado...`);
-            batch = writeBatch(db);
-            emLote = 0;
-            await new Promise(r => setTimeout(r, 1000));
-          }
-        }
-      }
-
-      if (emLote > 0) {
-        await batch.commit();
-      }
-
-      console.log("Padronização concluída com sucesso!");
-      alert(`Padronização concluída! ${alterados} pedidos receberam a dataOperacao.`);
-    } catch (error) {
-      console.error("Erro na padronização:", error);
-      alert("Erro ao padronizar datas: " + error.message);
-    }
-  };
-
-  window.rodarPadronizacao = padronizarDatasLegadas;
-
-  const sincronizarEstatisticasDiarias = async () => {
-    if (!window.confirm("Deseja gerar as estatísticas diárias a partir dos pedidos na raiz?")) return;
-    
-    try {
-      console.log("Calculando volume diário...");
-      const q = query(collection(db, 'pedidos'), where('efetivado', '==', true));
-      const snap = await getDocs(q);
-      const diasMap = {};
-
-      // Conta todos os pedidos válidos e agrupa por dia
-      snap.forEach(docSnap => {
-        const data = docSnap.data();
-        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
-        if (!temNfOuMinuta || !data.dataOperacao) return;
-
-        const dataFormatada = String(data.dataOperacao).substring(0, 10);
-        if (!diasMap[dataFormatada]) diasMap[dataFormatada] = 0;
-        diasMap[dataFormatada]++;
-      });
-
-      // Salva na coleção estatisticasDiarias
-      const batch = writeBatch(db);
-      let count = 0;
-
-      for (const [dia, total] of Object.entries(diasMap)) {
-        const docRef = doc(db, 'estatisticasDiarias', dia);
-        // Usamos merge para não apagar o ranking, caso ele já exista lá!
-        batch.set(docRef, { totalPedidos: total, totalNfMinuta: total }, { merge: true });
-        count++;
-      }
-
-      await batch.commit();
-      console.log("Sincronização concluída!");
-      alert(`Sucesso! ${count} dias de operação foram salvos nas estatísticas diárias.`);
-    } catch (error) {
-      console.error("Erro na sincronização:", error);
-      alert("Erro: " + error.message);
-    }
-  };
-
-  window.rodarSincronizacaoDiaria = sincronizarEstatisticasDiarias;
-
-                    return (
-                      <tr 
-                        key={pedido.id} 
-                        className={`clickable-row ${pedido.efetivado ? "efetivado" : ""}`} 
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => handleAbrirDetalhes(pedido)}
-                        title="Clique para ver Detalhes"
-                      >
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start' }}>
-                            <div>
-                              <strong style={{ fontSize: '1.1rem', color: 'var(--primary)' }}>{pedido.romaneio || 'S/N'}</strong>
-                              {pedido._isLegacy && <span style={{fontSize: '10px', color: '#cbd5e1', marginLeft: '4px'}}>(Legado)</span>}
-                            </div>
-                            {statusBadge}
-                          </div>
-                        </td>
-                        
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{fontWeight: 600, color: '#334155', whiteSpace: 'normal', fontSize: '13px'}}>{pedido.loja || '---'}</div>
-                          <div style={{fontSize: '11px', color: '#94a3b8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
-                            <MapPin size={12} /> 
-                            {pedido.local || 'DF'} {pedido.uf ? `- ${pedido.uf}` : ''}
-                          </div>
-                        </td>
-
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px', whiteSpace: 'normal', fontSize: '12px', color: '#64748b' }}>
-                           {pedido.observacoes ? pedido.observacoes : <span style={{opacity: 0.4, fontStyle: 'italic'}}>Nenhuma observação...</span>}
-                        </td>
-                        
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-    
-    {/* Gera um badge colorido individual para CADA documento do romaneio */}
-    {listaDocumentos.map((tipo, idx) => {
-      let corFundo = '#3b82f6'; // Azul padrão (Nota Fiscal)
-      if (tipo === 'Minuta') corFundo = '#8b5cf6'; // Roxo
-      if (tipo === 'Bonificação') corFundo = '#ec4899'; // Rosa
-      if (tipo === 'Troca') corFundo = '#f59e0b'; // Laranja
-      
-      return (
-        <span key={idx} className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: corFundo, color: '#fff', border: 'none', fontWeight: 'bold' }}>
-          {tipo}
-        </span>
-      );
-    })}
-
-    <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{caixasCount} Caixas</span>
-    <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{skusCount} SKUs</span>
-  </div>
-</td>
-
-                        <td className="actions-cell" style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                            <button className="action-btn btn-caixas" title="Painel do Romaneio" onClick={() => handleAbrirDetalhes(pedido)}>
-                              <Info size={16}/>
-                            </button>
-                            <div style={{position: 'relative'}}>
-                              <button className="action-btn btn-edit" title="Ações" onClick={() => setDropdownOpen(dropdownOpen === pedido.id ? null : pedido.id)}>
-                                <MoreVertical size={16}/>
-                              </button>
-                              {dropdownOpen === pedido.id && (
-                                <div className="table-dropdown-menu" style={{ right: 0, left: 'auto' }}>
-                                  {!pedido.efetivado && (
-                                    <>
-                                      {pedido.isPaused ? (
-                                        <button className="dropdown-item" style={{color: '#10b981'}} onClick={() => handleResumePedido(pedido)}><Play size={14}/> Retomar</button>
-                                      ) : (
-                                        <button className="dropdown-item" style={{color: '#f59e0b'}} onClick={() => handleOpenPauseModal(pedido)}><Pause size={14}/> Pausar Timer</button>
-                                      )}
-                                      <div className="dropdown-divider"></div>
-                                    </>
-                                  )}
-                                  <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
-                                    {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
-                                  </button>
-                                  {temPermissao && (
-                                    <>
-                                      <button className="dropdown-item" onClick={() => handleEditPedido(pedido)}><Edit size={14}/> Editar Dados</button>
-                                      <div className="dropdown-divider"></div>
-                                      <button className="dropdown-item text-danger" onClick={() => handleDeletePedido(pedido)}><Trash2 size={14}/> Excluir Pedido</button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="op-bottom-zone">
-            {/* RANKING DIÁRIO DE PRODUTIVIDADE */}
-            <RankingDiario 
-              rankingCalculado={rankingCalculado}
-              rankingExpandido={rankingExpandido}
-              setRankingExpandido={setRankingExpandido}
-              currentTime={currentTime}           
-              dataOperacaoAtiva={dataOperacaoAtiva} 
-            />
-
-            <div className="op-side-indicators">
-                <div className="indicator-card op-card">
-                  <div className="indicator-icon" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
-                  <div className="indicator-content"><h4>Ordens de Produção</h4><span className="indicator-value">{opsDoDia.length} Registros</span><p>Controle de O.P.s hoje</p></div>
-                  <button className="indicator-btn" onClick={() => setShowOpModal(true)}>Gerenciar O.P.s</button>
-                </div>
-
-                <div className="indicator-card master-card">
-                  <div className="indicator-icon" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
-                  <div className="indicator-content"><h4>Caixas Master</h4><span className="indicator-value">{caixasMaster.length} Padrões</span><p>Dicionário de embalagens</p></div>
-                  <button className="indicator-btn" onClick={() => setShowMasterModal(true)}>Consultar Base</button>
-                </div>
+            <div className="op-kpi-card">
+              <span className="kpi-label">Pedidos Hoje</span>
+              <span className="kpi-val">{totalPedidosKPI}</span>
             </div>
+            <div className="op-kpi-card">
+              <span className="kpi-label">Caixas Fechadas</span>
+              <span className="kpi-val" style={{ color: 'var(--secondary, #f26522)' }}>
+                {totalCaixasHoje}
+              </span>
+            </div>
+          </div>
         </section>
 
-      </main>
+          {/* ==========================================
+              TABELA DE ROMANEIOS REESTILIZADA
+              ========================================== */}
+          <section className="op-history-section">
+            
+            {/* TOPO DA TABELA: TÍTULO, CONTAGEM E BUSCA DEDICADA */}
+            <div className="history-header">
+              <div className="history-title-area">
+                <div className="history-icon-badge">
+                  <Layers size={20} color="var(--primary)" />
+                </div>
+                <div>
+                  <h3>Romaneios Processados</h3>
+                  <span className="history-subtitle">
+                    {pedidosProcessados.filter(p => p.efetivado).length} finalizados de {pedidosProcessados.length} no dia
+                  </span>
+                </div>
+              </div>
 
+              {/* BARRA DE PESQUISA INTEGRADA */}
+              <div className="table-search-box">
+                <Search size={16} className="table-search-icon" />
+                <input 
+                  type="text"
+                  placeholder="Filtrar por romaneio, loja ou UF..."
+                  value={buscaRomaneio}
+                  onChange={(e) => setBuscaRomaneio(e.target.value)}
+                  className="table-search-input"
+                />
+                {buscaRomaneio && (
+                  <button onClick={() => setBuscaRomaneio('')} className="table-search-clear">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {/* CONTAINER DA TABELA */}
+            <div className="op-table-wrapper scrollable-table-wrapper">
+              <table className="op-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '18%' }}>Romaneio & Status</th>
+                    <th style={{ width: '27%' }}>Destino / Local</th>
+                    <th style={{ width: '22%' }}>Observações</th>
+                    <th style={{ width: '23%' }}>Documentos & Carga</th>
+                    <th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedidosFiltrados.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="empty-table-row">
+                        <SearchX size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                        <p>{buscaRomaneio ? `Nenhum romaneio correspondente a "${buscaRomaneio}"` : 'Nenhum pedido processado nesta data.'}</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    pedidosFiltrados.map(pedido => {
+                      let caixasCount = 0; 
+                      let skusCount = 0;
+                      const listaDocumentos = []; 
 
-     {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
+                      (pedido.documentos || []).forEach(d => {
+                        listaDocumentos.push(d.tipo || 'S/N');
+                        caixasCount += (d.caixas || []).length;
+                        (d.caixas || []).forEach(cx => { 
+                          (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); 
+                        });
+                      });
+
+                      const temPermissao = isAdmin || pedido.criadorUid === localUser?.uid;
+
+                      // Status e Indicador Visual Lateral
+                      let statusClass = "status-running";
+                      let statusBadge;
+
+                      if (pedido.efetivado) {
+                        statusClass = "status-finished";
+                        statusBadge = (
+                          <div className="time-badge success">
+                            <Check size={12} /> Finalizado
+                          </div>
+                        );
+                      } else if (pedido.isPaused) {
+                        statusClass = "status-paused";
+                        statusBadge = (
+                          <div className="time-badge paused" title={pedido.motivoPausa}>
+                            <Pause size={12} /> Pausado
+                          </div>
+                        );
+                      } else {
+                        statusClass = "status-running";
+                        statusBadge = (
+                          <div className="time-badge running">
+                            <Clock size={12} /> {formatarCronometro(pedido)}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <tr 
+  key={pedido.id} 
+  className={`clickable-row ${statusClass} ${dropdownOpen === pedido.id ? 'row-dropdown-open' : ''}`}
+  onClick={() => handleAbrirDetalhes(pedido)}
+  title="Clique para ver Detalhes"
+>
+                          {/* 1. ROMANEIO E BADGE */}
+                          <td>
+                            <div className="table-romaneio-cell">
+                              <div className="romaneio-title-wrap">
+                                <strong className="romaneio-number">{pedido.romaneio || 'S/N'}</strong>
+                                {pedido._isLegacy && <span className="legacy-tag">Legado</span>}
+                              </div>
+                              {statusBadge}
+                            </div>
+                          </td>
+                          
+                          {/* 2. DESTINO & UF */}
+                          <td>
+                            <div className="table-store-name">{pedido.loja || 'Destino não especificado'}</div>
+                            <div className="table-location-sub">
+                              <MapPin size={13} /> 
+                              <span>{pedido.local || 'DF'} {pedido.uf ? `• ${pedido.uf}` : ''}</span>
+                            </div>
+                          </td>
+
+                          {/* 3. OBSERVAÇÕES */}
+                          <td>
+                            <div className="table-obs-text">
+                              {pedido.observacoes ? pedido.observacoes : <span className="obs-empty">Sem observações...</span>}
+                            </div>
+                          </td>
+                          
+                          {/* 4. DOCUMENTOS E VOLUMES */}
+                          <td>
+                            <div className="table-docs-container">
+                              <div className="doc-pills-row">
+                                {listaDocumentos.map((tipo, idx) => {
+                                  let corFundo = '#3b82f6'; 
+                                  if (tipo === 'Minuta') corFundo = '#8b5cf6'; 
+                                  if (tipo === 'Bonificação') corFundo = '#ec4899'; 
+                                  if (tipo === 'Troca') corFundo = '#f59e0b'; 
+                                  
+                                  return (
+                                    <span key={idx} className="doc-micro-pill" style={{ background: corFundo }}>
+                                      {tipo}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <div className="volume-metrics-row">
+                                <span><strong>{caixasCount}</strong> cx</span>
+                                <span className="metric-dot">•</span>
+                                <span><strong>{skusCount}</strong> SKUs</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 5. AÇÕES */}
+                          <td className="actions-cell">
+                            <div onClick={(e) => e.stopPropagation()} className="action-buttons-wrap">
+                              <button className="action-btn btn-caixas" title="Painel do Romaneio" onClick={() => handleAbrirDetalhes(pedido)}>
+                                <Info size={16}/>
+                              </button>
+                              
+                              <div style={{ position: 'relative' }}>
+                                <button className="action-btn btn-edit" title="Opções" onClick={() => setDropdownOpen(dropdownOpen === pedido.id ? null : pedido.id)}>
+                                  <MoreVertical size={16}/>
+                                </button>
+                                
+                                {dropdownOpen === pedido.id && (
+                                  <div className="table-dropdown-menu">
+                                    {!pedido.efetivado && (
+                                      <>
+                                        {pedido.isPaused ? (
+                                          <button className="dropdown-item" style={{ color: '#10b981' }} onClick={() => handleResumePedido(pedido)}>
+                                            <Play size={14}/> Retomar
+                                          </button>
+                                        ) : (
+                                          <button className="dropdown-item" style={{ color: '#f59e0b' }} onClick={() => handleOpenPauseModal(pedido)}>
+                                            <Pause size={14}/> Pausar Timer
+                                          </button>
+                                        )}
+                                        <div className="dropdown-divider"></div>
+                                      </>
+                                    )}
+                                    <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
+                                      {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
+                                    </button>
+                                    {temPermissao && (
+                                      <>
+                                        <button className="dropdown-item" onClick={() => handleEditPedido(pedido)}>
+                                          <Edit size={14}/> Editar Dados
+                                        </button>
+                                        <div className="dropdown-divider"></div>
+                                        <button className="dropdown-item text-danger" onClick={() => handleDeletePedido(pedido)}>
+                                          <Trash2 size={14}/> Excluir Pedido
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="op-bottom-zone">
+              {/* RANKING DIÁRIO DE PRODUTIVIDADE */}
+              <RankingDiario 
+                rankingCalculado={rankingCalculado}
+                rankingExpandido={rankingExpandido}
+                setRankingExpandido={setRankingExpandido}
+                currentTime={currentTime}           
+                dataOperacaoAtiva={dataOperacaoAtiva} 
+              />
+
+              <div className="op-side-indicators">
+                  <div className="indicator-card op-card">
+                    <div className="indicator-icon" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
+                    <div className="indicator-content"><h4>Ordens de Produção</h4><span className="indicator-value">{opsDoDia.length} Registros</span><p>Controle de O.P.s hoje</p></div>
+                    <button className="indicator-btn" onClick={() => setShowOpModal(true)}>Gerenciar O.P.s</button>
+                  </div>
+
+                  <div className="indicator-card master-card">
+                    <div className="indicator-icon" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
+                    <div className="indicator-content"><h4>Caixas Master</h4><span className="indicator-value">{caixasMaster.length} Padrões</span><p>Dicionário de embalagens</p></div>
+                    <button className="indicator-btn" onClick={() => setShowMasterModal(true)}>Consultar Base</button>
+                  </div>
+              </div>
+          </section>
+
+        </main>
+      </div> 
+      {/* 🔴 O WRAPPER FECHOU AQUI! OS MODAIS AGORA ESTÃO LIVRES PARA COBRIR A TELA 🔴 */}
+
+      {/* ==========================================
+          MODAIS (RENDERIZADOS FORA DO WRAPPER)
+          ========================================== */}
+      
+      {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
       <ModalDetalhesPedido 
         showDetalhesModal={showDetalhesModal}
         setShowDetalhesModal={setShowDetalhesModal}
@@ -1983,6 +2204,7 @@ const listaDocumentos = []; // Agora guardamos cada documento em uma lista
         setAuditModalData={setAuditModalData}
         handlePlanejamentoUpload={handlePlanejamentoUpload}
         handleUploadWMSComum={handleUploadWMSComum}
+        handleAuditoriaUpload={handleAuditoriaUpload} /* <-- ADICIONE ESTA LINHA */
         docIndexSelecionado={docIndexSelecionado}
         setDocIndexSelecionado={setDocIndexSelecionado}
         skusExpandidos={skusExpandidos}
@@ -2010,15 +2232,6 @@ const listaDocumentos = []; // Agora guardamos cada documento em uma lista
         handleSalvarEdicaoTab1={handleSalvarEdicaoTab1}
       />
 
-     {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
-      <ModalDetalhesPedido 
-        showDetalhesModal={showDetalhesModal}
-        setShowDetalhesModal={setShowDetalhesModal}
-        // ... (todas as outras props que já estão aí)
-        handleSalvarEdicaoTab1={handleSalvarEdicaoTab1}
-      />
-
-      {/* 👇 COLE ESTE BLOCO NOVO AQUI 👇 */}
       {/* MODAL DE RESUMO E EDIÇÃO DE CAIXAS */}
       <ModalCaixasEfetivadas 
         showCaixasEfetivadasModal={showCaixasEfetivadasModal}
@@ -2034,20 +2247,9 @@ const listaDocumentos = []; // Agora guardamos cada documento em uma lista
         abrirFormCaixa={abrirFormCaixa}
         excluirCaixaManual={excluirCaixaManual}
       />
-      {/* 👆 FIM DO BLOCO NOVO 👆 */}
-
-      {/* SUB-MODAL 1: AUDITORIA WMS (Upload -> Relatório) */}
-      <AuditoriaWms 
-        auditModalData={auditModalData}
-        setAuditModalData={setAuditModalData}
-        wmsSessions={wmsSessions}
-        handleAuditoriaUpload={handleAuditoriaUpload}
-        confirmarAuditoriaWms={confirmarAuditoriaWms}
-        isSaving={isSaving}
-      />
 
 
-    {/* MODAL DE ORDEM DE PRODUÇÃO */}
+      {/* MODAL DE ORDEM DE PRODUÇÃO */}
       <ModalOrdemProducao 
         showOpModal={showOpModal}
         setShowOpModal={setShowOpModal}
@@ -2139,8 +2341,29 @@ const listaDocumentos = []; // Agora guardamos cada documento em uma lista
         modalSucesso={modalSucesso}
         setModalSucesso={setModalSucesso}
       /> 
-      </div>
-    </> /* <-- FECHAMENTO DO FRAGMENTO (A MÁGICA ACONTECE AQUI) */
-  );
-} // <-- CHAVE FINAL FECHANDO O COMPONENTE OPERACAO
 
+      {/* TRANSIÇÃO CINEMATOGRÁFICA DE NOVO PEDIDO */}
+      <AnimacaoCriacaoPedido dadosPedido={pedidoRecemCriado} />
+
+      {/* FLUXO UNIFICADO DE IMPORTAÇÃO WMS (LEITURA -> PRÉVIA -> GRAVAÇÃO -> SUCESSO/CÓPIA) */}
+      <ModalFluxoImportacaoWMS 
+        etapa={fluxoImportacao?.etapa}
+        dadosPrevia={fluxoImportacao}
+        resumoTexto={fluxoImportacao?.resumoTexto}
+        onConfirmarGravacao={handleConfirmarGravacaoWMS}
+        onConcluirFluxo={handleConcluirFluxoWMS}
+        onCancelar={() => setFluxoImportacao(null)}
+      />
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      <ModalConfirmarExclusao 
+        pedidoParaExcluir={pedidoParaExcluir}
+        onConfirmar={handleConfirmarExclusaoDefinitiva}
+        onCancelar={() => setPedidoParaExcluir(null)}
+        isExcluindo={isExcluindoPedido}
+      />
+    </>
+
+    
+  );
+}

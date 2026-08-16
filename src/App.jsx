@@ -1,11 +1,9 @@
 // src/App.jsx
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard'; // Importando o novo painel
+import Dashboard from './pages/Dashboard';
 import Operacao from './pages/Operacao';
 import OperacaoAdm from './pages/OperacaoAdm';
-
-
 
 function App() {
   return (
@@ -13,15 +11,20 @@ function App() {
       <Routes>
         {/* Rota inicial de Login */}
         <Route path="/" element={<Login />} />
-        s
-        {/* Rota do Dashboard Operacional (agora apontando para o arquivo real) */}
+
+        {/* Rota do Dashboard Operacional */}
         <Route path="/dashboard" element={<Dashboard />} />
         
-        {/* Rota do Dashboard Comercial (manteremos em construção por enquanto) */}
+        {/* Rota do Dashboard Comercial */}
         <Route path="/dashboard-viewer" element={<h2>Dashboard Comercial (Em construção)</h2>} />
 
-        <Route path="/elemento" element={<Operacao />} />
+        {/* Rota Principal da Operação */}
+        <Route path="/operacao" element={<Operacao isAdmin={false} />} />
 
+        {/* Rota de compatibilidade para links legados */}
+        <Route path="/elemento" element={<Operacao isAdmin={false} />} />
+
+        {/* Rota Administrativa */}
         <Route path="/operacao-adm" element={<OperacaoAdm />} />
       </Routes>
     </BrowserRouter>

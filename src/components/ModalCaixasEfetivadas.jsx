@@ -16,7 +16,6 @@ export default function ModalCaixasEfetivadas({
   abrirFormCaixa,
   excluirCaixaManual
 }) {
-  // A busca agora é gerenciada apenas dentro do próprio modal!
   const [buscaCaixasSalvas, setBuscaCaixasSalvas] = useState('');
 
   if (showCaixasEfetivadasModal === null) return null;
@@ -25,7 +24,6 @@ export default function ModalCaixasEfetivadas({
   const docEfetivado = pedidoModal.documentos[dIdx];
   const caixas = docEfetivado?.caixas || [];
 
-  // 1. Aplica o Filtro de Busca na Coluna da Esquerda (Documento Atual)
   const termo = buscaCaixasSalvas.toLowerCase();
   const caixasFiltradas = caixas.filter(cx => {
     if (!termo) return true;
@@ -37,7 +35,6 @@ export default function ModalCaixasEfetivadas({
     return matchNum || matchProd;
   });
 
-  // 2. MOTOR DO RESUMO GERAL: Unifica todos os documentos e ordena
   const cxMapGeral = (pedidoModal.documentos || []).reduce((acc, doc) => {
     const isBonifDoc = String(doc.tipo || doc.natureza || doc.nomeDocumento || '').toUpperCase().includes('BONIF');
     
@@ -55,7 +52,6 @@ export default function ModalCaixasEfetivadas({
     return acc;
   }, {});
 
- // Ordena primeiro por Tipo (NF > Bonif) e depois por Número da Caixa
   const resumoOrdenado = Object.values(cxMapGeral).sort((a, b) => {
     const isBonifA = Boolean(a.isBonif);
     const isBonifB = Boolean(b.isBonif);
@@ -71,31 +67,63 @@ export default function ModalCaixasEfetivadas({
   });
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#f8fafc', padding: '0', borderRadius: '12px', width: '95%', maxWidth: '1200px', height: '90%', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ 
+      position: 'fixed', 
+      inset: 0, 
+      background: 'rgba(15, 23, 42, 0.75)', 
+      backdropFilter: 'blur(6px)',
+      WebkitBackdropFilter: 'blur(6px)',
+      zIndex: 99999, 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    }}>
+      <div style={{ 
+        background: '#f8fafc', 
+        padding: '0', 
+        borderRadius: '16px', 
+        width: '95%', 
+        maxWidth: '1200px', 
+        height: '90%', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
+        overflow: 'hidden', 
+        position: 'relative',
+        fontFamily: 'inherit'
+      }}>
         
         {/* OVERLAY DO FORMULÁRIO DE EDIÇÃO/CRIAÇÃO MANUAIS */}
         {edicaoCaixa && (
-          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(255,255,255,0.95)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-            <div style={{ background: '#fff', padding: '30px', borderRadius: '12px', width: '600px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #cbd5e1', maxHeight: '90%', overflowY: 'auto' }}>
-              <h3 style={{ margin: '0 0 20px 0', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}><Edit size={20}/> {edicaoCaixa.cIdx === -1 ? 'Adicionar Nova Caixa' : 'Editar Caixa Existente'}</h3>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.95)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)', fontFamily: 'inherit' }}>
+            <div style={{ background: '#fff', padding: '30px', borderRadius: '14px', width: '600px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #cbd5e1', maxHeight: '90%', overflowY: 'auto', fontFamily: 'inherit' }}>
+              <h3 style={{ margin: '0 0 20px 0', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, letterSpacing: '-0.3px' }}>
+                <Edit size={20}/> {edicaoCaixa.cIdx === -1 ? 'Adicionar Nova Caixa' : 'Editar Caixa Existente'}
+              </h3>
               
               <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-                <div style={{ flex: 2 }}><label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>Identificação (Ex: CAIXA 1)</label><input type="text" value={formCaixa.num} onChange={e => setFormCaixa({...formCaixa, num: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px' }}/></div>
-                <div style={{ flex: 1 }}><label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>Peso (kg)</label><input type="number" step="0.1" value={formCaixa.peso} onChange={e => setFormCaixa({...formCaixa, peso: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px' }}/></div>
+                <div style={{ flex: 2 }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '6px' }}>Identificação (Ex: CAIXA 1)</label>
+                  <input type="text" value={formCaixa.num} onChange={e => setFormCaixa({...formCaixa, num: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontFamily: 'inherit', boxSizing: 'border-box' }}/>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '6px' }}>Peso (kg)</label>
+                  <input type="number" step="0.1" value={formCaixa.peso} onChange={e => setFormCaixa({...formCaixa, peso: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontFamily: 'inherit', boxSizing: 'border-box' }}/>
+                </div>
               </div>
 
-              <div style={{ border: '1px solid #e2e8f0', padding: '15px', borderRadius: '8px', background: '#f8fafc', marginBottom: '20px' }}>
+              <div style={{ border: '1px solid #e2e8f0', padding: '15px', borderRadius: '10px', background: '#f8fafc', marginBottom: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <strong style={{ fontSize: '0.9rem', color: '#334155' }}>Itens da Caixa</strong>
-                  <button onClick={() => setFormCaixa({...formCaixa, produtos: [...formCaixa.produtos, { referencia: '', descricao: '', quantidade: '' }]})} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>+ Add Item</button>
+                  <strong style={{ fontSize: '0.9rem', color: '#334155', fontWeight: 700 }}>Itens da Caixa</strong>
+                  <button onClick={() => setFormCaixa({...formCaixa, produtos: [...formCaixa.produtos, { referencia: '', descricao: '', quantidade: '' }]})} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Add Item</button>
                 </div>
                 
                 {formCaixa.produtos.map((p, pIdx) => (
                   <div key={pIdx} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
-                    <input type="text" placeholder="REF" value={p.referencia} onChange={e => { const prod = [...formCaixa.produtos]; prod[pIdx].referencia = e.target.value; setFormCaixa({...formCaixa, produtos: prod}); }} style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}/>
-                    <input type="text" placeholder="Descrição" value={p.descricao} onChange={e => { const prod = [...formCaixa.produtos]; prod[pIdx].descricao = e.target.value; setFormCaixa({...formCaixa, produtos: prod}); }} style={{ flex: 2, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}/>
-                    <input type="number" placeholder="Qtd" value={p.quantidade} onChange={e => { const prod = [...formCaixa.produtos]; prod[pIdx].quantidade = e.target.value; setFormCaixa({...formCaixa, produtos: prod}); }} style={{ width: '70px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}/>
+                    <input type="text" placeholder="REF" value={p.referencia} onChange={e => { const prod = [...formCaixa.produtos]; prod[pIdx].referencia = e.target.value; setFormCaixa({...formCaixa, produtos: prod}); }} style={{ flex: 1, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', fontFamily: 'inherit' }}/>
+                    <input type="text" placeholder="Descrição" value={p.descricao} onChange={e => { const prod = [...formCaixa.produtos]; prod[pIdx].descricao = e.target.value; setFormCaixa({...formCaixa, produtos: prod}); }} style={{ flex: 2, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', fontFamily: 'inherit' }}/>
+                    <input type="number" placeholder="Qtd" value={p.quantidade} onChange={e => { const prod = [...formCaixa.produtos]; prod[pIdx].quantidade = e.target.value; setFormCaixa({...formCaixa, produtos: prod}); }} style={{ width: '70px', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', fontFamily: 'inherit' }}/>
                     <button onClick={() => { const prod = formCaixa.produtos.filter((_, i) => i !== pIdx); setFormCaixa({...formCaixa, produtos: prod}); }} style={{ background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}><Trash2 size={16}/></button>
                   </div>
                 ))}
@@ -103,8 +131,8 @@ export default function ModalCaixasEfetivadas({
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '15px' }}>
-                <button onClick={() => setEdicaoCaixa(null)} style={{ padding: '10px 20px', background: '#f1f5f9', border: 'none', borderRadius: '6px', fontWeight: 'bold', color: '#475569', cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={salvarCaixaManual} disabled={isSaving} style={{ padding: '10px 20px', background: '#0ea5e9', border: 'none', borderRadius: '6px', fontWeight: 'bold', color: '#fff', cursor: 'pointer', display: 'flex', gap: '8px' }}>
+                <button onClick={() => setEdicaoCaixa(null)} style={{ padding: '10px 20px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 700, color: '#475569', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                <button onClick={salvarCaixaManual} disabled={isSaving} style={{ padding: '10px 20px', background: 'var(--primary)', border: 'none', borderRadius: '8px', fontWeight: 700, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'inherit' }}>
                   {isSaving ? 'Salvando...' : <><CheckCircle2 size={18}/> Salvar Caixa</>}
                 </button>
               </div>
@@ -114,20 +142,20 @@ export default function ModalCaixasEfetivadas({
 
         {/* HEADER DO MODAL */}
         <div style={{ padding: '20px 25px', background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--primary)', fontSize: '1.4rem' }}>
-            <Boxes size={26}/> Caixas Efetivadas: {docEfetivado?.tipo || 'Documento Atual'}
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--primary)', fontSize: '1.35rem', fontWeight: 800, letterSpacing: '-0.3px' }}>
+            <Boxes size={24}/> Caixas Efetivadas: {docEfetivado?.tipo || 'Documento Atual'}
           </h3>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, justifyContent: 'flex-end' }}>
             
-            <button onClick={() => abrirFormCaixa(dIdx, -1)} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <button onClick={() => abrirFormCaixa(dIdx, -1)} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer', fontFamily: 'inherit' }}>
               <Plus size={16}/> Nova Caixa
             </button>
 
             {/* BARRA DE BUSCA */}
             <div style={{ position: 'relative', width: '100%', maxWidth: '250px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '10px', color: '#94a3b8' }}/>
-              <input type="text" placeholder="Buscar Caixa ou SKU..." value={buscaCaixasSalvas} onChange={(e) => setBuscaCaixasSalvas(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.9rem', outline: 'none' }}/>
+              <input type="text" placeholder="Buscar Caixa ou SKU..." value={buscaCaixasSalvas} onChange={(e) => setBuscaCaixasSalvas(e.target.value)} style={{ width: '100%', padding: '9px 10px 9px 36px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}/>
             </div>
 
             {/* BOTÃO COPIAR GERAL */}
@@ -145,12 +173,12 @@ export default function ModalCaixasEfetivadas({
                   btn.style.color = '#475569'; btn.style.borderColor = '#cbd5e1'; btn.style.background = '#f8fafc';
                 }, 1500);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '9px 15px', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '9px 15px', borderRadius: '8px', fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
             >
               <Copy size={16} /> Copiar Resumo
             </button>
             
-            <button onClick={() => { setShowCaixasEfetivadasModal(null); setBuscaCaixasSalvas(''); }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', color: '#64748b', padding: '8px', borderRadius: '6px' }}><X size={24}/></button>
+            <button onClick={() => { setShowCaixasEfetivadasModal(null); setBuscaCaixasSalvas(''); }} style={{ background: '#f1f5f9', border: 'none', cursor: 'pointer', color: '#64748b', padding: '8px', borderRadius: '8px' }}><X size={22}/></button>
           </div>
         </div>
         
@@ -165,36 +193,35 @@ export default function ModalCaixasEfetivadas({
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
                 {caixasFiltradas.map((cx, idx) => {
-                  // Localiza o index original no array não filtrado para edição/exclusão corretas
                   const originalIdx = caixas.findIndex(c => c === cx);
                   
                   return (
-                    <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '15px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                    <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', fontFamily: 'inherit' }}>
                       
-                      {/* CABEÇALHO UNIFICADO DA CAIXA (Título + Botões na mesma linha) */}
+                      {/* CABEÇALHO UNIFICADO DA CAIXA */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                        <strong style={{ color: cx.isBonificacao ? '#ef4444' : 'var(--primary)', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <strong style={{ color: cx.isBonificacao ? '#ef4444' : 'var(--primary)', fontSize: '1.05rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', letterSpacing: '-0.3px' }}>
                           {cx.num || 'CX'} 
-                          {cx.isBonificacao && <span style={{ fontSize: '0.65rem', background: '#fef2f2', border: '1px solid #fca5a5', padding: '2px 6px', borderRadius: '10px' }}>BONIF</span>}
-                          <span style={{fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'normal'}}>(Vol {originalIdx + 1})</span>
+                          {cx.isBonificacao && <span style={{ fontSize: '0.65rem', background: '#fef2f2', border: '1px solid #fca5a5', padding: '2px 6px', borderRadius: '10px', fontWeight: 700 }}>BONIF</span>}
+                          <span style={{fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500}}>(Vol {originalIdx + 1})</span>
                         </strong>
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 'bold', color: '#64748b', marginRight: '6px' }}>{parseFloat(cx.peso).toFixed(1)}kg</span>
+                          <span style={{ fontWeight: 700, color: '#64748b', marginRight: '6px', fontSize: '0.9rem' }}>{parseFloat(cx.peso).toFixed(1)}kg</span>
                           
                           <button 
                             onClick={() => toggleBonificacaoCaixa(dIdx, originalIdx)} 
-                            style={{ background: cx.isBonificacao ? '#fef2f2' : '#ecfdf5', border: 'none', padding: '5px', borderRadius: '4px', cursor: 'pointer', color: cx.isBonificacao ? '#ef4444' : '#10b981', display: 'flex' }} 
+                            style={{ background: cx.isBonificacao ? '#fef2f2' : '#ecfdf5', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: cx.isBonificacao ? '#ef4444' : '#10b981', display: 'flex' }} 
                             title={cx.isBonificacao ? "Remover Bonificação" : "Marcar como Bonificação"}
                           >
                             <Gift size={14}/>
                           </button>
-                          <button onClick={() => abrirFormCaixa(dIdx, originalIdx, cx)} style={{ background: '#f1f5f9', border: 'none', padding: '5px', borderRadius: '4px', cursor: 'pointer', color: '#0ea5e9', display: 'flex' }}><Edit size={14}/></button>
-                          <button onClick={() => excluirCaixaManual(dIdx, originalIdx)} style={{ background: '#fef2f2', border: 'none', padding: '5px', borderRadius: '4px', cursor: 'pointer', color: '#ef4444', display: 'flex' }}><Trash2 size={14}/></button>
+                          <button onClick={() => abrirFormCaixa(dIdx, originalIdx, cx)} style={{ background: '#f1f5f9', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#0ea5e9', display: 'flex' }}><Edit size={14}/></button>
+                          <button onClick={() => excluirCaixaManual(dIdx, originalIdx)} style={{ background: '#fef2f2', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444', display: 'flex' }}><Trash2 size={14}/></button>
                         </div>
                       </div>
                       
-                      {/* LISTAGEM DE PRODUTOS COM AGRUPAMENTO VISUAL AUTOMÁTICO */}
+                      {/* LISTAGEM DE PRODUTOS */}
                       <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
                         {Object.values((cx.produtos || []).reduce((acc, p) => {
                           const cod = p.referencia || 'S/N';
@@ -202,10 +229,10 @@ export default function ModalCaixasEfetivadas({
                           acc[cod].qtd += (parseInt(p.quantidade) || 1);
                           return acc;
                         }, {})).map((item, pIdx) => (
-                          <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#475569', padding: '4px 0', borderBottom: '1px dashed #f1f5f9' }}>
-                            <span style={{flex:1}}>{item.ref}</span>
-                            <span style={{flex:2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '0 10px'}} title={item.desc}>{item.desc}</span>
-                            <strong style={{color: '#0ea5e9'}}>{item.qtd} un</strong>
+                          <div key={pIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#475569', padding: '5px 0', borderBottom: '1px dashed #f1f5f9', alignItems: 'center' }}>
+                            <span style={{flex:1, fontWeight: 600}}>{item.ref}</span>
+                            <span style={{flex:2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '0 10px', fontWeight: 500}} title={item.desc}>{item.desc}</span>
+                            <strong style={{color: '#0ea5e9', fontWeight: 700}}>{item.qtd} un</strong>
                           </div>
                         ))}
                       </div>
@@ -216,27 +243,27 @@ export default function ModalCaixasEfetivadas({
             )}
           </div>
 
-          {/* COLUNA DIREITA: RESUMO GERAL UNIFICADO (Todos os Documentos) */}
+          {/* COLUNA DIREITA: RESUMO GERAL UNIFICADO */}
           <div style={{ width: '380px', background: '#fff', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <h4 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
-                <ListTree size={20}/> Resumo Geral <span style={{fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', fontWeight: 'normal'}}>Unificado</span>
+              <h4 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.05rem', fontWeight: 800, letterSpacing: '-0.3px' }}>
+                <ListTree size={18}/> Resumo Geral <span style={{fontSize: '0.72rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '10px', fontWeight: 700}}>Unificado</span>
               </h4>
-              <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>Engloba as caixas de todas as Notas e Bonificações deste Pedido.</p>
+              <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500 }}>Engloba as caixas de todas as Notas e Bonificações deste Pedido.</p>
             </div>
             <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
               {resumoOrdenado.length === 0 ? (
                   <div style={{ color: '#94a3b8', fontSize: '0.9rem', textAlign: 'center' }}>Nenhuma caixa consolidada.</div>
               ) : (
                 resumoOrdenado.map((k, idx) => (
-                  <div key={idx} style={{ fontSize: '0.9rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? '#fef2f2' : '#f8fafc', padding: '12px', borderRadius: '6px', border: `1px solid ${k.isBonif ? '#fca5a5' : '#e2e8f0'}`, marginBottom: '8px' }}>
+                  <div key={idx} style={{ fontSize: '0.88rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? '#fef2f2' : '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: `1px solid ${k.isBonif ? '#fca5a5' : '#e2e8f0'}`, marginBottom: '8px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <strong style={{color: k.isBonif ? '#ef4444' : 'var(--primary)'}}>
+                      <strong style={{color: k.isBonif ? '#ef4444' : 'var(--primary)', fontWeight: 700}}>
                         {k.originalName} 
                       </strong>
-                      <span style={{color: k.isBonif ? '#f87171' : '#94a3b8', fontSize: '0.8rem'}}>{k.peso.toFixed(1)} kg</span>
+                      <span style={{color: k.isBonif ? '#f87171' : '#94a3b8', fontSize: '0.78rem', fontWeight: 600}}>{k.peso.toFixed(1)} kg</span>
                     </div>
-                    <span style={{fontWeight: 800, color: k.isBonif ? '#b91c1c' : '#334155', fontSize: '1.05rem'}}>{k.qtd} Un</span>
+                    <span style={{fontWeight: 800, color: k.isBonif ? '#b91c1c' : '#334155', fontSize: '1rem'}}>{k.qtd} Un</span>
                   </div>
                 ))
               )}

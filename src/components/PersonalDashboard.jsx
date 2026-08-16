@@ -532,28 +532,18 @@ export default function PersonalDashboard({ user, isAdmin }) {
     if (!day) return;
     setLoadingDate(true);
 
+    // Formata a data clicada perfeitamente no formato YYYY-MM-DD
     const dataIsoFormatada = `${viewMonth.getFullYear()}-${String(viewMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
     try {
-      if (isAdmin) {
-        setShowHistoryModal(false);
-        navigate(`/operacao-adm?date=${dataIsoFormatada}`);
-        return;
-      }
-
-      const titleBusca = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day).toLocaleDateString('pt-BR', { 
-        day: '2-digit', month: '2-digit' 
-      });
-
-      const q = query(collection(db, 'usuarios', user.uid, 'elementos'), where('titulo', '==', titleBusca));
-      const snap = await getDocs(q);
-
-      if (!snap.empty) {
-        setShowHistoryModal(false);
-        navigate(`/elemento?id=${snap.docs[0].id}`);
-      } else {
-        alert(`Nenhum registro encontrado para o dia ${titleBusca}.`);
-      }
+      setShowHistoryModal(false);
+      
+      // Direciona para a página de operação forçando a data do passado na URL
+      const destino = isAdmin 
+        ? `/operacao-adm?date=${dataIsoFormatada}` 
+        : `/operacao?date=${dataIsoFormatada}`;
+        
+      navigate(destino);
     } catch (error) {
       alert("Erro ao buscar histórico.");
     } finally {
@@ -668,17 +658,21 @@ export default function PersonalDashboard({ user, isAdmin }) {
             </div>
           </div>
           <div className="hero-footer">
-            <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
-            <button 
-              className="btn-access hero-btn" 
-              onClick={() => {
-                const destino = isAdmin ? '/operacao-adm' : (todayElement ? `/elemento?id=${todayElement.id}` : '/operacao');
-                handleHeroNavigation(destino);
-              }}
-            >
-              {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
-            </button>
-          </div>
+                <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
+                <button 
+                  className="btn-access hero-btn" 
+                  onClick={() => {
+                    // Agora enviamos todos para a mesma estrutura, separando apenas a rota Master/Comum
+                    const destino = isAdmin 
+                      ? `/operacao-adm?date=${dataHojeLocal}` 
+                      : `/operacao?date=${dataHojeLocal}`;
+                    
+                    handleHeroNavigation(destino);
+                  }}
+                >
+                  {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
+                </button>
+              </div>
         </div>
       </div>
           {/* BLOCO 1: VOLUME ESTATÍSTICO MENSAL */}

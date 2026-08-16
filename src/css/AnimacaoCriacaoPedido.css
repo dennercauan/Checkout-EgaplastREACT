@@ -1,0 +1,190 @@
+/* src/css/AnimacaoCriacaoPedido.css */
+
+.op-activation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 15, 29, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: activationOverlayFade 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: all;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.op-activation-overlay * {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Glow Central */
+.activation-backdrop-glow {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, rgba(13, 50, 105, 0.2) 50%, transparent 70%);
+  border-radius: 50%;
+  animation: glowPulse 2.8s ease-out forwards;
+}
+
+/* Ondas de Choque Sônicas */
+.activation-shockwave {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(52, 211, 153, 0.6);
+  opacity: 0;
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+}
+
+.activation-shockwave.ring-1 {
+  animation: shockwaveExpand 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) 0.15s forwards;
+}
+.activation-shockwave.ring-2 {
+  animation: shockwaveExpand 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) 0.35s forwards;
+}
+.activation-shockwave.ring-3 {
+  animation: shockwaveExpand 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) 0.55s forwards;
+}
+
+/* Container do HUD */
+.activation-hud-core {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: hudScaleIn 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.activation-icon-halo {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 15px 35px -5px rgba(16, 185, 129, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  margin-bottom: 22px;
+}
+
+.activation-badge-live {
+  position: absolute;
+  bottom: -10px;
+  background: #0f172a;
+  border: 1px solid #34d399;
+  color: #34d399;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  text-transform: uppercase;
+}
+
+.radar-icon {
+  animation: radarBlink 0.9s infinite alternate ease-in-out;
+}
+
+.activation-text-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.activation-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.activation-romaneio-title {
+  font-size: 4rem;
+  font-weight: 900;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -1.8px;
+  line-height: 1.05;
+  text-shadow: 0 0 30px rgba(255, 255, 255, 0.25);
+}
+
+.activation-store-name {
+  font-size: 1.15rem;
+  color: #cbd5e1;
+  margin: 8px 0 26px 0;
+  font-weight: 600;
+  max-width: 480px;
+  letter-spacing: -0.2px;
+}
+
+/* Barra de Transição */
+.activation-energy-meter {
+  width: 260px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.energy-fill-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #34d399, #38bdf8);
+  transform: translateX(-100%);
+  animation: energyFill 2.5s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+/* Keyframes Refinados */
+@keyframes activationOverlayFade {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  85% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.03); pointer-events: none; }
+}
+
+@keyframes glowPulse {
+  0% { transform: scale(0.4); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+@keyframes shockwaveExpand {
+  0% { width: 40px; height: 40px; opacity: 1; }
+  100% { width: 620px; height: 620px; opacity: 0; transform: scale(1.1); }
+}
+
+@keyframes hudScaleIn {
+  0% { opacity: 0; transform: scale(0.88) translateY(24px); }
+  15% { opacity: 1; transform: scale(1) translateY(0); }
+  85% { opacity: 1; transform: scale(1); filter: brightness(1); }
+  100% { opacity: 0; transform: scale(0.94) translateY(-12px); filter: brightness(1.25); }
+}
+
+@keyframes energyFill {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(0%); }
+}
+
+@keyframes radarBlink {
+  0% { opacity: 0.3; }
+  100% { opacity: 1; }
+}

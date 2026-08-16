@@ -7,7 +7,7 @@ import { collection, collectionGroup, query, where, getDocs, doc, getDoc, onSnap
 import { 
   Search, Power, Loader2, MapPin, CheckCircle, Clock, ExternalLink, 
   ShieldAlert, AlertTriangle, SearchX, UserCircle, Settings, Palette, 
-  Image as ImageIcon, Camera, FileText, Factory, Package 
+  Camera, FileText 
 } from 'lucide-react';
 
 import logoEgaplast from '../img/egaplast.png';
@@ -67,7 +67,6 @@ export default function Navbar({ user, isAdmin }) {
     const root = document.documentElement;
 
     if (tema === 'dark') {
-      // MODO ESCURO (Black Absoluto com Hero em Titânio/Charcoal Metálico)
       root.style.setProperty('--bg-main', 'linear-gradient(145deg, #050505 0%, #0f0f13 50%, #18181b 100%)');
       root.style.setProperty('--bg-card', '#0e0e11');
       root.style.setProperty('--text-main', '#f8fafc');
@@ -79,7 +78,6 @@ export default function Navbar({ user, isAdmin }) {
       root.style.setProperty('color-scheme', 'dark');
       root.style.setProperty('--text-highlight', '#ffffff'); 
 
-      // DESTAQUE HERO CARD: Gradiente Cinza Titânio/Platina descendo para Carvão Profundo
       root.style.setProperty('--bg-hero', 'linear-gradient(140deg, #3f3f46 0%, #27272a 45%, #141417 100%)'); 
       root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.12)'); 
       root.style.setProperty('--hero-border', 'rgba(255, 255, 255, 0.22)');
@@ -87,7 +85,6 @@ export default function Navbar({ user, isAdmin }) {
     }
 
      else if (tema === 'dark-blue') {
-      // MODO AZUL ESCURO (Corporativo Navy)
       root.style.setProperty('--bg-main', 'linear-gradient(145deg, #020617 0%, #061124 50%, #0b1936 100%)');
       root.style.setProperty('--bg-card', '#0a1226');
       root.style.setProperty('--text-main', '#f8fafc');
@@ -104,7 +101,6 @@ export default function Navbar({ user, isAdmin }) {
       root.style.setProperty('--hero-shadow', '0 20px 40px -15px rgba(29, 78, 216, 0.4)');
 
     } else {
-      // MODO CLARO (Clean Slate)
       root.style.setProperty('--bg-main', 'linear-gradient(145deg, #e2e8f0 0%, #eef2f6 50%, #f8fafc 100%)');
       root.style.setProperty('--bg-card', '#ffffff');
       root.style.setProperty('--text-main', '#0f172a');
@@ -181,13 +177,15 @@ export default function Navbar({ user, isAdmin }) {
     setShowLogoutConfirm(false);
   };
 
-  // Função auxiliar para extrair string YYYY-MM-DD em FUSO LOCAL
+  // ==========================================
+  // EXTRAÇÃO PRECISA DA DATA DA OPERAÇÃO
+  // ==========================================
   const extrairDataIso = (docData) => {
-    if (docData.dataOperacao && typeof docData.dataOperacao === 'string' && docData.dataOperacao.includes('-')) {
-      return docData.dataOperacao.trim();
+    if (docData.dataOperacao && typeof docData.dataOperacao === 'string' && docData.dataOperacao.length >= 10) {
+      return docData.dataOperacao.substring(0, 10);
     }
 
-    const ts = docData.createdAt || docData.updatedAt || docData.completedAt || docData.primeiraEfetivacao;
+    const ts = docData.createdAt || docData.completedAt || docData.primeiraEfetivacao || docData.updatedAt;
     if (ts) {
       let dateObj = null;
       if (typeof ts.toDate === 'function') {
@@ -215,21 +213,17 @@ export default function Navbar({ user, isAdmin }) {
 
     setIsSearching(true);
     const termoExato = searchTerm.trim();
+    const termoNumero = Number(termoExato);
 
     try {
-      // 1. Busca na coleção principal 'pedidos'
-      const qPedidos = query(collection(db, 'pedidos'), where('romaneio', '==', termoExato));
+      // 1. Busca na coleção principal 'pedidos' (string ou número)
+      const qPedidos = query(collection(db, 'pedidos'), where('romaneio', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapPedidos = await getDocs(qPedidos);
 
       if (!snapPedidos.empty) {
         const docEncontrado = snapPedidos.docs[0];
         const data = docEncontrado.data();
         let dataFinal = extrairDataIso(data);
-
-        if (!dataFinal) {
-          const hoje = new Date();
-          dataFinal = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
-        }
 
         setSearchResult({
           tipo: 'Romaneio / Pedido',
@@ -244,18 +238,13 @@ export default function Navbar({ user, isAdmin }) {
       }
 
       // 2. Busca nas Ordens de Produção 'ordensProducao'
-      const qOps = query(collection(db, 'ordensProducao'), where('numero', '==', termoExato));
+      const qOps = query(collection(db, 'ordensProducao'), where('numero', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapOps = await getDocs(qOps);
 
       if (!snapOps.empty) {
         const docEncontrado = snapOps.docs[0];
         const dataOp = docEncontrado.data();
         let dataFinal = extrairDataIso(dataOp);
-
-        if (!dataFinal) {
-          const hoje = new Date();
-          dataFinal = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
-        }
 
         setSearchResult({
           tipo: 'Ordem de Produção (O.P.)',
@@ -274,7 +263,7 @@ export default function Navbar({ user, isAdmin }) {
       }
 
       // 3. Busca nas Pastas Legadas (pedidosMultiDocumento)
-      const qPedidosMulti = query(collectionGroup(db, 'pedidosMultiDocumento'), where('romaneio', '==', termoExato));
+      const qPedidosMulti = query(collectionGroup(db, 'pedidosMultiDocumento'), where('romaneio', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapMulti = await getDocs(qPedidosMulti);
 
       if (!snapMulti.empty) {
@@ -286,7 +275,6 @@ export default function Navbar({ user, isAdmin }) {
 
         let dataFinal = extrairDataIso(dataLegada);
 
-        // Se for legado e não tiver timestamp no pedido, busca o título da pasta (ex: "13/08")
         if (!dataFinal && uidDono && elemIdOriginal) {
           try {
             const elemSnap = await getDoc(doc(db, 'usuarios', uidDono, 'elementos', elemIdOriginal));
@@ -301,11 +289,6 @@ export default function Navbar({ user, isAdmin }) {
           } catch (errElem) {
             console.error("Erro ao buscar elemento pai:", errElem);
           }
-        }
-
-        if (!dataFinal) {
-          const hoje = new Date();
-          dataFinal = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
         }
 
         setSearchResult({ 
@@ -345,7 +328,6 @@ export default function Navbar({ user, isAdmin }) {
   return (
     <>
       <nav className="modern-navbar">
-        {/* LADO ESQUERDO: LOGO APENAS */}
         <div className="nav-brand" style={{ display: 'flex', alignItems: 'center' }}>
           <img 
             src={logoEgaplast} 
@@ -353,8 +335,8 @@ export default function Navbar({ user, isAdmin }) {
             className="nav-logo" 
             onClick={() => window.location.reload()}
             style={{ 
-              height: '60px',               /* <-- Adicione a altura aqui (ex: 40px, 42px ou 44px) */
-              width: 'auto',                /* Mantém a proporção correta sem distorcer */
+              height: '60px',
+              width: 'auto',
               objectFit: 'contain',
               cursor: 'pointer', 
               filter: 'var(--logo-filter, none)',
@@ -362,7 +344,6 @@ export default function Navbar({ user, isAdmin }) {
             }}
           />
         </div>
-        {/* LADO DIREITO: PESQUISA + DROPDOWN DE PERFIL */}
         <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           
           <form className="search-container" onSubmit={handleSearch} style={{ margin: 0 }}>
@@ -394,7 +375,6 @@ export default function Navbar({ user, isAdmin }) {
                 <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{isAdmin ? 'Administrador' : 'Conferente'}</span>
               </div>
 
-              {/* ÁREA DA FOTO DE PERFIL / INICIAL DO USUÁRIO */}
               {userProfile.photoURL ? (
                 <img 
                   src={userProfile.photoURL} 
@@ -479,8 +459,6 @@ export default function Navbar({ user, isAdmin }) {
             </div>
 
             <div style={{ padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              
-              {/* ÁREA DE FOTO DE PERFIL */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ position: 'relative' }}>
                   {formProfile.photoURL ? (
@@ -506,7 +484,6 @@ export default function Navbar({ user, isAdmin }) {
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>JPG ou PNG (Max 1MB)</span>
               </div>
 
-              {/* NICKNAME */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', marginBottom: '8px' }}>
                   Como quer ser chamado? (Nickname)
@@ -520,14 +497,11 @@ export default function Navbar({ user, isAdmin }) {
                 />
               </div>
 
-              {/* SELEÇÃO DE TEMA */}
               <div style={{ marginTop: '5px' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', marginBottom: '12px' }}>
                   <Palette size={14} style={{ display: 'inline', marginRight: '4px' }}/> Personalizar Cores da Plataforma
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                  
-                  {/* Option: Light */}
                   <div 
                     onClick={() => setFormProfile({...formProfile, theme: 'light'})}
                     style={{ border: `2px solid ${formProfile.theme === 'light' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'light' ? '#f0f9ff' : '#fff' }}
@@ -536,7 +510,6 @@ export default function Navbar({ user, isAdmin }) {
                     <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' }}>Claro (Padrão)</span>
                   </div>
 
-                  {/* Option: Dark Blue */}
                   <div 
                     onClick={() => setFormProfile({...formProfile, theme: 'dark-blue'})}
                     style={{ border: `2px solid ${formProfile.theme === 'dark-blue' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'dark-blue' ? '#eff6ff' : '#fff' }}
@@ -545,7 +518,6 @@ export default function Navbar({ user, isAdmin }) {
                     <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' }}>Azul Escuro</span>
                   </div>
 
-                  {/* Option: Dark */}
                   <div 
                     onClick={() => setFormProfile({...formProfile, theme: 'dark'})}
                     style={{ border: `2px solid ${formProfile.theme === 'dark' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'dark' ? '#f8fafc' : '#fff' }}
@@ -553,7 +525,6 @@ export default function Navbar({ user, isAdmin }) {
                     <div style={{ width: '100%', height: '40px', background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', marginBottom: '8px' }}></div>
                     <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' }}>Modo Escuro</span>
                   </div>
-
                 </div>
               </div>
 
@@ -718,32 +689,37 @@ export default function Navbar({ user, isAdmin }) {
                     Fechar
                   </button>
                   
+                  {/* ==========================================
+                      ROTEAMENTO BLINDADO DE RESULTADOS 
+                      ========================================== */}
                   <button 
                     className="btn-access-search" 
                     onClick={() => {
-                      const dataStr = searchResult.dataCalculada || searchResult.dataOperacao;
+                      const dataStr = searchResult.dataCalculada; 
                       const numRomaneio = String(searchResult.romaneio || searchResult.numero || '').trim();
 
                       fecharModal();
 
+                      const destinoUrl = isAdmin 
+                        ? `/operacao-adm?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`
+                        : `/operacao?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`;
+
                       if (isAdmin) {
-                        navigate(`/operacao-adm?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`);
+                        navigate(destinoUrl);
                         return;
                       }
 
+                      // Bloqueios de Segurança para Conferentes
                       const isOwner = searchResult.criadorUid === user.uid;
                       const isLinked = searchResult.uidsVinculados && searchResult.uidsVinculados.includes(user.uid);
                       
-                      if (!isOwner && !isLinked) {
+                      if (!isOwner && !isLinked && !searchResult.isOp) {
                         setShowAccessDenied(true); 
                         return;
                       }
 
-                      if (searchResult._isLegacy && searchResult.elementoId) {
-                        navigate(`/elemento?id=${searchResult.elementoId}`);
-                      } else {
-                        navigate(`/operacao?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`);
-                      }
+                      // Agora envia TODO mundo direto para a Operacao, garantindo a data e abandonando a rota legado /elemento
+                      navigate(destinoUrl);
                     }} 
                   >
                     Acessar Operação <ExternalLink size={16} />
