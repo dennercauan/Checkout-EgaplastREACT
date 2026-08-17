@@ -1,10 +1,10 @@
 // src/components/ModalDetalhesPedido.jsx
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Boxes, Info, X, Layers, Search, Loader2, UploadCloud, 
   PieChart, CheckCircle2, ArrowUpDown, ChevronDown, Copy, 
   Package, AlignLeft, Edit, FileText, Plus, Trash2, User,
-  Scale, AlertTriangle
+  Scale, AlertTriangle, Check
 } from 'lucide-react';
 
 export default function ModalDetalhesPedido({
@@ -52,7 +52,42 @@ export default function ModalDetalhesPedido({
   handleRemoveResponsavelFromDoc,
   handleSalvarEdicaoTab1
 }) {
+  const [dropdownPrincipalAberto, setDropdownPrincipalAberto] = useState(false);
+  const [dropdownParceiroAberto, setDropdownParceiroAberto] = useState(null);
+
+  const refDropdownPrincipal = useRef(null);
+  const refDropdownParceiro = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (refDropdownPrincipal.current && !refDropdownPrincipal.current.contains(event.target)) {
+        setDropdownPrincipalAberto(false);
+      }
+      if (refDropdownParceiro.current && !refDropdownParceiro.current.contains(event.target)) {
+        setDropdownParceiroAberto(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   if (!showDetalhesModal || !pedidoModal) return null;
+
+  const listaUsuarios = [];
+  if (localUser?.email && !usuarios.some(u => u.email === String(localUser.email).toLowerCase().trim())) {
+    listaUsuarios.push({
+      email: String(localUser.email).toLowerCase().trim(),
+      nome: String(localUser.email).split('@')[0].toLowerCase()
+    });
+  }
+  usuarios.forEach(u => {
+    listaUsuarios.push({
+      email: u.email,
+      nome: u.email.split('@')[0]
+    });
+  });
+
+  const usuarioPrincipalSelecionado = listaUsuarios.find(u => u.email === docResponsavel);
 
   let detalheSkus = 0;
   const cxMapDetalhe = {};
@@ -242,7 +277,7 @@ export default function ModalDetalhesPedido({
                   }) : [];
 
                   return (
-                    <div key={dIdx} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
+                    <div key={`master-doc-${doc.id || doc.idTemp || dIdx}`} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px' }}>
                         <h4 style={{ color: 'var(--text-highlight, #38bdf8)', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 800 }}>
                           <Layers size={22} color="var(--text-highlight, #38bdf8)" /> {doc.tipo} 
@@ -250,7 +285,7 @@ export default function ModalDetalhesPedido({
                         </h4>
                       </div>
 
-                      {/* RELATÓRIO PERSISTENTE DE AUDITORIA (SE JÁ EFETIVADO) */}
+                      {/* RELATÓRIO PERSISTENTE DE AUDITORIA */}
                       {doc.auditoria && doc.auditoria.itens && doc.auditoria.itens.length > 0 && (
                         <div style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
@@ -294,7 +329,7 @@ export default function ModalDetalhesPedido({
                               </thead>
                               <tbody>
                                 {doc.auditoria.itens.map((it, iIdx) => (
-                                  <tr key={iIdx} style={{ borderBottom: '1px dashed var(--border-color)', background: it.status !== 'correto' && it.diffQtd !== 0 ? 'rgba(239, 68, 68, 0.04)' : 'transparent' }}>
+                                  <tr key={`auditoria-item-${it.tipoCaixa || iIdx}`} style={{ borderBottom: '1px dashed var(--border-color)', background: it.status !== 'correto' && it.diffQtd !== 0 ? 'rgba(239, 68, 68, 0.04)' : 'transparent' }}>
                                     <td style={{ padding: '8px 10px', fontWeight: 800, color: 'var(--text-highlight, #38bdf8)' }}>
                                       {it.tipoCaixa}
                                     </td>
@@ -378,7 +413,7 @@ export default function ModalDetalhesPedido({
                                     <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
                                       {Object.keys(resumoTiposCaixa).length === 0 ? <span style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>Nenhuma caixa projetada.</span> : ''}
                                       {Object.keys(resumoTiposCaixa).map(k => (
-                                        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '8px 0', borderBottom: '1px dashed var(--border-color)' }}>
+                                        <div key={`master-pre-resumo-${k}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '8px 0', borderBottom: '1px dashed var(--border-color)' }}>
                                           <strong style={{ color: 'var(--text-main)' }}>{k}</strong>
                                           <span>{resumoTiposCaixa[k].qtd} un <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>|</span> <strong style={{ color: '#10b981' }}>{resumoTiposCaixa[k].peso.toFixed(1)}kg</strong></span>
                                         </div>
@@ -437,7 +472,7 @@ export default function ModalDetalhesPedido({
                                     const isExpanded = skusExpandidos[`${dIdx}-${sku.ref}`];
 
                                     return (
-                                      <React.Fragment key={i}>
+                                      <React.Fragment key={`sku-row-group-${sku.ref}-${i}`}>
                                         <tr style={{ borderBottom: '1px solid var(--border-color)', background: sku.isMissing ? 'rgba(239, 68, 68, 0.08)' : (isExpanded ? 'var(--bg-input)' : 'transparent'), transition: 'background 0.2s' }}>
                                           <td style={{ padding: '15px 20px' }}>
                                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
@@ -468,7 +503,7 @@ export default function ModalDetalhesPedido({
                                                     if (eanToCopy !== 'EAN-NÃO-CADASTRADO') { navigator.clipboard.writeText(eanToCopy); } else { alert('O campo "codigoBarras" não foi encontrado nesta variação ou produto.'); }
                                                     const spanRef = e.currentTarget;
                                                     spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-                                                    setTimeout(() => { spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }, 1500);
+                                                    setTimeout(() => { spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }, 1500);
                                                   }} style={{ cursor: 'pointer', display: 'flex', padding: '4px', background: 'var(--bg-input)', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                                                   <Copy size={15} color="var(--secondary)" />
                                                 </span>
@@ -504,7 +539,7 @@ export default function ModalDetalhesPedido({
                                             ) : (
                                               sku.variacoesDisponiveis && sku.variacoesDisponiveis.length > 1 ? (
                                                 <select value={sku.variacaoSelecionadaIdx || 0} onChange={(e) => handleMudarVariacao(dIdx, sku.ref, parseInt(e.target.value))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.78rem', outline: 'none', color: 'var(--text-main)', width: '100%', maxWidth: '200px', background: 'var(--bg-input)', cursor: 'pointer' }}>
-                                                  {sku.variacoesDisponiveis.map((v, vIdx) => ( <option key={vIdx} value={vIdx}> {v.caixa} / {v.quantidade} un / {v.peso}kg </option> ))}
+                                                  {sku.variacoesDisponiveis.map((v, vIdx) => ( <option key={`var-opt-${v.caixa}-${v.quantidade}-${vIdx}`} value={vIdx}> {v.caixa} / {v.quantidade} un / {v.peso}kg </option> ))}
                                                 </select>
                                               ) : (
                                                 <span style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>Padrão Único</span>
@@ -559,7 +594,7 @@ export default function ModalDetalhesPedido({
                                                 ) : (
                                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
                                                      {caixasParaExibir.map((cx, cIdx) => (
-                                                       <div key={cIdx} style={{ background: 'var(--bg-card)', border: `1px solid var(--border-color)`, borderLeft: `4px solid ${cx.real ? '#10b981' : '#0ea5e9'}`, borderRadius: '8px', padding: '12px 15px' }}>
+                                                       <div key={`master-box-item-${cx.titulo}-${cIdx}`} style={{ background: 'var(--bg-card)', border: `1px solid var(--border-color)`, borderLeft: `4px solid ${cx.real ? '#10b981' : '#0ea5e9'}`, borderRadius: '8px', padding: '12px 15px' }}>
                                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '6px' }}>{cx.titulo}</div>
                                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                                            <div style={{ fontSize: '1.25rem', fontWeight: '900', color: 'var(--text-main)', lineHeight: '1' }}>{cx.qtd} <span style={{fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-muted)'}}>un</span></div>
@@ -628,19 +663,92 @@ export default function ModalDetalhesPedido({
                         <FileText size={18} color="var(--text-muted)"/> Documentos
                       </strong>
                       
-                      <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexShrink: 0 }}>
-                        <select value={docTipo} onChange={(e) => setDocTipo(e.target.value)} disabled={isSaving} style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.88rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)' }}>
-                          <option value="Nota Fiscal">Nota Fiscal</option>
-                          <option value="Minuta">Minuta</option>
-                          <option value="Bonificação">Bonificação</option>
-                          <option value="Troca">Troca</option>
+                      {/* 1. SELETOR DE RESPONSÁVEL PRINCIPAL (CUSTOMIZADO) */}
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexShrink: 0, alignItems: 'flex-start' }}>
+                        <select value={docTipo} onChange={(e) => setDocTipo(e.target.value)} disabled={isSaving} style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.88rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)' }}>
+                          <option value="Nota Fiscal" style={{ background: 'var(--bg-card)', color: 'var(--text-main)' }}>Nota Fiscal</option>
+                          <option value="Minuta" style={{ background: 'var(--bg-card)', color: 'var(--text-main)' }}>Minuta</option>
+                          <option value="Bonificação" style={{ background: 'var(--bg-card)', color: 'var(--text-main)' }}>Bonificação</option>
+                          <option value="Troca" style={{ background: 'var(--bg-card)', color: 'var(--text-main)' }}>Troca</option>
                         </select>
-                        <select value={docResponsavel} onChange={(e) => setDocResponsavel(e.target.value)} disabled={isSaving} style={{ flex: 1.5, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.88rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)' }}>
-                          <option value="">Responsável...</option>
-                          {localUser?.email && !usuarios.some(u => u.email === String(localUser.email).toLowerCase().trim()) && (<option value={String(localUser.email).toLowerCase().trim()}>{String(localUser.email).split('@')[0].toLowerCase()}</option>)}
-                          {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
-                        </select>
-                        <button onClick={handleAddDoc} disabled={isSaving} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '9px 14px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+
+                        <div style={{ flex: 1.5, position: 'relative' }} ref={refDropdownPrincipal}>
+                          <div 
+                            onClick={() => !isSaving && setDropdownPrincipalAberto(!dropdownPrincipalAberto)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-color)',
+                              background: 'var(--bg-input)',
+                              color: usuarioPrincipalSelecionado ? 'var(--text-main)' : 'var(--text-muted)',
+                              cursor: 'pointer',
+                              fontSize: '0.88rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {usuarioPrincipalSelecionado ? usuarioPrincipalSelecionado.nome : 'Responsável...'}
+                            </span>
+                            <ChevronDown size={16} color="var(--text-muted)" style={{ transform: dropdownPrincipalAberto ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, marginLeft: '6px' }} />
+                          </div>
+
+                          {dropdownPrincipalAberto && (
+                            <div style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 4px)',
+                              left: 0,
+                              right: 0,
+                              background: 'var(--bg-card, #0f172a)',
+                              border: '1px solid var(--border-color, #334155)',
+                              borderRadius: '10px',
+                              boxShadow: '0 10px 25px rgba(0,0,0,0.6)',
+                              zIndex: 1000,
+                              maxHeight: '260px',
+                              overflowY: 'auto',
+                              padding: '4px'
+                            }}>
+                              {listaUsuarios.map((u, uIdx) => {
+                                const isSelected = u.email === docResponsavel;
+                                return (
+                                  <div
+                                    key={`user-main-opt-${u.email || u.uid || uIdx}`}
+                                    onClick={() => {
+                                      setDocResponsavel(u.email);
+                                      setDropdownPrincipalAberto(false);
+                                    }}
+                                    style={{
+                                      padding: '8px 12px',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      background: isSelected ? 'var(--primary, #0d3269)' : 'transparent',
+                                      color: isSelected ? '#ffffff' : 'var(--text-main, #f8fafc)',
+                                      fontSize: '0.85rem',
+                                      fontWeight: isSelected ? '700' : 'normal',
+                                      transition: 'background 0.15s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isSelected) e.currentTarget.style.background = 'var(--bg-input, rgba(255,255,255,0.06))';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isSelected) e.currentTarget.style.background = 'transparent';
+                                    }}
+                                  >
+                                    <span>{u.nome}</span>
+                                    {isSelected && <Check size={14} color="#10b981" />}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        <button onClick={handleAddDoc} disabled={isSaving} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                           <Plus size={16}/>
                         </button>
                       </div>
@@ -649,8 +757,8 @@ export default function ModalDetalhesPedido({
                         {docsTemporarios.length === 0 ? (
                           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Nenhum documento.</span>
                         ) : (
-                          docsTemporarios.map(doc => (
-                            <div key={doc.idTemp} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem', padding: '12px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          docsTemporarios.map((doc, docIdx) => (
+                            <div key={`doc-temp-item-${doc.idTemp || doc.id || docIdx}`} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem', padding: '12px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{doc.tipo}</span>
                                 <button onClick={() => handleRemoveDoc(doc.idTemp)} disabled={isSaving} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px' }}>
@@ -659,20 +767,77 @@ export default function ModalDetalhesPedido({
                               </div>
                               
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                                {(doc.responsaveis || [doc.responsavel]).filter(Boolean).map(resp => (
-                                  <span key={resp} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '4px 9px', borderRadius: '12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                                {(doc.responsaveis || [doc.responsavel]).filter(Boolean).map((resp, rIdx) => (
+                                  <span key={`resp-pill-${doc.idTemp || docIdx}-${resp}-${rIdx}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '4px 9px', borderRadius: '12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
                                     <User size={11}/> {resp.split('@')[0]}
                                     <button onClick={() => handleRemoveResponsavelFromDoc(doc.idTemp, resp)} disabled={isSaving} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex' }}><X size={12}/></button>
                                   </span>
                                 ))}
-                                <select 
-                                  onChange={(e) => { handleAddResponsavelToDoc(doc.idTemp, e.target.value); e.target.value = ""; }} 
-                                  disabled={isSaving} 
-                                  style={{ fontSize: '0.75rem', padding: '4px 8px', borderRadius: '8px', border: '1px dashed var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer' }}
-                                >
-                                  <option value="">+ Add Parceiro</option>
-                                  {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
-                                </select>
+
+                                {/* 2. SELETOR "+ ADD PARCEIRO" (CUSTOMIZADO) */}
+                                <div style={{ position: 'relative' }} ref={dropdownParceiroAberto === doc.idTemp ? refDropdownParceiro : null}>
+                                  <div
+                                    onClick={() => !isSaving && setDropdownParceiroAberto(dropdownParceiroAberto === doc.idTemp ? null : doc.idTemp)}
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      padding: '4px 8px',
+                                      borderRadius: '8px',
+                                      border: '1px dashed var(--border-color)',
+                                      background: 'var(--bg-card)',
+                                      color: 'var(--text-muted)',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    <span>+ Add Parceiro</span>
+                                    <ChevronDown size={12} color="var(--text-muted)" />
+                                  </div>
+
+                                  {dropdownParceiroAberto === doc.idTemp && (
+                                    <div style={{
+                                      position: 'absolute',
+                                      top: 'calc(100% + 4px)',
+                                      left: 0,
+                                      background: 'var(--bg-card, #0f172a)',
+                                      border: '1px solid var(--border-color, #334155)',
+                                      borderRadius: '10px',
+                                      boxShadow: '0 10px 25px rgba(0,0,0,0.6)',
+                                      zIndex: 1000,
+                                      maxHeight: '200px',
+                                      width: '160px',
+                                      overflowY: 'auto',
+                                      padding: '4px'
+                                    }}>
+                                      {listaUsuarios.map((u, pIdx) => (
+                                        <div
+                                          key={`parceiro-opt-${doc.idTemp || docIdx}-${u.email || pIdx}`}
+                                          onClick={() => {
+                                            handleAddResponsavelToDoc(doc.idTemp, u.email);
+                                            setDropdownParceiroAberto(null);
+                                          }}
+                                          style={{
+                                            padding: '7px 10px',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            color: 'var(--text-main, #f8fafc)',
+                                            fontSize: '0.8rem',
+                                            transition: 'background 0.15s'
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = 'var(--bg-input, rgba(255,255,255,0.06))';
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = 'transparent';
+                                          }}
+                                        >
+                                          {u.nome}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           ))
@@ -729,7 +894,7 @@ export default function ModalDetalhesPedido({
                         </div>
                       ) : (
                         resumoOrdenadoComum.map((k, idx) => (
-                          <div key={idx} style={{ fontSize: '0.88rem', color: 'var(--text-main)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-input)', padding: '12px 14px', borderRadius: '8px', border: `1px solid ${k.isBonif ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)'}` }}>
+                          <div key={`resumo-comum-item-${k.originalName}-${idx}`} style={{ fontSize: '0.88rem', color: 'var(--text-main)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-input)', padding: '12px 14px', borderRadius: '8px', border: `1px solid ${k.isBonif ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)'}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <strong style={{color: k.isBonif ? '#f87171' : 'var(--text-highlight, #38bdf8)'}}>{k.originalName}</strong> 
                               <span style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>({k.peso.toFixed(2)} kg)</span>
@@ -791,7 +956,7 @@ export default function ModalDetalhesPedido({
                     );
 
                     return (
-                      <div key={dIdx} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
+                      <div key={`doc-card-${doc.id || doc.idTemp || dIdx}`} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
                         
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
                           <h4 style={{ color: 'var(--text-highlight, #38bdf8)', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 800 }}>
@@ -849,7 +1014,7 @@ export default function ModalDetalhesPedido({
                                   skusFiltrados.map((sku, i) => {
                                     const isExpanded = skusExpandidosComum[`${dIdx}-${sku.ref}`];
                                     return (
-                                      <React.Fragment key={i}>
+                                      <React.Fragment key={`sku-comum-group-${sku.ref}-${i}`}>
                                         <tr style={{ borderBottom: '1px solid var(--border-color)', background: isExpanded ? 'var(--bg-input)' : 'transparent' }}>
                                           <td style={{ padding: '15px 20px' }}>
                                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
@@ -876,7 +1041,7 @@ export default function ModalDetalhesPedido({
                                               </div>
                                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
                                                 {sku.caixasDetalhadas.map((detalhe, cIdx) => (
-                                                  <div key={cIdx} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: '4px solid #10b981', borderRadius: '8px', padding: '12px' }}>
+                                                  <div key={`box-detalhe-${detalhe.idUnico}-${cIdx}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: '4px solid #10b981', borderRadius: '8px', padding: '12px' }}>
                                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={detalhe.idUnico}>
                                                       <strong style={{ color: 'var(--text-muted)' }}>ID WMS:</strong> {detalhe.idUnico}
                                                     </div>

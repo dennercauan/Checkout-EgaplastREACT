@@ -43,89 +43,98 @@ export default function AdmEstatisticasGerais({ dados, dataFiltro, pedidos = [] 
     };
   }, [pedidos, dados]);
 
+  const cardStyle = {
+    background: 'var(--bg-card, #ffffff)',
+    border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+    padding: '14px 16px',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+    transition: 'all 0.25s ease'
+  };
+
   return (
     <div style={{ marginBottom: '15px' }}>
       
-      {/* GRID COMPACTO */}
+      {/* GRID COMPACTO REATIVO */}
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', 
         gap: '12px' 
       }}>
         
-        {/* CARD 1: TOTAL PEDIDOS (Apenas NFs e Minutas - Em aberto e Finalizados) */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #8b5cf6', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        {/* CARD 1: TOTAL PEDIDOS */}
+        <div style={{ ...cardStyle, borderLeft: '4px solid #8b5cf6' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>PEDIDOS (NF/MIN)</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totalPedidosValidos}</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>PEDIDOS (NF/MIN)</p>
+              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totalPedidosValidos}</h2>
             </div>
-            <div style={{ background: '#ede9fe', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ShoppingCart size={18} color="#8b5cf6" />
             </div>
           </div>
         </div>
 
         {/* CARD 2: TOTAL DE CAIXAS */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #06b6d4', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #06b6d4' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>TOTAL DE CAIXAS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totalCaixasGerais}</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>TOTAL DE CAIXAS</p>
+              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totalCaixasGerais}</h2>
             </div>
-            <div style={{ background: '#cffafe', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: 'rgba(6, 182, 212, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Boxes size={18} color="#06b6d4" />
             </div>
           </div>
         </div>
 
         {/* CARD 3: TOTAL DE SKUs BIPADOS */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #3b82f6', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #3b82f6' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>SKUs BIPADOS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totais.skus}</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>SKUs BIPADOS</p>
+              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totais.skus}</h2>
             </div>
-            <div style={{ background: '#eff6ff', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: 'rgba(59, 130, 246, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Package size={18} color="#3b82f6" />
             </div>
           </div>
         </div>
 
         {/* CARD 4: ORDENS DE PRODUÇÃO */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #10b981', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #10b981' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>ORDENS DE PRODUÇÃO</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totais.op}</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>ORDENS DE PRODUÇÃO</p>
+              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totais.op}</h2>
             </div>
-            <div style={{ background: '#ecfdf5', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FileText size={18} color="#10b981" />
             </div>
           </div>
         </div>
 
         {/* CARD 5: PONTUAÇÃO DA EQUIPE */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #f59e0b', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #f59e0b' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>PONTUAÇÃO EQUIPE</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#0f172a', fontSize: '1.4rem' }}>{totais.pontos.toFixed(0)}</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>PONTUAÇÃO EQUIPE</p>
+              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totais.pontos.toFixed(0)}</h2>
             </div>
-            <div style={{ background: '#fffbeb', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Award size={18} color="#f59e0b" />
             </div>
           </div>
         </div>
 
         {/* CARD 6: PONTOS PERDIDOS (OCIOSIDADE) */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', borderLeft: '4px solid #ef4444', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        <div style={{ ...cardStyle, borderLeft: '4px solid #ef4444' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold' }}>PONTOS PERDIDOS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#ef4444', fontSize: '1.4rem' }}>{totais.decrescimo.toFixed(0)}</h2>
+              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>PONTOS PERDIDOS</p>
+              <h2 style={{ margin: '4px 0 0 0', color: '#ef4444', fontSize: '1.45rem', fontWeight: 800 }}>{totais.decrescimo.toFixed(0)}</h2>
             </div>
-            <div style={{ background: '#fef2f2', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: 'rgba(239, 68, 68, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingDown size={18} color="#ef4444" />
             </div>
           </div>

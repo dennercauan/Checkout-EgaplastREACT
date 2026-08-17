@@ -10,7 +10,8 @@ export default function RankingDiario({
   currentTime,
   dataOperacaoAtiva,
   onDeleteEvent,
-  isAdminMode
+  isAdminMode,
+  usuarios = []
 }) {
   const [modalUser, setModalUser] = useState(null);
   const [eventoSelecionado, setEventoSelecionado] = useState(null);
@@ -155,111 +156,197 @@ export default function RankingDiario({
           <span className="ranking-subtitle">Top Conferentes do Dia</span>
         </div>
         <div className="ranking-list">
-          {rankingCalculado?.filter(user => user && user.uid).map((user, idx) => (
-            <div key={`${user.uid}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              
-              <div 
-                className={`ranking-item ${idx === 0 ? 'first-place' : ''}`}
-                onClick={() => setRankingExpandido(rankingExpandido === user.uid ? null : user.uid)}
-                style={{ cursor: 'pointer', transition: 'all 0.2s' }}
-              >
-                <div className="ranking-pos">{idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}</div>
-                <div className="ranking-avatar"><div className="avatar-circle">{user.nome.charAt(0)}</div></div>
-                <div className="ranking-info">
-                  <strong className="ranking-name">{user.nome}</strong>
-                  <div className="ranking-metrics">
-                    <span><CheckCircle2 size={12}/> {user.skus} SKUs</span>
-                    <span><Factory size={12}/> {user.op} O.P.s</span>
+          {rankingCalculado?.filter(user => user && (user.uid || user.email || user.nome)).map((user, idx) => {
+            // Cruzamento inteligente e sanitizado com a lista de usuários
+            const userEmailLimpo = String(user.email || '').toLowerCase().trim();
+            const userNomeLimpo = String(user.nome || '').toLowerCase().trim();
+            
+            const userRef = (usuarios || []).find(u => {
+              const uEmail = String(u.email || '').toLowerCase().trim();
+              const uNome = String(u.nickname || u.email?.split('@')[0] || '').toLowerCase().trim();
+              return (
+                (u.uid && user.uid && u.uid === user.uid) ||
+                (uEmail && userEmailLimpo && uEmail === userEmailLimpo) ||
+                (uNome && userNomeLimpo && uNome === userNomeLimpo)
+              );
+            });
+
+            // Recupera a foto em qualquer formato armazenado
+            const userPhoto = user.photoURL || user.foto || user.avatar || userRef?.photoURL || userRef?.foto || null;
+
+            return (
+              <div key={`${user.uid || user.email || idx}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                
+                <div 
+                  className={`ranking-item ${idx === 0 ? 'first-place' : ''}`}
+                  onClick={() => setRankingExpandido(rankingExpandido === user.uid ? null : user.uid)}
+                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                  <div className="ranking-pos">
+                    {idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}
                   </div>
-                </div>
-                <div className="ranking-score">
-                  <div className="score-value">{user.pontos.toLocaleString()} pts</div>
-                  <div className="score-bar"><div className="score-fill" style={{width: `${(user.pontos / (rankingCalculado[0]?.pontos || 1)) * 100}%`}}></div></div>
-                </div>
-              </div>
-              
-              {rankingExpandido === user.uid && (
-                <div style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px 14px 12px 14px', fontSize: '0.85rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '35px', marginRight: '10px' }}>
                   
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>📦 SKUs (Max 300 pts/cx):</span> 
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                       <strong>{user.pontosSku || 0} pts</strong>
-                    </div>
+  
+                  {/* AVATAR COM FOTO / FALLBACK DE INICIAIS */}
+                  <div className="ranking-avatar" style={{ width: '38px', height: '38px', position: 'relative', flexShrink: 0 }}>
+                    {(() => {
+                      const emailLimpo = String(user.email || '').toLowerCase().trim();
+                      const nomeLimpo = String(user.nome || '').toLowerCase().trim();
+                      
+                      // Cruzamento agressivo para achar a foto independente se está logado como nickname ou email
+                      const userRef = (usuarios || []).find(u => {
+                        const uEmail = String(u.email || '').toLowerCase().trim();
+                        const uPrefix = uEmail.split('@')[0];
+                        const uNome = String(u.nickname || '').toLowerCase().trim();
+
+                        return (
+                          (user.uid && u.uid === user.uid) ||
+                          (emailLimpo && uEmail === emailLimpo) ||
+                          (nomeLimpo && uEmail === nomeLimpo) ||
+                          (nomeLimpo && uPrefix === nomeLimpo) ||
+                          (nomeLimpo && uNome === nomeLimpo)
+                        );
+                      });
+
+                      const fotoFinal = user.photoURL || userRef?.photoURL || userRef?.foto;
+
+                      return (
+                        <>
+                          {fotoFinal && (
+                            <img 
+                              src={fotoFinal} 
+                              alt={user.nome || 'Avatar'} 
+                              onError={(e) => {
+                                // Se o Base64/link falhar, esconde a imagem e revela a inicial
+                                e.currentTarget.style.display = 'none';
+                                if (e.currentTarget.nextSibling) {
+                                  e.currentTarget.nextSibling.style.display = 'flex';
+                                }
+                              }}
+                              style={{ 
+                                width: '100%', 
+                                height: '100%', 
+                                borderRadius: '50%', 
+                                objectFit: 'cover', 
+                                border: `2px solid ${idx === 0 ? '#eab308' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : 'var(--border-color, rgba(255,255,255,0.15))'}` 
+                              }} 
+                            />
+                          )}
+                          <div 
+  className="avatar-circle" 
+  style={{ 
+    display: fotoFinal ? 'none' : 'flex',
+    width: '100%', 
+    height: '100%', 
+    borderRadius: '50%', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    fontWeight: 800 
+  }}
+>
+  {user.nome ? user.nome.charAt(0).toUpperCase() : 'U'}
+</div>
+                        </>
+                      );
+                    })()}
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>🚀 Bônus (Pedidos):</span> 
-                    <strong style={{ color: '#10b981' }}>+{user.bonusPedidos || 0} pts</strong>
-                  </div>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>🏭 O.P.s ({user.op}):</span> 
-                    <strong style={{ color: 'var(--text-highlight, #38bdf8)' }}>+{user.op * 50} pts</strong>
-                  </div>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: '8px', marginTop: '4px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-main)' }}>⏱️ Penalidade (Ociosidade):</span> 
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                       <strong style={{ color: '#ef4444' }}>-{user.decrescimo} pts</strong>
-                       {user.decrescimo > 0 && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{user.decrescimo / 10} min em atraso</span>}
+                  <div className="ranking-info">
+                    <strong className="ranking-name">{user.nome}</strong>
+                    <div className="ranking-metrics">
+                      <span><CheckCircle2 size={12}/> {user.skus} SKUs</span>
+                      <span><Factory size={12}/> {user.op} O.P.s</span>
                     </div>
                   </div>
-                  
-                  {renderTimeline(user)}
-                  
-                  {user.chartData && user.chartData.length > 0 && (
-                    <div style={{ marginTop: '15px', borderTop: '1px dashed var(--border-color)', paddingTop: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                          <TrendingUp size={16} color="var(--text-highlight, #38bdf8)" /> Gráfico de Evolução Diária
-                        </div>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setModalUser(user); }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-card)', color: 'var(--text-highlight, #38bdf8)', border: '1px solid var(--border-color)', padding: '5px 10px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 'bold', cursor: 'pointer' }}
-                          title="Ampliar gráfico"
-                        >
-                          <Maximize2 size={12} /> Ampliar
-                        </button>
-                      </div>
-                      
-                      <div 
-                        style={{ width: '100%', height: '180px', marginLeft: '-15px', cursor: 'zoom-in' }}
-                        onClick={(e) => { e.stopPropagation(); setModalUser(user); }}
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={user.chartData} margin={{ top: 25, right: 15, left: 0, bottom: 25 }}>
-                            <defs>
-                              <linearGradient id={`colorEvolucao_${user.uid}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="var(--text-highlight, #38bdf8)" stopOpacity={0.4}/>
-                                <stop offset="95%" stopColor="var(--text-highlight, #38bdf8)" stopOpacity={0}/>
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.6} />
-                            <XAxis 
-                              dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']} 
-                              tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                              tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={20} 
-                            />
-                            <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={40} />
-                            <RechartsTooltip content={<EvolucaoTooltip />} wrapperStyle={{ pointerEvents: 'none' }} cursor={{ stroke: 'var(--border-color)', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                            
-                            <Area 
-                              type="linear" dataKey="score" stroke="var(--text-highlight, #0284c7)" strokeWidth={2} fillOpacity={1} 
-                              fill={`url(#colorEvolucao_${user.uid})`} 
-                              dot={(props) => <CustomLabelDot {...props} onDeleteEvent={onDeleteEvent} isAdminMode={isAdminMode} />}
-                              activeDot={(props) => <CustomLabelDot {...props} onDeleteEvent={onDeleteEvent} isAdminMode={isAdminMode} isActive={true} />}
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  )}
-                  
+                  <div className="ranking-score">
+                    <div className="score-value">{user.pontos.toLocaleString()} pts</div>
+                    <div className="score-bar"><div className="score-fill" style={{width: `${(user.pontos / (rankingCalculado[0]?.pontos || 1)) * 100}%`}}></div></div>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+                
+                {rankingExpandido === user.uid && (
+                  <div style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px 14px 12px 14px', fontSize: '0.85rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '35px', marginRight: '10px' }}>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>📦 SKUs (Max 300 pts/cx):</span> 
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <strong>{user.pontosSku || 0} pts</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>🚀 Bônus (Pedidos):</span> 
+                      <strong style={{ color: '#10b981' }}>+{user.bonusPedidos || 0} pts</strong>
+                    </div>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>🏭 O.P.s ({user.op}):</span> 
+                      <strong style={{ color: 'var(--text-highlight, #38bdf8)' }}>+{user.op * 50} pts</strong>
+                    </div>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: '8px', marginTop: '4px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-main)' }}>⏱️ Penalidade (Ociosidade):</span> 
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <strong style={{ color: '#ef4444' }}>-{user.decrescimo} pts</strong>
+                        {user.decrescimo > 0 && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{user.decrescimo / 10} min em atraso</span>}
+                      </div>
+                    </div>
+                    
+                    {renderTimeline(user)}
+                    
+                    {user.chartData && user.chartData.length > 0 && (
+                      <div style={{ marginTop: '15px', borderTop: '1px dashed var(--border-color)', paddingTop: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                            <TrendingUp size={16} color="var(--text-highlight, #38bdf8)" /> Gráfico de Evolução Diária
+                          </div>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setModalUser(user); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-card)', color: 'var(--text-highlight, #38bdf8)', border: '1px solid var(--border-color)', padding: '5px 10px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            title="Ampliar gráfico"
+                          >
+                            <Maximize2 size={12} /> Ampliar
+                          </button>
+                        </div>
+                        
+                        <div 
+                          style={{ width: '100%', height: '180px', marginLeft: '-15px', cursor: 'zoom-in' }}
+                          onClick={(e) => { e.stopPropagation(); setModalUser(user); }}
+                        >
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={user.chartData} margin={{ top: 25, right: 15, left: 0, bottom: 25 }}>
+                              <defs>
+                                <linearGradient id={`colorEvolucao_${user.uid}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="var(--text-highlight, #38bdf8)" stopOpacity={0.4}/>
+                                  <stop offset="95%" stopColor="var(--text-highlight, #38bdf8)" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" opacity={0.6} />
+                              <XAxis 
+                                dataKey="timestamp" type="number" scale="time" domain={['dataMin', 'dataMax']} 
+                                tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={20} 
+                              />
+                              <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={40} />
+                              <RechartsTooltip content={<EvolucaoTooltip />} wrapperStyle={{ pointerEvents: 'none' }} cursor={{ stroke: 'var(--border-color)', strokeWidth: 1, strokeDasharray: '3 3' }} />
+                              
+                              <Area 
+                                type="linear" dataKey="score" stroke="var(--text-highlight, #0284c7)" strokeWidth={2} fillOpacity={1} 
+                                fill={`url(#colorEvolucao_${user.uid})`} 
+                                dot={(props) => <CustomLabelDot {...props} onDeleteEvent={onDeleteEvent} isAdminMode={isAdminMode} />}
+                                activeDot={(props) => <CustomLabelDot {...props} onDeleteEvent={onDeleteEvent} isAdminMode={isAdminMode} isActive={true} />}
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                    
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

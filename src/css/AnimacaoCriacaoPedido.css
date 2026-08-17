@@ -1,190 +1,166 @@
-/* src/css/AnimacaoCriacaoPedido.css */
-
+/* ==========================================
+   ANIMACAO CRIACAO PEDIDO (HUD CINEMATOGRÁFICO)
+   ========================================== */
 .op-activation-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000000;
+  z-index: 9999999;
+  background: var(--bg-main, #050507);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 15, 29, 0.88);
+  overflow: hidden;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  animation: activationOverlayFade 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  pointer-events: all;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-.op-activation-overlay * {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+.op-activation-overlay.fade-in {
+  animation: hudFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Glow Central */
+.op-activation-overlay.fade-out {
+  animation: hudFadeOut 0.5s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+@keyframes hudFadeIn {
+  from { opacity: 0; transform: scale(1.04); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes hudFadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+
 .activation-backdrop-glow {
   position: absolute;
-  width: 520px;
-  height: 520px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, rgba(13, 50, 105, 0.2) 50%, transparent 70%);
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.22) 0%, rgba(13, 50, 105, 0.05) 50%, transparent 70%);
   border-radius: 50%;
-  animation: glowPulse 2.8s ease-out forwards;
+  pointer-events: none;
+  animation: glowPulse 2s ease-in-out infinite;
 }
 
-/* Ondas de Choque Sônicas */
-.activation-shockwave {
-  position: absolute;
-  border-radius: 50%;
-  border: 2px solid rgba(52, 211, 153, 0.6);
-  opacity: 0;
-  box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
-}
-
-.activation-shockwave.ring-1 {
-  animation: shockwaveExpand 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) 0.15s forwards;
-}
-.activation-shockwave.ring-2 {
-  animation: shockwaveExpand 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) 0.35s forwards;
-}
-.activation-shockwave.ring-3 {
-  animation: shockwaveExpand 2.2s cubic-bezier(0.1, 0.8, 0.3, 1) 0.55s forwards;
-}
-
-/* Container do HUD */
 .activation-hud-core {
   position: relative;
-  z-index: 2;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  animation: hudScaleIn 2.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-width: 480px;
+  width: 90%;
+  padding: 36px 28px;
+  background: var(--bg-card, #0f172a);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 24px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(14, 165, 233, 0.15);
+  animation: corePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+  font-family: inherit;
+}
+
+@keyframes corePop {
+  from { transform: scale(0.9) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
 }
 
 .activation-icon-halo {
   position: relative;
-  width: 96px;
-  height: 96px;
-  border-radius: 26px;
-  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  box-shadow: 0 15px 35px -5px rgba(16, 185, 129, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.4);
-  margin-bottom: 22px;
-}
-
-.activation-badge-live {
-  position: absolute;
-  bottom: -10px;
-  background: #0f172a;
-  border: 1px solid #34d399;
-  color: #34d399;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.8px;
-  padding: 4px 12px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-  text-transform: uppercase;
-}
-
-.radar-icon {
-  animation: radarBlink 0.9s infinite alternate ease-in-out;
-}
-
-.activation-text-group {
   display: flex;
   flex-direction: column;
   align-items: center;
+  margin-bottom: 20px;
+}
+
+.activation-icon {
+  color: var(--text-highlight, #38bdf8);
+  filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.6));
+  animation: iconBounce 1.8s ease-in-out infinite;
+}
+
+.activation-badge-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  font-family: inherit;
+}
+
+.activation-text-group {
+  margin-bottom: 24px;
+  font-family: inherit;
 }
 
 .activation-label {
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 1.6px;
-  color: #94a3b8;
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted, #94a3b8);
+  letter-spacing: 1.2px;
+  margin-bottom: 8px;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  font-family: inherit;
 }
 
 .activation-romaneio-title {
-  font-size: 4rem;
+  margin: 0 0 6px 0;
+  font-size: 2.4rem;
   font-weight: 900;
-  color: #ffffff;
-  margin: 0;
-  letter-spacing: -1.8px;
-  line-height: 1.05;
-  text-shadow: 0 0 30px rgba(255, 255, 255, 0.25);
+  color: var(--text-main, #f8fafc);
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  font-family: inherit;
 }
 
 .activation-store-name {
-  font-size: 1.15rem;
-  color: #cbd5e1;
-  margin: 8px 0 26px 0;
-  font-weight: 600;
-  max-width: 480px;
-  letter-spacing: -0.2px;
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-highlight, #38bdf8);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: inherit;
 }
 
-/* Barra de Transição */
 .activation-energy-meter {
-  width: 260px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input, #1e293b);
+  border-radius: 10px;
   overflow: hidden;
-  position: relative;
 }
 
 .energy-fill-track {
-  position: absolute;
-  top: 0;
-  left: 0;
   height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #34d399, #38bdf8);
-  transform: translateX(-100%);
-  animation: energyFill 2.5s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  width: 0%;
+  background: linear-gradient(90deg, #0ea5e9, #10b981);
+  border-radius: 10px;
+  animation: progressFill 2.1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-/* Keyframes Refinados */
-@keyframes activationOverlayFade {
-  0% { opacity: 0; }
-  10% { opacity: 1; }
-  85% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.03); pointer-events: none; }
+@keyframes progressFill {
+  0% { width: 0%; }
+  40% { width: 45%; }
+  75% { width: 85%; }
+  100% { width: 100%; }
 }
 
 @keyframes glowPulse {
-  0% { transform: scale(0.4); opacity: 0; }
-  35% { opacity: 1; }
-  100% { transform: scale(1.4); opacity: 0; }
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
 }
 
-@keyframes shockwaveExpand {
-  0% { width: 40px; height: 40px; opacity: 1; }
-  100% { width: 620px; height: 620px; opacity: 0; transform: scale(1.1); }
-}
-
-@keyframes hudScaleIn {
-  0% { opacity: 0; transform: scale(0.88) translateY(24px); }
-  15% { opacity: 1; transform: scale(1) translateY(0); }
-  85% { opacity: 1; transform: scale(1); filter: brightness(1); }
-  100% { opacity: 0; transform: scale(0.94) translateY(-12px); filter: brightness(1.25); }
-}
-
-@keyframes energyFill {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(0%); }
-}
-
-@keyframes radarBlink {
-  0% { opacity: 0.3; }
-  100% { opacity: 1; }
+@keyframes iconBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }

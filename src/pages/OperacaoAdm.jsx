@@ -1,11 +1,23 @@
 // src/pages/OperacaoAdm.jsx
 import { useMotorRanking } from '../hooks/useMotorRanking';
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Clock, ShieldCheck, ClipboardList, Package, MapPin, Users, FileText, Settings, Play, Pause, CheckCircle2, Search, MoreVertical, X, Check, Trash2, Info, Activity, Coffee, Briefcase, AlertTriangle, Moon, PackagePlus, Edit, Factory } from 'lucide-react';
+import { 
+  ArrowLeft, Clock, ShieldCheck, ClipboardList, Package, MapPin, 
+  Users, FileText, Settings, Play, Pause, CheckCircle2, Search, 
+  MoreVertical, X, Check, Trash2, Info, Activity, Coffee, 
+  Briefcase, AlertTriangle, Moon, PackagePlus, Edit, Factory,
+  Layers, SearchX, Plus
+} from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { doc, onSnapshot, deleteDoc, getDoc, updateDoc, setDoc, collection, query, where, getDocs, collectionGroup, Timestamp, serverTimestamp, deleteField } from 'firebase/firestore';
-import { db } from '../firebase'; 
+import { 
+  doc, onSnapshot, deleteDoc, getDoc, updateDoc, setDoc, 
+  collection, query, where, getDocs, collectionGroup, 
+  Timestamp, serverTimestamp, deleteField 
+} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, db } from '../firebase'; 
 
+import NavbarOperacao from '../components/NavbarOperacao';
 import AdmControlesManuais from '../components/AdmControlesManuais';
 import AdmEstatisticasGerais from '../components/AdmEstatisticasGerais';
 import RankingDiario from '../components/RankingDiario'; 
@@ -17,6 +29,9 @@ import ModalOrdemProducao from '../components/ModalOrdemProducao';
 import AuditoriaWms from '../components/AuditoriaWms';
 import ModalAlertaPeso from '../components/ModalAlertaPeso';
 import ModalSucesso from '../components/ModalSucesso';
+import AnimacaoCriacaoPedido from '../components/AnimacaoCriacaoPedido';
+import ModalConfirmarExclusao from '../components/ModalConfirmarExclusao';
+import ModalFluxoImportacaoWMS from '../components/ModalFluxoImportacaoWMS';
 import '../css/Operacao.css'; 
 
 export default function OperacaoAdm() {
@@ -27,12 +42,11 @@ export default function OperacaoAdm() {
   const [auditModalData, setAuditModalData] = useState(null);
   const [alertaPesoZero, setAlertaPesoZero] = useState(null);
   const [modalSucesso, setModalSucesso] = useState(null);
-  const localUser = { uid: 'admin-god-mode', email: 'admin' };
+  const [localUser, setLocalUser] = useState({ uid: 'admin-god-mode', email: 'admin' });
   
   const today = new Date();
   const dataHojeStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   
-  // Data reativa que atualiza instantaneamente quando a URL mudar
   const dataOperacaoAtiva = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return params.get('date') || dataHojeStr;
@@ -42,7 +56,10 @@ export default function OperacaoAdm() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [dadosDeEstatisticasFirebase, setDadosDeEstatisticasFirebase] = useState({});
   const [rankingArrayFirebase, setRankingArrayFirebase] = useState([]);
-  
+  const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
+const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
+const [fluxoImportacao, setFluxoImportacao] = useState(null);
+
   const [controlePausas, setControlePausas] = useState({});
   const [showModalIntervencao, setShowModalIntervencao] = useState(false);
   
@@ -50,10 +67,12 @@ export default function OperacaoAdm() {
   const [pedidosNovos, setPedidosNovos] = useState([]);
   const [pedidosLegados, setPedidosLegados] = useState([]);
   const [buscaRomaneio, setBuscaRomaneio] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(null);
 
   const [opsDoDia, setOpsDoDia] = useState([]);
   const [ajustesDoDia, setAjustesDoDia] = useState([]);
+  const [pedidoRecemCriado, setPedidoRecemCriado] = useState(null);
 
   // ==========================================
   // STATES PARA CONTROLE DE PEDIDOS E MODAIS
@@ -167,9 +186,15 @@ export default function OperacaoAdm() {
     }
   };
 
-  // ==========================================
-  // TRAVA DE EXPEDIENTE (17h30)
-  // ==========================================
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setLocalUser(currentUser);
+      }
+    });
+    return () => unsubAuth();
+  }, []);
+
   const limiteExpediente = useMemo(() => {
     const [ano, mes, dia] = dataOperacaoAtiva.split('-');
     return new Date(ano, mes - 1, dia, 17, 30, 0).getTime();
@@ -190,20 +215,16 @@ export default function OperacaoAdm() {
   }, []);
 
   useEffect(() => {
-    const fetchUsuarios = async () => {
-      try {
-        const snap = await getDocs(collection(db, 'usuarios'));
-        const lista = [];
-        snap.forEach(docSnap => {
-          if(docSnap.data().email) lista.push({ uid: docSnap.id, email: String(docSnap.data().email).toLowerCase().trim() });
-        });
-        setUsuarios(lista);
-      } catch (error) { console.error("Erro ao buscar usuários:", error); }
-    };
-    fetchUsuarios();
+    const unsubUsers = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
+      const list = snapshot.docs.map(d => ({
+        uid: d.id,
+        ...d.data()
+      }));
+      setUsuarios(list);
+    });
+    return () => unsubUsers();
   }, []);
 
-  // Busca do Dicionário de Caixas Master
   useEffect(() => {
     const unsubMaster = onSnapshot(collection(db, 'caixasMaster'), (snap) => {
       const masters = [];
@@ -226,7 +247,7 @@ export default function OperacaoAdm() {
             .map(([nome, stats]) => {
               if (!stats) return null;
               return {
-                nome, uid: nome, pontos: stats.pontos || 0, skus: stats.skus || 0, pontosSku: stats.pontosSku || 0,       
+                nome, uid: stats.uid || nome, pontos: stats.pontos || 0, skus: stats.skus || 0, pontosSku: stats.pontosSku || 0,       
                 op: stats.op || 0, pedidos: stats.pedidos || 0, bonusPedidos: stats.bonusPedidos || 0, 
                 decrescimo: stats.decrescimo || 0, chartData: stats.chartData || [], pointEvents: stats.pointEvents || [], 
                 eventosMesclados: stats.eventosMesclados || []
@@ -289,9 +310,7 @@ export default function OperacaoAdm() {
     return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); };
   }, [dataOperacaoAtiva]);
 
-  // ==========================================
-  // PROCESSAMENTO DE DADOS (MEMOS E FUNÇÕES DE MODAIS)
-  // ==========================================
+  // Carrega e processa TODOS os pedidos (Visão Global da ADM)
   const pedidosProcessados = useMemo(() => {
     return [...pedidosNovos, ...pedidosLegados].sort((a, b) => {
       const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
@@ -302,24 +321,23 @@ export default function OperacaoAdm() {
 
   const pedidosEmAndamento = useMemo(() => pedidosProcessados.filter(p => !p.efetivado), [pedidosProcessados]);
 
+  // Filtro de busca na tabela (por romaneio, loja ou UF)
   const pedidosFiltrados = useMemo(() => {
     if (!buscaRomaneio.trim()) return pedidosProcessados;
     const termo = buscaRomaneio.toLowerCase();
     return pedidosProcessados.filter(p => 
-      String(p.romaneio || '').toLowerCase().includes(termo) || String(p.loja || '').toLowerCase().includes(termo)
+      String(p.romaneio || '').toLowerCase().includes(termo) || 
+      String(p.loja || '').toLowerCase().includes(termo) ||
+      String(p.uf || '').toLowerCase().includes(termo)
     );
   }, [pedidosProcessados, buscaRomaneio]);
 
-  // ==========================================
-  // CONTAGEM DE DOCUMENTOS (NF/MINUTA) FINALIZADOS
-  // ==========================================
   const totalNfsMinutasFinalizadas = useMemo(() => {
     let contagem = 0;
     pedidosProcessados.forEach(p => {
       if (p.efetivado) {
         (p.documentos || []).forEach(docItem => {
           const tipo = String(docItem.tipo || '').trim();
-          // Apenas Notas Fiscais e Minutas concluídas entram na soma
           if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
             contagem++;
           }
@@ -329,36 +347,62 @@ export default function OperacaoAdm() {
     return contagem;
   }, [pedidosProcessados]);
 
-  const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, horaReferenciaAtual);
+  const rankingCalculadoBruto = useMotorRanking(
+    usuarios, 
+    opsDoDia, 
+    pedidosProcessados, 
+    controlePausas, 
+    ajustesDoDia, 
+    dataOperacaoAtiva, 
+    horaReferenciaAtual
+  );
+
+  const rankingCalculado = useMemo(() => {
+    if (!rankingCalculadoBruto || !Array.isArray(rankingCalculadoBruto)) return [];
+
+    return rankingCalculadoBruto.map(user => {
+      const emailLimpo = String(user.email || '').toLowerCase().trim();
+      const nomeLimpo = String(user.nome || '').toLowerCase().trim();
+
+      const userDoc = (usuarios || []).find(u => {
+        const uEmail = String(u.email || '').toLowerCase().trim();
+        const uNome = String(u.nickname || u.email?.split('@')[0] || '').toLowerCase().trim();
+        return (
+          (user.uid && u.uid === user.uid) ||
+          (uEmail && emailLimpo && uEmail === emailLimpo) ||
+          (uNome && nomeLimpo && uNome === nomeLimpo) ||
+          (u.email && String(u.email).split('@')[0].toLowerCase().trim() === nomeLimpo)
+        );
+      });
+
+      return {
+        ...user,
+        nome: userDoc?.nickname || user.nome || (user.email ? user.email.split('@')[0] : 'Usuário'),
+        photoURL: userDoc?.photoURL || null,
+        uid: user.uid || userDoc?.uid || null,
+        email: user.email || userDoc?.email || null
+      };
+    });
+  }, [rankingCalculadoBruto, usuarios]);
 
   const estatisticasTempoReal = useMemo(() => {
+    let totalNfMinuta = 0;
+    let totalCaixas = 0;
 
-  // ==========================================
-// CÁLCULO DE TOTAIS (ABERTOS + FINALIZADOS)
-// ==========================================
-let totalNfMinuta = 0;
-let totalCaixas = 0;
-
-pedidosProcessados.forEach(p => {
-  (p.documentos || []).forEach(docItem => {
-    const tipo = String(docItem.tipo || '').trim();
-    
-    // Regra: Apenas Nota Fiscal ou Minuta contam
-    if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
-      totalNfMinuta++;
-    }
-
-    totalCaixas += (docItem.caixas || []).length;
-  });
-});
-
-// Define o alias para evitar erro em partes legadas que esperam 'totalPedidos'
-const totalPedidos = totalNfMinuta;
+    pedidosProcessados.forEach(p => {
+      (p.documentos || []).forEach(docItem => {
+        const tipo = String(docItem.tipo || '').trim();
+        if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
+          totalNfMinuta++;
+        }
+        totalCaixas += (docItem.caixas || []).length;
+      });
+    });
 
     const rankingMap = {};
     (rankingCalculado || []).forEach(user => { rankingMap[user.nome] = user; });
 
-    return { totalNfMinuta: totalPedidos, totalCaixas: totalCaixas, ranking: rankingMap };
+    return { totalNfMinuta, totalCaixas, ranking: rankingMap };
   }, [pedidosProcessados, rankingCalculado]);
 
   const equipeAtivaHoje = useMemo(() => {
@@ -371,11 +415,11 @@ const totalPedidos = totalNfMinuta;
       const uids = p.uidsVinculados || [p.criadorUid];
       uids.forEach(uid => {
         const user = usuarios.find(u => u.uid === uid);
-        if (user) nomesAtivos.add(user.email.split('@')[0]);
+        if (user) nomesAtivos.add(user.nickname || user.email.split('@')[0]);
       });
     });
 
-    return usuarios.filter(u => nomesAtivos.has(u.email.split('@')[0]));
+    return usuarios.filter(u => nomesAtivos.has(u.nickname || u.email.split('@')[0]));
   }, [rankingCalculado, controlePausas, pedidosEmAndamento, usuarios]);
 
   const abrirModalDetalhes = (pedido) => {
@@ -393,9 +437,6 @@ const totalPedidos = totalNfMinuta;
     setShowDetalhesModal(true);
   };
 
-  // ==========================================
-  // AUTO-ABERTURA ROBUSTA DO MODAL (APÓS CARREGAMENTO)
-  // ==========================================
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const romaneioParaAbrir = params.get('openRomaneio');
@@ -409,23 +450,144 @@ const totalPedidos = totalNfMinuta;
 
       if (pedidoAlvo) {
         abrirModalDetalhes(pedidoAlvo);
-
-        // Remove o parâmetro 'openRomaneio' da URL mantendo apenas o '?date=YYYY-MM-DD'
         const novaUrl = `${location.pathname}?date=${dataOperacaoAtiva}`;
         window.history.replaceState({}, '', novaUrl);
       }
     }
   }, [location.search, pedidosProcessados, dataOperacaoAtiva]);
 
-  // ==========================================
-  // FUNÇÕES DE LEITURA CSV DO WMS
-  // ==========================================
+
+
+  // UPLOAD WMS COMUM COM PRÉVIA
+  const handleUploadWMSComum = (e, dIdx) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setFluxoImportacao({
+      tipo: 'comum',
+      etapa: 'lendo',
+      dIdx,
+      fileName: file.name,
+      totalCaixas: 0,
+      totalSkus: 0,
+      pesoTotal: 0,
+      amostraNomes: [],
+      auditoriaData: null
+    });
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target.result;
+        const linhas = text.trim().split(/\r\n|\n|\r/);
+        if (linhas.length <= 1) throw new Error("Arquivo vazio");
+
+        let separador = linhas[0].includes(';') ? ';' : ',';
+        const cabecalho = linhas[0].split(separador).map(c => 
+          c.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/"/g, '')
+        );
+        
+        const idxCaixa = cabecalho.findIndex(c => c.includes("TIPO EMBALAGEM") || c.includes("CAIXA") || c.includes("VOLUME"));
+        const idxPeso = cabecalho.findIndex(c => c.includes("PESO"));
+        const idxIdUnico = cabecalho.findIndex(c => c.includes("ID EMBALAGEM") || c === "ID" || c.includes("RASTREIO") || c.includes("EXPEDICAO"));
+        const idxRef = cabecalho.findIndex(c => c === "PRODUTO" || c.includes("CODIGO") || c === "REF" || c === "SKU");
+        const idxDesc = cabecalho.findIndex(c => c.includes("DESCRICAO") || c.includes("NOME"));
+        const idxQtd = cabecalho.findIndex(c => c.includes("QUANTIDADE") || c.includes("QTDE") || c === "QTD");
+
+        if (idxRef === -1 || idxQtd === -1 || idxCaixa === -1) {
+          throw new Error("Colunas obrigatórias não encontradas no CSV.");
+        }
+
+        const caixasMap = {};
+        let totalUnidadesSkus = 0;
+        let pesoBruto = 0;
+
+        for (let i = 1; i < linhas.length; i++) {
+          const cols = linhas[i].split(separador).map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.length <= idxRef) continue;
+          
+          const nomeCaixa = cols[idxCaixa] || `CAIXA S/N`;
+          const pesoCaixa = idxPeso !== -1 ? parseFloat(String(cols[idxPeso]).replace(',', '.')) || 0 : 0;
+          
+          let idUnicoStr = `S/N-linha-${i}`;
+          if (idxIdUnico !== -1 && cols[idxIdUnico] && cols[idxIdUnico].trim() !== '') {
+            idUnicoStr = cols[idxIdUnico].trim();
+          }
+          
+          const ref = cols[idxRef];
+          const desc = idxDesc !== -1 ? cols[idxDesc] : "Produto";
+          const qtd = parseInt(String(cols[idxQtd]).replace(/\D/g, '')) || 0;
+
+          if (!ref || qtd <= 0) continue;
+
+          totalUnidadesSkus += qtd;
+
+          if (!caixasMap[idUnicoStr]) {
+            caixasMap[idUnicoStr] = { num: nomeCaixa, peso: pesoCaixa, idUnico: idUnicoStr, idExpedicao: idUnicoStr, produtos: [] };
+            pesoBruto += pesoCaixa;
+          } else {
+            caixasMap[idUnicoStr].peso = Math.max(caixasMap[idUnicoStr].peso, pesoCaixa);
+          }
+          
+          const prodExistente = caixasMap[idUnicoStr].produtos.find(p => p.referencia === ref);
+          if (prodExistente) {
+            prodExistente.quantidade += qtd; 
+          } else {
+            caixasMap[idUnicoStr].produtos.push({ referencia: ref, descricao: desc, quantidade: qtd }); 
+          }
+        }
+
+        const caixasFinais = Object.values(caixasMap);
+
+        const resumoContagem = {};
+        caixasFinais.forEach(c => {
+          const k = `${c.num} (${c.peso.toFixed(2)} kg)`;
+          resumoContagem[k] = (resumoContagem[k] || 0) + 1;
+        });
+        const resumoTextoGerado = Object.entries(resumoContagem).map(([k, v]) => `${k}: ${v} Un`).join('\n');
+
+        setTimeout(() => {
+          setFluxoImportacao({
+            tipo: 'comum',
+            etapa: 'previa',
+            dIdx,
+            fileName: file.name,
+            caixasFinais,
+            totalCaixas: caixasFinais.length,
+            totalSkus: totalUnidadesSkus,
+            pesoTotal: pesoBruto,
+            amostraNomes: caixasFinais.slice(0, 8).map(c => c.num),
+            resumoTexto: resumoTextoGerado,
+            auditoriaData: null
+          });
+        }, 900);
+
+      } catch (error) {
+        setFluxoImportacao(null);
+        alert("Erro ao ler o CSV: " + error.message);
+      } finally {
+        if (e.target) e.target.value = null;
+      }
+    };
+    reader.readAsText(file, 'ISO-8859-1');
+  };
+
+  // UPLOAD PLANEJAMENTO MASTER
   const handlePlanejamentoUpload = (e, dIdx) => {
     const file = e.target.files[0];
     if (!file) return;
-    setIsUploading(true);
-    setDocIndexSelecionado(dIdx);
-    
+
+    setFluxoImportacao({
+      tipo: 'master_planejamento',
+      etapa: 'lendo',
+      dIdx,
+      fileName: file.name,
+      totalSkusCount: 0,
+      totalUnidades: 0,
+      volumesEstimados: 0,
+      skusPendentes: 0
+    });
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -436,24 +598,31 @@ const totalPedidos = totalNfMinuta;
         let separador = linhas[0].includes(';') ? ';' : ',';
         const cabecalho = linhas[0].split(separador).map(c => c.trim().toUpperCase().replace(/"/g, ''));
         
-        let idxRef = cabecalho.findIndex(c => c.includes("CÓDIGO PRODUTO") || c === "PRODUTO" || c === "REF" || c === "SKU" || c.includes("CÓDIGO"));
-        let idxQtd = cabecalho.findIndex(c => c.includes("QTDE CONFERIDA") || c.includes("QUANTIDADE") || c === "QTD");
-        let idxDesc = cabecalho.findIndex(c => c.includes("DESCRIÇÃO") || c.includes("DESCRICAO") || c === "NOME");
+        let idxRef = cabecalho.findIndex(c => c.includes("CÓDIGO PRODUTO") || c === "PRODUTO" || c === "REF");
+        let idxQtd = cabecalho.findIndex(c => c.includes("QTDE CONFERIDA") || c.includes("QUANTIDADE"));
+        let idxDesc = cabecalho.findIndex(c => c.includes("DESCRIÇÃO") || c.includes("DESCRICAO"));
 
-        if (idxRef === -1 || idxQtd === -1) throw new Error("Colunas 'Código/Produto' e 'Quantidade' não encontradas.");
+        if (idxRef === -1 || idxQtd === -1) {
+          throw new Error("Colunas 'Código Produto' e 'Qtde Conferida' não encontradas.");
+        }
 
         let skusProcessados = [];
-        
+        let totalUnidades = 0;
+        let volumesEstimados = 0;
+        let skusPendentes = 0;
+
         for (let i = 1; i < linhas.length; i++) {
           const cols = linhas[i].split(separador).map(c => c.trim().replace(/^"|"$/g, ''));
           if (cols.length <= idxRef) continue;
           
           const ref = cols[idxRef];
-          const qtd = parseInt(String(cols[idxQtd]).replace(/\D/g, '')) || 0;
+          const qtd = parseInt(cols[idxQtd] || "0");
           if (!ref || qtd <= 0) continue;
 
+          totalUnidades += qtd;
+
           const masterRef = caixasMaster.find(m => 
-            String(m.ref).trim().toUpperCase() === String(ref).trim().toUpperCase() || 
+            String(m.ref).trim() === String(ref).trim() || 
             String(m.ref).trim().replace(/^0+/, '') === String(ref).trim().replace(/^0+/, '')
           );
 
@@ -463,6 +632,14 @@ const totalPedidos = totalNfMinuta;
           }) : [];
 
           const isMissing = variacoesValidas.length === 0;
+          if (isMissing) skusPendentes++;
+
+          const qtdPadrao = !isMissing ? parseInt(String(variacoesValidas[0].quantidade).replace(/\D/g, '')) : 0;
+          const pesoPadrao = !isMissing ? parseFloat(String(variacoesValidas[0].peso).replace(',', '.')) || 0 : 0;
+
+          if (qtdPadrao > 0) {
+            volumesEstimados += Math.ceil(qtd / qtdPadrao);
+          }
 
           skusProcessados.push({
             ref, 
@@ -471,138 +648,158 @@ const totalPedidos = totalNfMinuta;
             variacoesDisponiveis: variacoesValidas, 
             selectedVar: 0,
             caixaNome: !isMissing ? variacoesValidas[0].caixa : "", 
-            qtdPadrao: !isMissing ? parseInt(String(variacoesValidas[0].quantidade).replace(/\D/g, '')) : 0, 
-            pesoPadrao: !isMissing ? parseFloat(String(variacoesValidas[0].peso).replace(',', '.')) || 0 : 0,
-            codigoBarras: !isMissing ? variacoesValidas[0].codigoBarras : "",
+            qtdPadrao: qtdPadrao, 
+            pesoPadrao: pesoPadrao,
             isMissing: isMissing, 
             isOriginalMissing: isMissing
           });
         }
 
-        const novaSessao = { skus: skusProcessados, fileName: file.name };
-        setWmsSessions(prev => ({ ...prev, [dIdx]: novaSessao }));
-
-        if (pedidoModal) {
-            const refFinal = doc(db, 'pedidos', pedidoModal.id);
-            const novosDocumentos = [...pedidoModal.documentos];
-            novosDocumentos[dIdx] = { ...novosDocumentos[dIdx], planejamentoWms: novaSessao };
-            updateDoc(refFinal, { documentos: novosDocumentos })
-              .then(() => setPedidoModal(prev => ({...prev, documentos: novosDocumentos})))
-              .catch(err => console.error("Erro Auto-Save:", err));
-        }
+        setTimeout(() => {
+          setFluxoImportacao({
+            tipo: 'master_planejamento',
+            etapa: 'previa',
+            dIdx,
+            fileName: file.name,
+            skusProcessados,
+            totalSkusCount: skusProcessados.length,
+            totalUnidades,
+            volumesEstimados,
+            skusPendentes
+          });
+        }, 900);
 
       } catch (error) {
-        alert("Erro ao ler CSV de planejamento: " + error.message);
+        setFluxoImportacao(null);
+        alert("Erro ao ler planejamento: " + error.message);
       } finally {
-        setIsUploading(false);
         if (e.target) e.target.value = null;
       }
     };
     reader.readAsText(file, 'ISO-8859-1');
   };
 
-  const handleUploadWMSComum = (e, dIdx) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setIsUploading(true);
-    setDocIndexSelecionado(dIdx);
-    
-    const reader = new FileReader();
-    reader.onload = async (event) => {
+
+
+  // CONFIRMAR GRAVAÇÃO NO FIREBASE
+  const handleConfirmarGravacaoWMS = async () => {
+    if (!fluxoImportacao) return;
+    const { tipo, dIdx, fileName } = fluxoImportacao;
+
+    if (tipo === 'master_planejamento') {
+      const { skusProcessados } = fluxoImportacao;
+      setFluxoImportacao(prev => ({ ...prev, etapa: 'gravando' }));
+      setIsSaving(true);
+
       try {
-        const text = event.target.result;
-        const linhas = text.trim().split(/\r\n|\n|\r/);
-        if (linhas.length <= 1) throw new Error("Arquivo vazio");
+        const novaSessao = { skus: skusProcessados, fileName: fileName };
+        setWmsSessions(prev => ({ ...prev, [dIdx]: novaSessao }));
 
-        let separador = linhas[0].includes(';') ? ';' : ',';
-        const cabecalho = linhas[0].split(separador).map(c => c.trim().toUpperCase().replace(/"/g, ''));
+        const refFinal = pedidoModal._isLegacy 
+          ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
+          : doc(db, 'pedidos', pedidoModal.id);
+          
+        const novosDocumentos = [...pedidoModal.documentos];
+        novosDocumentos[dIdx] = { ...novosDocumentos[dIdx], planejamentoWms: novaSessao };
         
-        const idxCaixa = cabecalho.findIndex(c => c.includes("TIPO EMBALAGEM") || c.includes("CAIXA") || c.includes("VOLUME"));
-        const idxPeso = cabecalho.findIndex(c => c.includes("PESO"));
-        const idxIdUnico = cabecalho.findIndex(c => c.includes("ID EMBALAGEM") || c === "ID" || c.includes("RASTREIO"));
-        const idxRef = cabecalho.findIndex(c => c === "PRODUTO" || c.includes("CÓDIGO") || c === "REF" || c === "SKU");
-        const idxDesc = cabecalho.findIndex(c => c.includes("DESCRIÇÃO") || c.includes("DESCRICAO"));
-        const idxQtd = cabecalho.findIndex(c => c.includes("QUANTIDADE") || c.includes("QTDE") || c === "QTD");
+        await updateDoc(refFinal, { documentos: novosDocumentos });
+        setPedidoModal(prev => ({ ...prev, documentos: novosDocumentos }));
 
-        if (idxRef === -1 || idxQtd === -1 || idxCaixa === -1) {
-          throw new Error("Colunas obrigatórias (Caixa, Código Produto, Quantidade) não encontradas no CSV.");
-        }
-
-        const caixasMap = {};
-
-        for (let i = 1; i < linhas.length; i++) {
-          const cols = linhas[i].split(separador).map(c => c.trim().replace(/^"|"$/g, ''));
-          if (cols.length <= idxRef) continue;
-          
-          const nomeCaixa = cols[idxCaixa] || `CAIXA S/N`;
-          const pesoCaixa = idxPeso !== -1 ? parseFloat(String(cols[idxPeso]).replace(',', '.')) || 0 : 0;
-          const idUnico = idxIdUnico !== -1 && cols[idxIdUnico] ? cols[idxIdUnico] : `S/N-linha-${i}`;
-          
-          const ref = cols[idxRef];
-          const desc = idxDesc !== -1 ? cols[idxDesc] : "Produto";
-          const qtd = parseInt(String(cols[idxQtd]).replace(/\D/g, '')) || 0;
-
-          if (!ref || qtd <= 0) continue;
-
-          if (!caixasMap[idUnico]) {
-            caixasMap[idUnico] = { num: nomeCaixa, peso: pesoCaixa, idUnico: idUnico, produtos: [] };
-          } else {
-            caixasMap[idUnico].peso = Math.max(caixasMap[idUnico].peso, pesoCaixa);
-          }
-          
-          const prodExistente = caixasMap[idUnico].produtos.find(p => p.referencia === ref);
-          if (prodExistente) {
-            prodExistente.quantidade += qtd; 
-          } else {
-            caixasMap[idUnico].produtos.push({ referencia: ref, descricao: desc, quantidade: qtd }); 
-          }
-        }
-
-        const caixasFinais = Object.values(caixasMap);
-
-        if (pedidoModal) {
-            const refFinal = pedidoModal._isLegacy 
-              ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
-              : doc(db, 'pedidos', pedidoModal.id);
-            
-            const novosDocs = [...pedidoModal.documentos];
-            novosDocs[dIdx] = { ...novosDocs[dIdx], caixas: caixasFinais };
-
-            const todosPossuemCaixas = novosDocs.every(doc => doc.caixas && doc.caixas.length > 0);
-            const payload = { documentos: novosDocs };
-
-            if (todosPossuemCaixas) {
-              payload.efetivado = true;
-              payload.completedAt = serverTimestamp();
-              if (!pedidoModal.primeiraEfetivacao) {
-                payload.primeiraEfetivacao = serverTimestamp();
-              }
-            }
-
-            await updateDoc(refFinal, payload);
-
-            setPedidoModal(prev => ({
-              ...prev,
-              documentos: novosDocs,
-              efetivado: todosPossuemCaixas ? true : prev.efetivado
-            }));
-
-            if (todosPossuemCaixas) {
-               alert("Caixas importadas! Como todos os documentos têm caixas, o romaneio foi finalizado automaticamente.");
-            } else {
-               alert("Caixas importadas com sucesso! Faltam outros documentos para finalizar o romaneio.");
-            }
-        }
+        setTimeout(() => {
+          setIsSaving(false);
+          setFluxoImportacao(prev => ({ 
+            ...prev, 
+            etapa: 'sucesso',
+            auditoriaData: prev?.auditoriaData
+          }));
+        }, 700);
 
       } catch (error) {
-        console.error("Erro na leitura CSV Comum:", error);
-        alert("Erro ao processar arquivo: " + error.message);
-      } finally {
-        setIsUploading(false);
-        if (e.target) e.target.value = null; 
+        setIsSaving(false);
+        setFluxoImportacao(null);
+        alert("Erro ao salvar planejamento: " + error.message);
       }
-    };
-    reader.readAsText(file, 'ISO-8859-1'); 
+      return;
+    }
+
+    const { caixasFinais } = fluxoImportacao;
+    const caixasComZero = caixasFinais.filter(c => parseFloat(c.peso) === 0);
+    if (caixasComZero.length > 0) {
+      setAlertaPesoZero({
+        origem: tipo === 'master_auditoria' ? 'auditoria' : 'comum',
+        dIdx,
+        fileName,
+        caixasProblematicas: caixasComZero,
+        caixasNormais: caixasFinais.filter(c => parseFloat(c.peso) > 0),
+        caixasOriginais: caixasFinais
+      });
+      setFluxoImportacao(null);
+      return;
+    }
+
+    setFluxoImportacao(prev => ({ ...prev, etapa: 'gravando' }));
+    setIsSaving(true);
+
+    try {
+      const novosDocs = [...pedidoModal.documentos];
+
+      if (tipo === 'master_auditoria') {
+        const auditoriaPayload = {
+          arquivo: fileName,
+          data: new Date().toISOString(),
+          totalPlanejado: fluxoImportacao.auditoriaData?.reduce((acc, i) => acc + i.qtdPlanejada, 0) || 0,
+          totalEfetivado: caixasFinais.length,
+          divergencias: fluxoImportacao.divergenciasCount || 0,
+          itens: fluxoImportacao.auditoriaData || []
+        };
+
+        novosDocs[dIdx] = { 
+          ...novosDocs[dIdx], 
+          caixas: caixasFinais,
+          auditoria: auditoriaPayload
+        };
+      } else {
+        novosDocs[dIdx] = { ...novosDocs[dIdx], caixas: caixasFinais };
+      }
+
+      const todosPossuemCaixas = novosDocs.every(doc => doc.caixas && doc.caixas.length > 0);
+      const payload = { 
+        documentos: novosDocs,
+        efetivado: todosPossuemCaixas ? true : pedidoModal.efetivado,
+        completedAt: todosPossuemCaixas ? serverTimestamp() : (pedidoModal.completedAt || null)
+      };
+
+      const refFinal = pedidoModal._isLegacy
+        ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id)
+        : doc(db, 'pedidos', pedidoModal.id);
+
+      await updateDoc(refFinal, payload);
+      setPedidoModal(prev => ({ ...prev, documentos: novosDocs, efetivado: todosPossuemCaixas ? true : prev.efetivado }));
+
+      setTimeout(() => {
+        setIsSaving(false);
+        setFluxoImportacao(prev => ({ ...prev, etapa: 'sucesso' }));
+      }, 700);
+
+    } catch (error) {
+      setIsSaving(false);
+      setFluxoImportacao(null);
+      alert("Erro ao gravar caixas: " + error.message);
+    }
+  };
+
+  // CONCLUIR FLUXO E ABRIR DETALHES DAS CAIXAS
+  const handleConcluirFluxoWMS = () => {
+    const { tipo, dIdx } = fluxoImportacao || {};
+    setFluxoImportacao(null);
+    
+    if (tipo === 'master_planejamento') {
+      return;
+    }
+
+    if (dIdx !== undefined) {
+      setShowCaixasEfetivadasModal(dIdx);
+    }
   };
 
   const handleAuditoriaUpload = (e) => {
@@ -722,9 +919,6 @@ const totalPedidos = totalNfMinuta;
     setAlertaPesoZero(null);
   };
 
-  // ==========================================
-  // FUNÇÕES DE GERENCIAMENTO DE PEDIDOS (CRUD)
-  // ==========================================
   const resetForm = () => {
     setEditingId(null); setRomaneio(''); setLoja(''); setLocal('DF'); 
     setUf(''); setIsCaixaMaster(false); setObservacoes(''); setDocsTemporarios([]);
@@ -773,23 +967,55 @@ const totalPedidos = totalNfMinuta;
       const uidsVinculados = Array.from(uidsSet);
 
       const payload = {
-        romaneio: romaneio.trim(), loja: loja.trim(), local, uf: uf.trim().toUpperCase(),
-        isCaixaMaster, observacoes: observacoes.trim(), uidsVinculados,
-        criadorUid: uidsVinculados[0] || 'admin',
+        romaneio: romaneio.trim(),
+        loja: loja.trim(),
+        local,
+        uf: uf.trim().toUpperCase(),
+        isCaixaMaster,
+        observacoes: observacoes.trim(),
+        uidsVinculados,
+        criadorUid: uidsVinculados[0] || localUser.uid,
         documentos: docsTemporarios.map(d => ({
-          tipo: d.tipo, responsaveis: d.responsaveis, responsavel: d.responsaveis[0] || '', caixas: [] 
+          tipo: d.tipo,
+          responsaveis: d.responsaveis,
+          responsavel: d.responsaveis[0] || '',
+          caixas: [] 
         })),
-        dataOperacao: dataOperacaoAtiva, updatedAt: serverTimestamp()
+        dataOperacao: dataOperacaoAtiva,
+        updatedAt: serverTimestamp()
       };
 
       if (editingId) {
-        const ref = doc(db, 'pedidos', editingId); await updateDoc(ref, payload);
+        const ref = doc(db, 'pedidos', editingId);
+        await updateDoc(ref, payload);
+        handleCloseModalPedido();
       } else {
-        payload.createdAt = serverTimestamp(); payload.efetivado = false;
-        await setDoc(doc(collection(db, 'pedidos')), payload);
+        payload.createdAt = serverTimestamp();
+        payload.efetivado = false;
+
+        // 1. Fecha o formulário e dispara a animação HUD
+        handleCloseModalPedido();
+        setPedidoRecemCriado({ romaneio: payload.romaneio, loja: payload.loja });
+
+        // 2. Grava no banco na reta final do efeito (2.1s)
+        setTimeout(async () => {
+          try {
+            await setDoc(doc(collection(db, 'pedidos')), payload);
+          } catch (err) {
+            console.error("Erro ao salvar pedido após animação:", err);
+          }
+        }, 2100);
+
+        // 3. Desmonta o overlay ao finalizar
+        setTimeout(() => {
+          setPedidoRecemCriado(null);
+        }, 2800);
       }
-      handleCloseModalPedido();
-    } catch (error) { alert("Erro ao salvar pedido: " + error.message); } finally { setIsSaving(false); }
+    } catch (error) {
+      alert("Erro ao salvar pedido: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleTogglePausaUsuario = async (nomeUsuario, isCurrentlyPaused) => {
@@ -843,7 +1069,7 @@ const totalPedidos = totalNfMinuta;
     if (!uids || uids.length === 0) return 'Não atribuído';
     return uids.map(uid => {
       const user = usuarios.find(u => u.uid === uid);
-      return user ? user.email.split('@')[0] : 'Desconhecido';
+      return user ? (user.nickname || user.email.split('@')[0]) : 'Desconhecido';
     }).join(', ');
   };
 
@@ -867,9 +1093,24 @@ const totalPedidos = totalNfMinuta;
     try { await updateDoc(ref, payload); } catch (e) { alert("Erro ao alterar o status do pedido."); }
   };
 
-  const handleDeletePedido = async (pedido) => {
-    if (!window.confirm("Atenção: Tem certeza que deseja excluir este pedido de toda a operação definitivamente?")) return;
-    try { await deleteDoc(obterReferenciaDocumento(pedido)); } catch (e) { alert("Erro ao excluir pedido."); }
+  const handleDeletePedido = (pedido) => {
+    setPedidoParaExcluir(pedido);
+    setDropdownOpen(null);
+  };
+
+  const handleConfirmarExclusaoDefinitiva = async () => {
+    if (!pedidoParaExcluir) return;
+    setIsExcluindoPedido(true);
+    try {
+      const ref = obterReferenciaDocumento(pedidoParaExcluir);
+      await deleteDoc(ref);
+      setPedidoParaExcluir(null);
+    } catch (error) {
+      console.error("Erro ao excluir pedido:", error);
+      alert("Houve um erro ao excluir o pedido.");
+    } finally {
+      setIsExcluindoPedido(false);
+    }
   };
 
   const handleDeleteEvent = async (evento) => {
@@ -918,7 +1159,7 @@ const totalPedidos = totalNfMinuta;
     if (!usuarios || usuarios.length === 0) return rankingCalculado || [];
     
     return usuarios.map(u => {
-      const nomeUser = String(u.email).split('@')[0];
+      const nomeUser = u.nickname || String(u.email).split('@')[0];
       const statsExistentes = (rankingCalculado || []).find(r => r.nome === nomeUser);
       
       if (statsExistentes) return statsExistentes;
@@ -940,286 +1181,513 @@ const totalPedidos = totalNfMinuta;
     }).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [usuarios, rankingCalculado]);
 
-  // ==========================================
-  // AUTO-SAVE SILENCIOSO DO RANKING NO BANCO (BLINDADO)
-  // ==========================================
-  const rankingRef = React.useRef(rankingCalculado);
-  
-  // 1. Guarda os dados mais recentes silenciosamente, sem reiniciar cronômetros
-  React.useEffect(() => {
-    rankingRef.current = rankingCalculado;
-  }, [rankingCalculado]);
-
-  // 2. Roda um trator a cada 4 segundos para gravar no banco
-  React.useEffect(() => {
-    const autoSaveInterval = setInterval(async () => {
-      const dadosAtuais = rankingRef.current;
-      
-      // Só tenta salvar se houver dados e se a página já carregou os pedidos
-      if (!dadosAtuais || dadosAtuais.length === 0 || pedidosProcessados.length === 0) return;
-      
-      try {
-        const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-        const rankingSanitizado = {};
-        
-        dadosAtuais.forEach(u => {
-          if (!u || !u.nome) return;
-          rankingSanitizado[u.nome] = {
-            nome: u.nome,
-            pontos: Number(u.pontos) || 0,
-            skus: Number(u.skus) || 0,
-            pontosSku: Number(u.pontosSku) || 0,
-            op: Number(u.op) || 0,
-            pedidos: Number(u.pedidos) || 0,
-            bonusPedidos: Number(u.bonusPedidos) || 0,
-            decrescimo: Number(u.decrescimo) || 0
-          };
-        });
-
-        // Grava no Firestore forçadamente
-        await setDoc(refDia, {
-    ranking: rankingSanitizado,
-    totalNfMinuta: totalNfMinuta,
-    totalCaixas: totalCaixas,
-    ultimaAtualizacao: Date.now()
-  }, { merge: true });
-
-      } catch (error) {
-        console.error("Erro ao sincronizar ranking em background:", error);
-      }
-    }, 4000); // 4 segundos cravados
-
-    return () => clearInterval(autoSaveInterval);
-  }, [dataOperacaoAtiva, pedidosProcessados.length]);
-
   return (
-    <div className="op-wrapper">
-      
-      <header className="op-header">
-        <div className="op-title-group">
-          <button className="btn-back" onClick={() => navigate('/dashboard')} title="Voltar ao Painel"><ArrowLeft size={24} /></button>
-          <div><h1>Painel da Liderança</h1><span><ShieldCheck size={14}/> Gestão e Intervenção de Resultados</span></div>
-        </div>
-        
-        <div className="op-actions">
-          <button onClick={() => setShowModalIntervencao(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)' }}>
-            <Settings size={18} /> Ajustes e Penalidades
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <Clock size={16} color="#64748b" />
-            <input type="date" value={dataOperacaoAtiva} onChange={(e) => { if (e.target.value) navigate(`${location.pathname}?date=${e.target.value}`); }} style={{ border: 'none', outline: 'none', color: '#475569', fontWeight: 'bold', background: 'transparent' }}/>
-          </div>
-        </div>
-      </header>
+    <>
+      {/* NAVBAR GLOBAL COMPLETA */}
+      <NavbarOperacao 
+        user={localUser} 
+        isAdmin={true} 
+        dataOperacaoAtiva={dataOperacaoAtiva} 
+        buscaRomaneio={buscaRomaneio} 
+        setBuscaRomaneio={setBuscaRomaneio} 
+      />
 
-      <main style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '25px' }}>
-        
-        <section>
-             <AdmEstatisticasGerais 
-  dados={typeof ranking !== 'undefined' ? ranking : (typeof rankingGeral !== 'undefined' ? rankingGeral : {})} 
-  dataFiltro={dataOperacaoAtiva || dataFiltro} 
-  pedidos={pedidosProcessados || pedidos} 
-/>
-        </section>
-
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}><Activity size={20} color="var(--primary)" /> Painel de Comando: Equipe ao Vivo</h3>
-            {pedidosEmAndamento.length > 0 && (
-              <span style={{ background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <div className="pulse-dot" style={{ background: '#fff' }}></div> {pedidosEmAndamento.length} Romaneios sendo separados
-              </span>
-            )}
-            {isExpedienteEncerrado && (
-              <span style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
-                <Moon size={14} /> Expediente Encerrado (17h30)
-              </span>
-            )}
-          </div>
+      <div className="op-wrapper">
+        <main style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '25px', width: '100%', boxSizing: 'border-box' }}>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '15px', width: '100%' }}>
-            {equipeAtivaHoje.length === 0 ? (
-              <div style={{ color: '#94a3b8', fontStyle: 'italic', padding: '10px', width: '100%', background: '#f8fafc', borderRadius: '12px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>Nenhum conferente registrou atividade.</div>
-            ) : (
-              equipeAtivaHoje.map(user => {
-                const nomeUser = user.email.split('@')[0];
-                const isPaused = controlePausas[nomeUser]?.isPaused || false;
-                const pedidoAtivo = pedidosEmAndamento.find(p => { const uids = p.uidsVinculados || [p.criadorUid]; return uids.includes(user.uid); });
-                const tempoOciosoMs = getTempoOcioso(nomeUser);
+          {/* BARRA DE AÇÕES DA LIDERANÇA */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+            <div>
+              <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.4rem', fontWeight: 800 }}>Painel de Gestão da Liderança</h2>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Monitoramento de produtividade e controle de auditoria da equipe.</span>
+            </div>
 
-                let statusColor, statusText, statusIcon, conteudoCentral;
-                const isDiaConcluido = isExpedienteEncerrado && !pedidoAtivo;
+            <button 
+              onClick={() => setShowModalIntervencao(true)} 
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}
+            >
+              <Settings size={18} /> Ajustes e Penalidades
+            </button>
+          </div>
 
-                if (isDiaConcluido) {
-                   statusColor = '#10b981'; statusText = 'Dia Concluído'; statusIcon = <CheckCircle2 size={14} />;
-                   conteudoCentral = (<div style={{ padding: '15px 0', color: '#64748b', fontSize: '0.9rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}><Moon size={32} color="#10b981" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '500', color: '#334155' }}>Expediente Finalizado</div><div style={{ fontSize: '0.8rem' }}>Ociosidade travada às 17h30.</div></div>);
-                } else if (isPaused) {
-                   statusColor = '#f59e0b'; statusText = 'Em Pausa (Protegido)'; statusIcon = <Coffee size={14} />;
-                   conteudoCentral = (<div style={{ padding: '15px 0', color: '#64748b', fontSize: '0.9rem', textAlign: 'center' }}><ShieldCheck size={32} color="#f59e0b" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '500', color: '#334155' }}>Ociosidade congelada.</div><div style={{ fontSize: '0.8rem' }}>Nenhum ponto será descontado.</div></div>);
-                } else if (pedidoAtivo) {
-                   statusColor = '#3b82f6'; statusText = 'Separando Pedido'; statusIcon = <Briefcase size={14} />;
-                   const tiposDosDocs = pedidoAtivo.documentos?.map(d => d.tipo).filter(Boolean).join(', ') || 'Nenhum listado';
-                   conteudoCentral = (
-                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1 }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                         <strong style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px', color: '#0f172a' }}><Package size={18} color="#3b82f6" /> {pedidoAtivo.romaneio || 'S/N'}</strong>
-                         <span style={{ fontWeight: '900', color: '#3b82f6', fontFamily: 'monospace', fontSize: '1.1rem', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px' }}>{formatarCronometroPedido(pedidoAtivo)}</span>
+          <section>
+            <AdmEstatisticasGerais 
+              dados={estatisticasTempoReal} 
+              dataFiltro={dataOperacaoAtiva} 
+              pedidos={pedidosProcessados} 
+            />
+          </section>
+
+          {/* PAINEL DE COMANDO: EQUIPE AO VIVO */}
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
+                <Activity size={20} color="var(--primary)" /> Painel de Comando: Equipe ao Vivo
+              </h3>
+              {pedidosEmAndamento.length > 0 && (
+                <span style={{ background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div className="pulse-dot" style={{ background: '#fff' }}></div> {pedidosEmAndamento.length} Romaneios sendo separados
+                </span>
+              )}
+              {isExpedienteEncerrado && (
+                <span style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+                  <Moon size={14} /> Expediente Encerrado (17h30)
+                </span>
+              )}
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '15px', width: '100%' }}>
+              {equipeAtivaHoje.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '16px', width: '100%', background: 'var(--bg-card)', borderRadius: '12px', textAlign: 'center', border: '1px dashed var(--border-color)' }}>Nenhum conferente registrou atividade.</div>
+              ) : (
+                equipeAtivaHoje.map(user => {
+                  const nomeUser = user.nickname || user.email.split('@')[0];
+                  const isPaused = controlePausas[nomeUser]?.isPaused || false;
+                  const pedidoAtivo = pedidosEmAndamento.find(p => { const uids = p.uidsVinculados || [p.criadorUid]; return uids.includes(user.uid); });
+                  const tempoOciosoMs = getTempoOcioso(nomeUser);
+
+                  let statusColor, statusText, statusIcon, conteudoCentral;
+                  const isDiaConcluido = isExpedienteEncerrado && !pedidoAtivo;
+
+                  if (isDiaConcluido) {
+                     statusColor = '#10b981'; statusText = 'Dia Concluído'; statusIcon = <CheckCircle2 size={14} />;
+                     conteudoCentral = (<div style={{ padding: '15px 0', color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}><Moon size={32} color="#10b981" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '700', color: 'var(--text-main)' }}>Expediente Finalizado</div><div style={{ fontSize: '0.8rem' }}>Ociosidade travada às 17h30.</div></div>);
+                  } else if (isPaused) {
+                     statusColor = '#f59e0b'; statusText = 'Em Pausa (Protegido)'; statusIcon = <Coffee size={14} />;
+                     conteudoCentral = (<div style={{ padding: '15px 0', color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center' }}><ShieldCheck size={32} color="#f59e0b" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '700', color: 'var(--text-main)' }}>Ociosidade congelada.</div><div style={{ fontSize: '0.8rem' }}>Nenhum ponto será descontado.</div></div>);
+                  } else if (pedidoAtivo) {
+                     statusColor = '#3b82f6'; statusText = 'Separando Pedido'; statusIcon = <Briefcase size={14} />;
+                     const tiposDosDocs = pedidoAtivo.documentos?.map(d => d.tipo).filter(Boolean).join(', ') || 'Nenhum listado';
+                     conteudoCentral = (
+                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1 }}>
+                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                           <strong style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}><Package size={18} color="#3b82f6" /> {pedidoAtivo.romaneio || 'S/N'}</strong>
+                           <span style={{ fontWeight: '900', color: '#3b82f6', fontFamily: 'monospace', fontSize: '1.1rem', background: 'var(--bg-input)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>{formatarCronometroPedido(pedidoAtivo)}</span>
+                         </div>
+                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} color="var(--text-muted)" /> {pedidoAtivo.loja || 'Destino Padrão'}</div>
+                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }} title={tiposDosDocs}><FileText size={14} color="var(--text-muted)" /> {tiposDosDocs.length > 25 ? tiposDosDocs.substring(0, 25) + '...' : tiposDosDocs}</div>
                        </div>
-                       <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} color="#94a3b8" /> {pedidoAtivo.loja || 'Destino Padrão'}</div>
-                       <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }} title={tiposDosDocs}><FileText size={14} color="#94a3b8" /> {tiposDosDocs.length > 25 ? tiposDosDocs.substring(0, 25) + '...' : tiposDosDocs}</div>
-                     </div>
-                   );
-                } else {
-                   const limiteOciosidadeMs = 20 * 60 * 1000; const tolerenciaExcedida = tempoOciosoMs > limiteOciosidadeMs;
-                   statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; statusText = tolerenciaExcedida ? 'Ocioso (Sangrando)' : 'Livre (Na tolerância)'; statusIcon = tolerenciaExcedida ? <AlertTriangle size={14} /> : <Clock size={14} />;
-                   conteudoCentral = (
-                     <div style={{ padding: '15px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', flex: 1, justifyContent: 'center' }}>
-                        <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Tempo inativo após última tarefa:</span>
-                        <span style={{ fontSize: '2.2rem', fontWeight: '900', color: statusColor, fontFamily: 'monospace', lineHeight: '1', letterSpacing: '-1px' }}>{formatMsToTime(tempoOciosoMs)}</span>
-                        {tolerenciaExcedida && (<div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold', marginTop: '5px', background: '#fef2f2', padding: '2px 8px', borderRadius: '12px' }}>Perdendo pontos agora</div>)}
-                     </div>
-                   );
-                }
+                     );
+                  } else {
+                     const limiteOciosidadeMs = 20 * 60 * 1000; const tolerenciaExcedida = tempoOciosoMs > limiteOciosidadeMs;
+                     statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; statusText = tolerenciaExcedida ? 'Ocioso (Sangrando)' : 'Livre (Na tolerância)'; statusIcon = tolerenciaExcedida ? <AlertTriangle size={14} /> : <Clock size={14} />;
+                     conteudoCentral = (
+                       <div style={{ padding: '15px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', flex: 1, justifyContent: 'center' }}>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Tempo inativo após última tarefa:</span>
+                          <span style={{ fontSize: '2.2rem', fontWeight: '900', color: statusColor, fontFamily: 'monospace', lineHeight: '1', letterSpacing: '-1px' }}>{formatMsToTime(tempoOciosoMs)}</span>
+                          {tolerenciaExcedida && (<div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold', marginTop: '5px', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '12px' }}>Perdendo pontos agora</div>)}
+                       </div>
+                     );
+                  }
 
-                return (
-                  <div key={user.uid} style={{ background: '#fff', border: `1px solid ${statusColor}40`, borderRadius: '12px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', gap: '8px', flexWrap: 'wrap' }}>
-                      <strong style={{ fontSize: '1.1rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'capitalize' }}><Users size={18} color="#94a3b8" /> {nomeUser}</strong>
-                      <div style={{ background: `${statusColor}15`, color: statusColor, padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>{statusIcon} {statusText}</div>
-                    </div>
-                    {conteudoCentral}
-                    {isDiaConcluido ? (
-                      <div style={{ width: '100%', padding: '10px', background: '#f1f5f9', color: '#94a3b8', textAlign: 'center', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem', border: '1px dashed #cbd5e1', marginTop: '5px' }}>Operação Fechada</div>
+                  return (
+                    <div key={user.uid} style={{ background: 'var(--bg-card)', border: `1px solid var(--border-color)`, borderRadius: '12px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', gap: '8px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '1.05rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {user.photoURL ? (
+                            <img src={user.photoURL} alt={nomeUser} style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <Users size={18} color="var(--text-muted)" />
+                          )}
+                          {nomeUser}
+                        </strong>
+                        <div style={{ background: `${statusColor}15`, color: statusColor, padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>{statusIcon} {statusText}</div>
+                      </div>
+                      {conteudoCentral}
+                      {isDiaConcluido ? (
+                      <div 
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px', 
+                          background: 'var(--bg-input, rgba(255,255,255,0.03))', 
+                          color: 'var(--text-muted, #94a3b8)', 
+                          textAlign: 'center', 
+                          borderRadius: '10px', 
+                          fontWeight: 700, 
+                          fontSize: '0.85rem', 
+                          border: '1px dashed var(--border-color, rgba(255,255,255,0.15))', 
+                          marginTop: '6px' 
+                        }}
+                      >
+                        Operação Fechada
+                      </div>
                     ) : (
-                      <button onClick={() => handleTogglePausaUsuario(nomeUser, isPaused)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', background: isPaused ? '#f8fafc' : '#f59e0b', color: isPaused ? '#475569' : '#fff', border: isPaused ? '1px solid #e2e8f0' : 'none', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', transition: 'all 0.2s', marginTop: '5px' }}>
-                        {isPaused ? <><Play size={16} /> Retomar Operação</> : <><Pause size={16} /> Pausar Ociosidade</>}
+                      <button 
+                        onClick={() => handleTogglePausaUsuario(nomeUser, isPaused)} 
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px 14px', 
+                          borderRadius: '10px', 
+                          fontWeight: 700, 
+                          fontSize: '0.88rem',
+                          cursor: 'pointer', 
+                          display: 'flex', 
+                          justifyContent: 'center', 
+                          alignItems: 'center', 
+                          gap: '8px', 
+                          transition: 'all 0.2s ease', 
+                          marginTop: '6px',
+                          fontFamily: 'inherit',
+                          /* Cores 100% dinâmicas vinculadas às variáveis do tema ativo */
+                          background: isPaused 
+                            ? 'var(--bg-input, rgba(255, 255, 255, 0.08))' 
+                            : 'var(--primary, #3b82f6)',
+                          color: isPaused 
+                            ? 'var(--text-main, #f8fafc)' 
+                            : '#ffffff',
+                          border: isPaused 
+                            ? '1px solid var(--border-color, rgba(255, 255, 255, 0.15))' 
+                            : '1px solid var(--primary, #3b82f6)',
+                          boxShadow: isPaused 
+                            ? 'none' 
+                            : '0 4px 12px var(--shadow-color, rgba(59, 130, 246, 0.25))'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (isPaused) {
+                            e.currentTarget.style.background = 'var(--hover-bg, rgba(255, 255, 255, 0.14))';
+                            e.currentTarget.style.borderColor = 'var(--border-color-hover, rgba(255, 255, 255, 0.3))';
+                          } else {
+                            e.currentTarget.style.filter = 'brightness(1.1)';
+                            e.currentTarget.style.transform = 'translateY(-1px)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (isPaused) {
+                            e.currentTarget.style.background = 'var(--bg-input, rgba(255, 255, 255, 0.08))';
+                            e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.15))';
+                          } else {
+                            e.currentTarget.style.filter = 'none';
+                            e.currentTarget.style.transform = 'translateY(0)';
+                          }
+                        }}
+                      >
+                        {isPaused ? (
+                          <>
+                            <Play size={16} color="var(--primary, #3b82f6)" /> 
+                            <span>Retomar Operação</span>
+                          </>
+                        ) : (
+                          <>
+                            <Pause size={16} /> 
+                            <span>Pausar Ociosidade</span>
+                          </>
+                        )}
                       </button>
                     )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <section className="op-history-section" style={{ margin: 0 }}>
-          <div className="history-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
-  <div>
-    <h3 style={{ margin: 0, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <CheckCircle2 size={18} color="var(--primary)"/> Histórico Global de Romaneios
-    </h3>
-    <span className="history-count" style={{ display: 'block', marginTop: '4px' }}>
-      <strong>{totalNfsMinutasFinalizadas}</strong> pedidos concluídos da equipe
-    </span>
-  </div>
-            
-            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-              <div className="search-bar-op" style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px' }}>
-                <Search size={16} color="#64748b" />
-                <input type="text" placeholder="Buscar romaneio..." value={buscaRomaneio} onChange={(e) => setBuscaRomaneio(e.target.value)} style={{ border: 'none', outline: 'none', marginLeft: '8px', fontSize: '0.9rem' }}/>
-              </div>
-              <button onClick={abrirModalNovoPedido} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <PackagePlus size={18} /> Novo Romaneio
-              </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          </div>
-          
-          <div className="op-table-wrapper scrollable-table-wrapper">
-            <table className="op-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: '15%' }}>Romaneio</th><th style={{ width: '25%' }}>Destino / Resp.</th><th style={{ width: '25%' }}>Observações</th><th style={{ width: '25%' }}>Resumo Rápido</th><th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pedidosFiltrados.length === 0 ? (
-                  <tr><td colSpan="5" style={{textAlign: 'center', padding: '30px', color: '#94a3b8'}}>{buscaRomaneio ? 'Nenhum romaneio encontrado.' : 'Nenhum pedido processado hoje.'}</td></tr>
-                ) : (
-                  pedidosFiltrados.map(pedido => {
-                    let caixasCount = 0; 
-                    let skusCount = 0;
-                    const listaDocumentos = [];
+          </section>
 
-                    (pedido.documentos || []).forEach(d => {
-                      listaDocumentos.push(d.tipo || 'S/N');
-                      caixasCount += (d.caixas || []).length;
-                      (d.caixas || []).forEach(cx => { 
-                        (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); 
+          {/* ==========================================
+              TABELA DE ROMANEIOS (IDÊNTICA À OPERACAO.JSX COM TODOS OS PEDIDOS)
+              ========================================== */}
+          <section className="op-history-section">
+            
+            {/* CABEÇALHO DA TABELA */}
+            <div className="history-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="history-title-area">
+                <div className="history-icon-badge">
+                  <Layers size={22} />
+                </div>
+                <div>
+                  <h3>Romaneios Processados</h3>
+                  <span className="history-subtitle">Lista de pedidos da operação geral</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* BARRA DE PESQUISA EXPANSÍVEL */}
+                <div 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    background: isSearchExpanded ? 'var(--bg-input, rgba(0, 0, 0, 0.02))' : 'transparent',
+                    border: isSearchExpanded ? '1px solid var(--border-color, #cbd5e1)' : '1px solid transparent',
+                    borderRadius: '12px',
+                    width: isSearchExpanded ? '280px' : '40px',
+                    height: '40px',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    overflow: 'hidden',
+                    position: 'relative'
+                  }}
+                >
+                  <button 
+                    onClick={() => setIsSearchExpanded(true)}
+                    title="Buscar Romaneio"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      minWidth: '40px',
+                      height: '40px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: isSearchExpanded ? 'default' : 'pointer',
+                      color: isSearchExpanded ? 'var(--primary)' : 'var(--text-muted, #94a3b8)',
+                      transition: 'color 0.2s'
+                    }}
+                  >
+                    <Search size={18} />
+                  </button>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Filtrar por romaneio, loja ou UF..." 
+                    value={buscaRomaneio} 
+                    onChange={(e) => setBuscaRomaneio(e.target.value)}
+                    style={{ 
+                      border: 'none', 
+                      background: 'transparent', 
+                      color: 'var(--text-main, #0f172a)',
+                      outline: 'none',
+                      width: '100%',
+                      opacity: isSearchExpanded ? 1 : 0,
+                      transition: 'opacity 0.2s',
+                      pointerEvents: isSearchExpanded ? 'auto' : 'none',
+                      fontFamily: 'inherit',
+                      fontSize: '0.88rem'
+                    }}
+                  />
+                  
+                  {isSearchExpanded && (
+                    <button 
+                      onClick={() => {
+                        setIsSearchExpanded(false);
+                        setBuscaRomaneio('');
+                      }}
+                      title="Fechar Busca"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        minWidth: '40px',
+                        height: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: 'var(--text-muted, #94a3b8)',
+                        transition: 'color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* BOTÃO NOVO PEDIDO */}
+                <button 
+                  onClick={abrirModalNovoPedido}
+                  style={{ 
+                    padding: '9px 16px', 
+                    borderRadius: '10px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    fontWeight: 700, 
+                    fontSize: '0.85rem', 
+                    background: 'var(--primary)', 
+                    color: '#fff', 
+                    border: 'none', 
+                    cursor: 'pointer', 
+                    boxShadow: '0 4px 12px rgba(13, 50, 105, 0.2)', 
+                    transition: 'all 0.25s ease', 
+                    fontFamily: 'inherit',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 14px rgba(13, 50, 105, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(13, 50, 105, 0.2)';
+                  }}
+                >
+                  <Plus size={16} /> Novo Pedido
+                </button>
+              </div>
+            </div>
+            
+            {/* CONTAINER DA TABELA */}
+            <div className="op-table-wrapper scrollable-table-wrapper">
+              <table className="op-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '18%' }}>Romaneio & Status</th>
+                    <th style={{ width: '27%' }}>Destino / Local</th>
+                    <th style={{ width: '22%' }}>Observações</th>
+                    <th style={{ width: '23%' }}>Documentos & Carga</th>
+                    <th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedidosFiltrados.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="empty-table-row">
+                        <SearchX size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                        <p>{buscaRomaneio ? `Nenhum romaneio correspondente a "${buscaRomaneio}"` : 'Nenhum pedido processado nesta data.'}</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    pedidosFiltrados.map(pedido => {
+                      let caixasCount = 0; 
+                      let skusCount = 0;
+                      const listaDocumentos = []; 
+
+                      (pedido.documentos || []).forEach(d => {
+                        listaDocumentos.push(d.tipo || 'S/N');
+                        caixasCount += (d.caixas || []).length;
+                        (d.caixas || []).forEach(cx => { 
+                          (cx.produtos || []).forEach(p => skusCount += parseInt(p.quantidade) || 0); 
+                        });
                       });
-                    });
 
-                    let statusBadge;
-                    if (pedido.efetivado) statusBadge = <div className="time-badge success"><Check size={12} style={{marginRight:'3px', display:'inline'}}/> Finalizado</div>;
-                    else if (pedido.isPaused) statusBadge = <div className="time-badge paused" title={pedido.motivoPausa}><Pause size={12} style={{marginRight:'3px', display:'inline'}}/> Pausado</div>;
-                    else statusBadge = <div className="time-badge pending"><Clock size={12} style={{marginRight:'3px', display:'inline'}}/> {formatarCronometroPedido(pedido)}</div>;
+                      let statusClass = "status-running";
+                      let statusBadge;
 
-                    return (
-                      <tr key={pedido.id} className={`clickable-row ${pedido.efetivado ? "efetivado" : ""}`} onClick={() => abrirModalDetalhes(pedido)}>
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start' }}>
-                            <div><strong style={{ fontSize: '1.1rem', color: 'var(--primary)' }}>{pedido.romaneio || 'S/N'}</strong></div>
-                            {statusBadge}
+                      if (pedido.efetivado) {
+                        statusClass = "status-finished";
+                        statusBadge = (
+                          <div className="time-badge success">
+                            <Check size={12} /> Finalizado
                           </div>
-                        </td>
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{fontWeight: 600, color: '#334155', whiteSpace: 'normal', fontSize: '13px'}}>{pedido.loja || '---'}</div>
-                          <div style={{fontSize: '11px', color: '#94a3b8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}><MapPin size={12} /> {pedido.local || 'DF'} {pedido.uf ? `- ${pedido.uf}` : ''}</div>
-                          <div style={{fontSize: '11px', color: '#6366f1', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}><Users size={12} /> {getNomesResponsaveis(pedido)}</div>
-                        </td>
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px', whiteSpace: 'normal', fontSize: '12px', color: '#64748b' }}>
-                           {pedido.observacoes ? pedido.observacoes : <span style={{opacity: 0.4, fontStyle: 'italic'}}>Nenhuma observação...</span>}
-                        </td>
-                        <td style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {listaDocumentos.map((tipo, idx) => {
-                              let corFundo = '#3b82f6';
-                              if (tipo === 'Minuta') corFundo = '#8b5cf6';
-                              if (tipo === 'Bonificação') corFundo = '#ec4899';
-                              if (tipo === 'Troca') corFundo = '#f59e0b';
-                              
-                              return (
-                                <span key={idx} className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: corFundo, color: '#fff', border: 'none', fontWeight: 'bold' }}>
-                                  {tipo}
-                                </span>
-                              );
-                            })}
-                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{caixasCount} Caixas</span>
-                            <span className="sku-badge" style={{ margin: 0, padding: '2px 6px', fontSize: '11px', background: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0' }}>{skusCount} SKUs</span>
+                        );
+                      } else if (pedido.isPaused) {
+                        statusClass = "status-paused";
+                        statusBadge = (
+                          <div className="time-badge paused" title={pedido.motivoPausa}>
+                            <Pause size={12} /> Pausado
                           </div>
-                        </td>
-                        <td className="actions-cell" style={{ verticalAlign: 'middle', padding: '16px 12px' }}>
-                          <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                            <div style={{position: 'relative'}}>
-                              <button className="action-btn btn-edit" title="Ações ADM" onClick={() => setDropdownOpen(dropdownOpen === pedido.id ? null : pedido.id)}><MoreVertical size={16}/></button>
-                              {dropdownOpen === pedido.id && (
-                                <div className="table-dropdown-menu" style={{ right: 0, left: 'auto' }}>
-                                  <button className="dropdown-item" onClick={() => abrirModalEditarPedido(pedido)}><Edit size={14}/> Editar Dados do Pedido</button>
-                                  <div className="dropdown-divider"></div>
-                                  <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>{pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}</button>
-                                  <div className="dropdown-divider"></div>
-                                  <button className="dropdown-item text-danger" onClick={() => handleDeletePedido(pedido)}><Trash2 size={14}/> Excluir Pedido (Global)</button>
-                                </div>
-                              )}
+                        );
+                      } else {
+                        statusClass = "status-running";
+                        statusBadge = (
+                          <div className="time-badge running">
+                            <Clock size={12} /> {formatarCronometroPedido(pedido)}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <tr 
+                          key={pedido.id} 
+                          className={`clickable-row ${statusClass} ${dropdownOpen === pedido.id ? 'row-dropdown-open' : ''}`}
+                          onClick={() => abrirModalDetalhes(pedido)}
+                          title="Clique para ver Detalhes"
+                        >
+                          {/* 1. ROMANEIO E BADGE */}
+                          <td>
+                            <div className="table-romaneio-cell">
+                              <div className="romaneio-title-wrap">
+                                <strong className="romaneio-number">{pedido.romaneio || 'S/N'}</strong>
+                                {pedido._isLegacy && <span className="legacy-tag">Legado</span>}
+                              </div>
+                              {statusBadge}
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                          </td>
+                          
+                          {/* 2. DESTINO, UF & RESPONSÁVEIS */}
+                          <td>
+                            <div className="table-store-name">{pedido.loja || 'Destino não especificado'}</div>
+                            <div className="table-location-sub">
+                              <MapPin size={13} /> 
+                              <span>{pedido.local || 'DF'} {pedido.uf ? `• ${pedido.uf}` : ''}</span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-highlight, #38bdf8)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Users size={12} /> {getNomesResponsaveis(pedido)}
+                            </div>
+                          </td>
 
-      </main>
+                          {/* 3. OBSERVAÇÕES */}
+                          <td>
+                            <div className="table-obs-text">
+                              {pedido.observacoes ? pedido.observacoes : <span className="obs-empty">Sem observações...</span>}
+                            </div>
+                          </td>
+                          
+                          {/* 4. DOCUMENTOS E VOLUMES */}
+                          <td>
+                            <div className="table-docs-container">
+                              <div className="doc-pills-row">
+                                {listaDocumentos.map((tipo, idx) => {
+                                  let corFundo = '#3b82f6'; 
+                                  if (tipo === 'Minuta') corFundo = '#8b5cf6'; 
+                                  if (tipo === 'Bonificação') corFundo = '#ec4899'; 
+                                  if (tipo === 'Troca') corFundo = '#f59e0b'; 
+                                  
+                                  return (
+                                    <span key={idx} className="doc-micro-pill" style={{ background: corFundo }}>
+                                      {tipo}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <div className="volume-metrics-row">
+                                <span><strong>{caixasCount}</strong> cx</span>
+                                <span className="metric-dot">•</span>
+                                <span><strong>{skusCount}</strong> SKUs</span>
+                              </div>
+                            </div>
+                          </td>
 
-      <section className="op-bottom-zone">
-         <RankingDiario 
-            rankingCalculado={rankingCalculado} rankingExpandido={rankingExpandido} setRankingExpandido={setRankingExpandido}
-            currentTime={horaReferenciaAtual} dataOperacaoAtiva={dataOperacaoAtiva} isAdminMode={true} onDeleteEvent={handleDeleteEvent}
+                          {/* 5. AÇÕES */}
+                          <td className="actions-cell">
+                            <div onClick={(e) => e.stopPropagation()} className="action-buttons-wrap">
+                              <button className="action-btn btn-caixas" title="Painel do Romaneio" onClick={() => abrirModalDetalhes(pedido)}>
+                                <Info size={16}/>
+                              </button>
+                              
+                              <div style={{ position: 'relative' }}>
+                                <button className="action-btn btn-edit" title="Opções" onClick={() => setDropdownOpen(dropdownOpen === pedido.id ? null : pedido.id)}>
+                                  <MoreVertical size={16}/>
+                                </button>
+                                
+                                {dropdownOpen === pedido.id && (
+                                  <div className="table-dropdown-menu">
+                                    <button className="dropdown-item" onClick={() => abrirModalEditarPedido(pedido)}>
+                                      <Edit size={14}/> Editar Dados
+                                    </button>
+                                    <div className="dropdown-divider"></div>
+                                    <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
+                                      {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
+                                    </button>
+                                    <div className="dropdown-divider"></div>
+                                    <button className="dropdown-item text-danger" onClick={() => handleDeletePedido(pedido)}>
+                                      <Trash2 size={14}/> Excluir Pedido
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+        </main>
+
+        <section className="op-bottom-zone" style={{ padding: '0 20px 20px 20px', boxSizing: 'border-box' }}>
+          <RankingDiario 
+            rankingCalculado={rankingCalculado} 
+            rankingExpandido={rankingExpandido} 
+            setRankingExpandido={setRankingExpandido}
+            currentTime={horaReferenciaAtual} 
+            dataOperacaoAtiva={dataOperacaoAtiva} 
+            isAdminMode={true} 
+            onDeleteEvent={handleDeleteEvent}
+            usuarios={usuarios}
           />
-         <div className="op-side-indicators">
+          <div className="op-side-indicators">
             
             <div className="indicator-card op-card">
               <div className="indicator-icon" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
@@ -1241,34 +1709,100 @@ const totalPedidos = totalNfMinuta;
               <button className="indicator-btn" onClick={() => setShowMasterModal(true)}>Consultar Base</button>
             </div>
 
-         </div>
-      </section>
+          </div>
+        </section>
+      </div>
 
       {showModalIntervencao && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModalIntervencao(false)}>
-          <div style={{ background: '#f8fafc', width: '95%', maxWidth: '1000px', maxHeight: '90vh', borderRadius: '12px', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', borderBottom: '1px solid #e2e8f0', background: '#fff', position: 'sticky', top: 0, zIndex: 10 }}>
-              <h3 style={{ margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}><Settings size={20} color="#3b82f6" /> Lançamento de Ajustes e Penalidades</h3>
-              <button onClick={() => setShowModalIntervencao(false)} style={{ background: '#f1f5f9', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 'bold', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>X</button>
+        <div 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            backgroundColor: 'rgba(5, 5, 10, 0.75)', 
+            zIndex: 9999, 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          }} 
+          onClick={() => setShowModalIntervencao(false)}
+        >
+          <div 
+            style={{ 
+              background: 'var(--bg-card, #1e293b)', 
+              width: '95%', 
+              maxWidth: '920px', 
+              borderRadius: '16px', 
+              overflow: 'hidden', 
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)' 
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '18px 24px', 
+              borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))', 
+              background: 'rgba(0,0,0,0.02)' 
+            }}>
+              <h3 style={{ 
+                margin: 0, 
+                color: 'var(--text-main, #f8fafc)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '10px',
+                fontSize: '1.15rem',
+                fontWeight: 800,
+                letterSpacing: '-0.3px'
+              }}>
+                <Settings size={20} color="var(--primary, #3b82f6)" /> Lançamento de Ajustes e Penalidades
+              </h3>
+              
+              <button 
+                onClick={() => setShowModalIntervencao(false)} 
+                style={{ 
+                  background: 'var(--bg-input, rgba(255, 255, 255, 0.05))', 
+                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+                  width: '32px', 
+                  height: '32px', 
+                  borderRadius: '8px', 
+                  cursor: 'pointer', 
+                  color: 'var(--text-muted, #94a3b8)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'}
+              >
+                <X size={16} />
+              </button>
             </div>
-            <div style={{ padding: '20px' }}>
+
+            <div style={{ padding: '24px' }}>
               <AdmControlesManuais dados={usuariosParaIntervencao} dataFiltro={dataOperacaoAtiva} />
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= INJEÇÃO DOS MODAIS ADICIONADOS ================= */}
+      {/* MODAL: CRIAR / EDITAR PEDIDO */}
       <ModalCriarEditarPedido
         showModal={showModalPedido} isClosingModal={isClosingModal} handleCloseModal={handleCloseModalPedido} isSaving={isSaving} editingId={editingId}
         romaneio={romaneio} setRomaneio={setRomaneio} loja={loja} setLoja={setLoja} local={local} setLocal={setLocal} uf={uf} setUf={setUf}
         isCaixaMaster={isCaixaMaster} setIsCaixaMaster={setIsCaixaMaster} observacoes={observacoes} setObservacoes={setObservacoes}
         docTipo={docTipo} setDocTipo={setDocTipo} docResponsavel={docResponsavel} setDocResponsavel={setDocResponsavel}
-        usuarios={usuarios} localUser={null} handleAddDoc={handleAddDoc} docsTemporarios={docsTemporarios} handleRemoveDoc={handleRemoveDoc} handleSavePedido={handleSavePedido}
+        usuarios={usuarios} localUser={localUser} handleAddDoc={handleAddDoc} docsTemporarios={docsTemporarios} handleRemoveDoc={handleRemoveDoc} handleSavePedido={handleSavePedido}
         handleAddResponsavelToDoc={(id, email) => setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: [...(d.responsaveis || []), email]} : d))}
         handleRemoveResponsavelFromDoc={(id, email) => setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: d.responsaveis.filter(r => r !== email)} : d))}
       />
 
+      {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
       <ModalDetalhesPedido 
         showDetalhesModal={showDetalhesModal} setShowDetalhesModal={setShowDetalhesModal} pedidoModal={pedidoModal} isSaving={isSaving} isUploading={isUploading}
         activeTab={activeTab} setActiveTab={setActiveTab} wmsSessions={wmsSessions} setWmsSessions={setWmsSessions} buscasDocumentos={buscasDocumentos}
@@ -1279,7 +1813,7 @@ const totalPedidos = totalNfMinuta;
         skusExpandidosComum={skusExpandidosComum} setSkusExpandidosComum={setSkusExpandidosComum}
         handleInputManual={() => {}} abrirModalSalvarManual={() => {}} handleMudarVariacao={() => {}}
         isEditingObs={isEditingObs} setIsEditingObs={setIsEditingObs} observacoes={observacoes} setObservacoes={setObservacoes} docTipo={docTipo} setDocTipo={setDocTipo}
-        docResponsavel={docResponsavel} setDocResponsavel={setDocResponsavel} localUser={null} usuarios={usuarios}
+        docResponsavel={docResponsavel} setDocResponsavel={setDocResponsavel} localUser={localUser} usuarios={usuarios}
         handleAddDoc={handleAddDoc} docsTemporarios={docsTemporarios} handleRemoveDoc={handleRemoveDoc}
         handleAddResponsavelToDoc={(id, email) => setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: [...(d.responsaveis || []), email]} : d))}
         handleRemoveResponsavelFromDoc={(id, email) => setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: d.responsaveis.filter(r => r !== email)} : d))}
@@ -1287,6 +1821,7 @@ const totalPedidos = totalNfMinuta;
         handleSalvarEdicaoTab1={() => alert('Edições pela ADM salvas!')}
       />
 
+      {/* MODAL DE RESUMO E EDIÇÃO DE CAIXAS */}
       <ModalCaixasEfetivadas 
         showCaixasEfetivadasModal={showCaixasEfetivadasModal}
         setShowCaixasEfetivadasModal={setShowCaixasEfetivadasModal}
@@ -1302,6 +1837,7 @@ const totalPedidos = totalNfMinuta;
         excluirCaixaManual={excluirCaixaManual}
       />
 
+      {/* AUDITORIA WMS */}
       <AuditoriaWms 
         auditModalData={auditModalData}
         setAuditModalData={setAuditModalData}
@@ -1311,16 +1847,19 @@ const totalPedidos = totalNfMinuta;
         isSaving={isSaving}
       />
 
+      {/* MODAL: ALERTA DE PESO ZERO */}
       <ModalAlertaPeso 
         alertaPesoZero={alertaPesoZero}
         handleResolvePesoZero={handleResolvePesoZero}
       />
 
+      {/* MODAL: SUCESSO ANIMADO */}
       <ModalSucesso 
         modalSucesso={modalSucesso}
         setModalSucesso={setModalSucesso}
       />
 
+      {/* MODAL DE ORDEM DE PRODUÇÃO */}
       <ModalOrdemProducao 
         showOpModal={showOpModal}
         setShowOpModal={setShowOpModal}
@@ -1330,6 +1869,7 @@ const totalPedidos = totalNfMinuta;
         dataOperacaoAtiva={dataOperacaoAtiva}
       />
 
+      {/* MODAL: DICIONÁRIO DE CAIXAS MASTER */}
       <ModalCaixasMaster 
         showMasterModal={showMasterModal}
         setShowMasterModal={setShowMasterModal}
@@ -1337,6 +1877,15 @@ const totalPedidos = totalNfMinuta;
         setCaixasMaster={setCaixasMaster}
       />
 
-    </div>
+      <AnimacaoCriacaoPedido dadosPedido={pedidoRecemCriado} />
+
+      <ModalConfirmarExclusao 
+        pedidoParaExcluir={pedidoParaExcluir}
+        onConfirmar={handleConfirmarExclusaoDefinitiva}
+        onCancelar={() => setPedidoParaExcluir(null)}
+        isExcluindo={isExcluindoPedido}
+      />
+
+    </>
   );
 }

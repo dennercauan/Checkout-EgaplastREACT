@@ -28,6 +28,7 @@ export default function NavbarOperacao({
   const dropdownRef = useRef(null);
 
   const temaPersistido = localStorage.getItem('egaplast_theme') || 'light';
+  const dateInputRef = useRef(null);
 
   // 1. Controle de bloqueio duplo
   const [isSaindo, setIsSaindo] = useState(false);
@@ -293,6 +294,15 @@ export default function NavbarOperacao({
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             
             <div 
+              onClick={() => {
+                if (dateInputRef.current) {
+                  try {
+                    dateInputRef.current.showPicker();
+                  } catch (err) {
+                    dateInputRef.current.focus();
+                  }
+                }
+              }}
               style={{ 
                 position: 'relative',
                 display: 'flex', 
@@ -307,7 +317,8 @@ export default function NavbarOperacao({
                 fontWeight: 700,
                 letterSpacing: '0.3px',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                userSelect: 'none'
               }}
               onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--text-highlight, #38bdf8)'}
               onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.15))'}
@@ -319,6 +330,7 @@ export default function NavbarOperacao({
               </span>
 
               <input 
+                ref={dateInputRef}
                 type="date" 
                 value={dataOperacaoAtiva} 
                 onChange={(e) => {
@@ -334,8 +346,8 @@ export default function NavbarOperacao({
                   width: '100%',
                   height: '100%',
                   opacity: 0,
-                  cursor: 'pointer',
-                  zIndex: 2
+                  pointerEvents: 'none',
+                  zIndex: -1
                 }}
               />
             </div>

@@ -1,6 +1,6 @@
 // src/components/ModalOrdemProducao.jsx
-import React, { useState, useEffect } from 'react';
-import { Factory, X, Loader2, Plus, User, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Factory, X, Loader2, Plus, User, Trash2, ChevronDown, Check } from 'lucide-react';
 import { collection, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -14,6 +14,19 @@ export default function ModalOrdemProducao({
 }) {
   const [opForm, setOpForm] = useState({ numero: '', responsavelEmail: '' });
   const [isSavingOp, setIsSavingOp] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Fecha o dropdown se clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (showOpModal) {
@@ -22,6 +35,7 @@ export default function ModalOrdemProducao({
       } else {
         setOpForm(prev => ({ ...prev, responsavelEmail: '' }));
       }
+      setDropdownOpen(false);
     }
   }, [showOpModal, localUser]);
 
@@ -61,6 +75,15 @@ export default function ModalOrdemProducao({
     }
   };
 
+  // Lista de usuários formatada
+  const listaUsuarios = usuarios.map(u => ({
+    uid: u.uid,
+    email: u.email,
+    nome: u.email.split('@')[0]
+  }));
+
+  const usuarioSelecionado = listaUsuarios.find(u => u.email === opForm.responsavelEmail);
+
   return (
     <div className="op-modal-overlay" onClick={() => !isSavingOp && setShowOpModal(false)}>
       <div 
@@ -69,11 +92,11 @@ export default function ModalOrdemProducao({
           maxWidth: '620px', 
           width: '95%', 
           borderRadius: '16px',
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-color)',
+          background: 'var(--bg-card, #0f172a)',
+          border: '1px solid var(--border-color, #334155)',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
+          overflow: 'visible', /* Permite que o dropdown flutue sem cortar */
           padding: 0, 
           boxSizing: 'border-box'
         }} 
@@ -96,9 +119,9 @@ export default function ModalOrdemProducao({
         </div>
         
         {/* CORPO */}
-        <div className="op-modal-body" style={{ background: 'var(--bg-main)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="op-modal-body" style={{ background: 'var(--bg-main)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflow: 'visible' }}>
           
-          <div className="op-card-form" style={{ background: 'var(--bg-card)', padding: '18px', borderRadius: '12px', border: '1px solid var(--border-color)', boxSizing: 'border-box', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div className="op-card-form" style={{ background: 'var(--bg-card)', padding: '18px', borderRadius: '12px', border: '1px solid var(--border-color)', boxSizing: 'border-box', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'relative', zIndex: 10 }}>
             <h4 style={{ margin: '0 0 12px 0', color: 'var(--text-main)', fontSize: '0.95rem', fontWeight: 800 }}>Registrar Nova O.P.</h4>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'end' }}>
@@ -113,17 +136,85 @@ export default function ModalOrdemProducao({
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-input)', color: 'var(--text-main)', boxSizing: 'border-box', outline: 'none', fontSize: '0.9rem' }}
                 />
               </div>
-              <div className="input-group-op" style={{ margin: 0 }}>
+
+              {/* DROPDOWN FLUTUANTE PARA BAIXO */}
+              <div className="input-group-op" style={{ margin: 0, position: 'relative' }} ref={dropdownRef}>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>Responsável</label>
-                <select 
-                  value={opForm.responsavelEmail} 
-                  onChange={(e) => setOpForm({...opForm, responsavelEmail: e.target.value})} 
-                  disabled={isSavingOp} 
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-input)', color: 'var(--text-main)', outline: 'none', fontSize: '0.88rem' }}
+                
+                <div 
+                  onClick={() => !isSavingOp && setDropdownOpen(!dropdownOpen)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-input)',
+                    color: usuarioSelecionado ? 'var(--text-main)' : 'var(--text-muted)',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    fontSize: '0.88rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
                 >
-                  <option value="">Selecione o Conferente...</option>
-                  {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
-                </select>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {usuarioSelecionado ? usuarioSelecionado.nome : 'Selecione o Conferente...'}
+                  </span>
+                  <ChevronDown size={16} color="var(--text-muted)" style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, marginLeft: '6px' }} />
+                </div>
+
+                {dropdownOpen && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)', /* Abre para baixo */
+                    left: 0,
+                    right: 0,
+                    background: 'var(--bg-card, #0f172a)',
+                    border: '1px solid var(--border-color, #334155)',
+                    borderRadius: '10px',
+                    boxShadow: '0 12px 28px rgba(0,0,0,0.7)',
+                    zIndex: 1000,
+                    maxHeight: '220px',
+                    overflowY: 'auto',
+                    padding: '4px'
+                  }}>
+                    {listaUsuarios.map(u => {
+                      const isSelected = u.email === opForm.responsavelEmail;
+                      return (
+                        <div
+                          key={u.uid || u.email}
+                          onClick={() => {
+                            setOpForm({ ...opForm, responsavelEmail: u.email });
+                            setDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '9px 12px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: isSelected ? 'var(--primary, #0d3269)' : 'transparent',
+                            color: isSelected ? '#ffffff' : 'var(--text-main, #f8fafc)',
+                            fontSize: '0.85rem',
+                            fontWeight: isSelected ? '700' : 'normal',
+                            transition: 'background 0.15s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) e.currentTarget.style.background = 'var(--bg-input, rgba(255,255,255,0.06))';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSelected) e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <span>{u.nome}</span>
+                          {isSelected && <Check size={14} color="#10b981" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
             

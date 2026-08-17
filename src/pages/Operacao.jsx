@@ -335,13 +335,15 @@ export default function Operacao({ isAdmin }) {
     if (!file) return;
 
     setFluxoImportacao({
+      tipo: 'comum', // <-- Força tipo comum
       etapa: 'lendo',
       dIdx,
       fileName: file.name,
       totalCaixas: 0,
       totalSkus: 0,
       pesoTotal: 0,
-      amostraNomes: []
+      amostraNomes: [],
+      auditoriaData: null // <-- Garante que pedidos comuns nunca usem auditoria
     });
 
     const reader = new FileReader();
@@ -417,6 +419,7 @@ export default function Operacao({ isAdmin }) {
 
         setTimeout(() => {
           setFluxoImportacao({
+            tipo: 'comum', // <-- Confirmação do tipo comum
             etapa: 'previa',
             dIdx,
             fileName: file.name,
@@ -425,7 +428,8 @@ export default function Operacao({ isAdmin }) {
             totalSkus: totalUnidadesSkus,
             pesoTotal: pesoBruto,
             amostraNomes: caixasFinais.slice(0, 8).map(c => c.num),
-            resumoTexto: resumoTextoGerado
+            resumoTexto: resumoTextoGerado,
+            auditoriaData: null // <-- Sem auditoria
           });
         }, 900);
 
@@ -661,21 +665,21 @@ export default function Operacao({ isAdmin }) {
   }, [navigate]);
 
   useEffect(() => {
+  const unsub = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
+    const list = snapshot.docs.map(d => ({
+      uid: d.id,
+      ...d.data() // Garante que photoURL, nickname e email venham juntos
+    }));
+    setUsuarios(list);
+  });
+  return () => unsub();
+}, []);
+
+  useEffect(() => {
     window.scrollTo(0, 0);
     const [ano, mes, dia] = dataOperacaoAtiva.split('-');
     setTitulo(`Operação (${dia}/${mes})`);
-    
-    const fetchUsuarios = async () => {
-      try {
-        const snap = await getDocs(collection(db, 'usuarios'));
-        const lista = [];
-        snap.forEach(doc => {
-          if(doc.data().email) lista.push({ uid: doc.id, email: String(doc.data().email).toLowerCase().trim() });
-        });
-        setUsuarios(lista);
-      } catch (error) { console.error("Erro ao buscar usuários:", error); }
-    };
-    fetchUsuarios();
+  
   }, [dataOperacaoAtiva]);
 
   useEffect(() => {
@@ -1589,25 +1593,31 @@ export default function Operacao({ isAdmin }) {
         await updateDoc(ref, { romaneio, loja, local, uf, observacoes, isCaixaMaster, documentos: documentosLimpos, uidsVinculados });
         handleCloseModal();
       } else {
-        const novoPedido = {
+        const novoPedidoPayload = {
           romaneio, loja, local, uf, observacoes, isCaixaMaster, documentos: documentosLimpos,
           criadorUid: localUser.uid, criadorEmail: localUser.email, dataOperacao: dataOperacaoAtiva, 
           uidsVinculados, createdAt: serverTimestamp(), efetivado: false, isPaused: false, totalPausedTime: 0
         };
         
+        // 1. Fecha o formulário imediatamente e aciona o HUD com os dados temporários
         handleCloseModal();
-        await addDoc(collection(db, 'pedidos'), novoPedido);
-
         setPedidoRecemCriado({ romaneio, loja });
-        
-        setTimeout(() => {
-          setIsIgnitingTracker(true);
-        }, 2400);
 
+        // 2. Grava no banco apenas na reta final do carregamento (2.1s)
+        setTimeout(async () => {
+          try {
+            await addDoc(collection(db, 'pedidos'), novoPedidoPayload);
+          } catch (err) {
+            console.error("Erro ao salvar pedido após animação:", err);
+          }
+          setIsIgnitingTracker(true);
+        }, 2100);
+
+        // 3. Finaliza e desmonta o overlay após a gravação
         setTimeout(() => {
           setPedidoRecemCriado(null);
           setIsIgnitingTracker(false);
-        }, 2900);
+        }, 2800);
       }
     } catch (error) { 
       alert("Houve um erro ao salvar o pedido."); 
@@ -1616,63 +1626,90 @@ export default function Operacao({ isAdmin }) {
     }
   };
 
-  const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, currentTime);
+  // 1. Executa o motor de cálculo bruto
+  const rankingCalculadoBruto = useMotorRanking(
+    usuarios, 
+    opsDoDia, 
+    pedidosProcessados, 
+    controlePausas, 
+    ajustesDoDia, 
+    dataOperacaoAtiva, 
+    currentTime
+  );
 
+  // 2. Enriquece em memória local com Nickname/Nome formatado, photoURL e UIDs
+  const rankingCalculado = useMemo(() => {
+    if (!rankingCalculadoBruto || !Array.isArray(rankingCalculadoBruto)) return [];
+
+    return rankingCalculadoBruto.map(user => {
+      const emailLimpo = String(user.email || '').toLowerCase().trim();
+      const nomeLimpo = String(user.nome || '').toLowerCase().trim();
+
+      const userDoc = (usuarios || []).find(u => {
+        const uEmail = String(u.email || '').toLowerCase().trim();
+        const uNome = String(u.nickname || u.email?.split('@')[0] || '').toLowerCase().trim();
+        return (
+          (user.uid && u.uid === user.uid) ||
+          (uEmail && emailLimpo && uEmail === emailLimpo) ||
+          (uNome && nomeLimpo && uNome === nomeLimpo) ||
+          (u.email && String(u.email).split('@')[0].toLowerCase().trim() === nomeLimpo)
+        );
+      });
+
+      // Prioriza o apelido/nome configurado no perfil
+      const nomeFinal = userDoc?.nickname || user.nome || (user.email ? user.email.split('@')[0] : 'Usuário');
+
+      return {
+        ...user,
+        nome: nomeFinal, // Substitui o prefixo do email pelo Nickname
+        photoURL: userDoc?.photoURL || null,
+        uid: user.uid || userDoc?.uid || null,
+        email: user.email || userDoc?.email || null
+      };
+    });
+  }, [rankingCalculadoBruto, usuarios]);
+
+  // 3. Sincronização leve com a ADM (COM DEBOUNCE E REMOÇÃO DE UNDEFINED)
   useEffect(() => {
-    if (!rankingCalculado || rankingCalculado.length === 0) return;
+    if (!rankingCalculadoBruto || rankingCalculadoBruto.length === 0) return;
 
-    const sincronizarComADM = async () => {
+    const debounceTimer = setTimeout(async () => {
       try {
         const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-        const rankingParaSalvar = {};
+        const rankingSanitizado = {};
         
-        rankingCalculado.forEach(user => {
-          rankingParaSalvar[user.nome] = {
-            pontos: user.pontos || 0,
-            skus: user.skus || 0,       
-            pontosSku: user.pontosSku || 0,
-            op: user.op || 0,           
-            pedidos: user.pedidos || 0, 
-            bonusPedidos: user.bonusPedidos || 0,
-            decrescimo: user.decrescimo || 0,
-            pointEvents: user.pointEvents || [],
-            chartData: user.chartData || [],
-            eventosMesclados: user.eventosMesclados || []
+        rankingCalculadoBruto.forEach(user => {
+          if (!user?.nome) return;
+          rankingSanitizado[user.nome] = {
+            uid: user.uid || null,
+            email: user.email || null,
+            pontos: Number(user.pontos) || 0,
+            skus: Number(user.skus) || 0,       
+            pontosSku: Number(user.pontosSku) || 0,
+            op: Number(user.op) || 0,           
+            pedidos: Number(user.pedidos) || 0, 
+            bonusPedidos: Number(user.bonusPedidos) || 0,
+            decrescimo: Number(user.decrescimo) || 0,
+            chartData: Array.isArray(user.chartData) ? user.chartData : [],
+            pointEvents: Array.isArray(user.pointEvents) ? user.pointEvents : [],
+            eventosMesclados: Array.isArray(user.eventosMesclados) ? user.eventosMesclados : []
           };
         });
 
         let totalPedidos = 0;
         let totalCaixas = 0;
         pedidosProcessados.forEach(p => {
-           if (p.efetivado) {
-              const temNfOuMinuta = (p.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
-              if (temNfOuMinuta) totalPedidos++;
-              
-              (p.documentos || []).forEach(d => {
-                  totalCaixas += (d.caixas || []).length;
-              });
-           }
+          if (p.efetivado) {
+            const temNfOuMinuta = (p.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
+            if (temNfOuMinuta) totalPedidos++;
+            
+            (p.documentos || []).forEach(d => {
+              totalCaixas += (d.caixas || []).length;
+            });
+          }
         });
 
-        const rankingSanitizado = {};
-        if (rankingParaSalvar && typeof rankingParaSalvar === 'object') {
-          Object.entries(rankingParaSalvar).forEach(([nome, stats]) => {
-            if (!stats) return;
-            rankingSanitizado[nome] = {
-              pontos: Number(stats.pontos) || 0,
-              skus: Number(stats.skus) || 0,
-              pontosSku: Number(stats.pontosSku) || 0,
-              op: Number(stats.op) || 0,
-              pedidos: Number(stats.pedidos) || 0,
-              bonusPedidos: Number(stats.bonusPedidos) || 0,
-              decrescimo: Number(stats.decrescimo) || 0,
-              chartData: Array.isArray(stats.chartData) ? stats.chartData : [],
-              pointEvents: Array.isArray(stats.pointEvents) ? stats.pointEvents : [],
-              eventosMesclados: Array.isArray(stats.eventosMesclados) ? stats.eventosMesclados : []
-            };
-          });
-        }
-
+        // JSON.parse(JSON.stringify(...)) purga recursivamente qualquer propriedade undefined
         const payloadFinal = JSON.parse(JSON.stringify({
           ranking: rankingSanitizado,
           totalNfMinuta: totalPedidos || 0,
@@ -1680,15 +1717,21 @@ export default function Operacao({ isAdmin }) {
           ultimaAtualizacao: Date.now()
         }));
 
-        await setDoc(refDia, payloadFinal);
+        await setDoc(refDia, payloadFinal, { merge: true });
 
       } catch (error) {
         console.error("Falha na transmissão do ranking para a ADM:", error);
       }
-    };
+    }, 4000);
 
-    sincronizarComADM();
-  }, [rankingCalculado, dataOperacaoAtiva, pedidosProcessados]);
+    return () => clearTimeout(debounceTimer);
+  }, [
+    opsDoDia.length, 
+    pedidosProcessados.length, 
+    dataOperacaoAtiva, 
+    ajustesDoDia.length, 
+    controlePausas
+  ]);
 
   const [alertaPesoZero, setAlertaPesoZero] = useState(null);
 
@@ -1781,6 +1824,22 @@ export default function Operacao({ isAdmin }) {
     }
     
     setAlertaPesoZero(null);
+  };
+
+  const handleDeleteEvent = async (evento) => {
+    if (!evento || !evento.sourceId || !evento.sourceType) return;
+    if (!window.confirm(`Deseja excluir o registro "${evento.label}"?`)) return;
+
+    try {
+      if (evento.sourceType === 'op') {
+        await deleteDoc(doc(db, 'ordensProducao', evento.sourceId));
+      } else if (evento.sourceType === 'pedido') {
+        await deleteDoc(doc(db, 'pedidos', evento.sourceId));
+      }
+    } catch (error) {
+      console.error("Erro ao excluir registro de produtividade:", error);
+      alert("Erro ao excluir o evento.");
+    }
   };
 
   return (
@@ -2223,13 +2282,16 @@ export default function Operacao({ isAdmin }) {
           </section>
 
           <section className="op-bottom-zone">
-            <RankingDiario 
-              rankingCalculado={rankingCalculado}
-              rankingExpandido={rankingExpandido}
-              setRankingExpandido={setRankingExpandido}
-              currentTime={currentTime}           
-              dataOperacaoAtiva={dataOperacaoAtiva} 
-            />
+            <RankingDiario
+  rankingCalculado={rankingCalculado}
+  rankingExpandido={rankingExpandido}
+  setRankingExpandido={setRankingExpandido}
+  currentTime={currentTime}
+  dataOperacaoAtiva={dataOperacaoAtiva}
+  onDeleteEvent={handleDeleteEvent}
+  isAdminMode={isAdmin}
+  usuarios={usuarios} /* <-- CERTIFIQUE-SE DE PASSAR ESSA PROP */
+/>
 
             <div className="op-side-indicators">
               <div className="indicator-card op-card">
