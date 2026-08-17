@@ -1,6 +1,6 @@
 // src/components/PersonalDashboard.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   collection, query, where, onSnapshot, addDoc, 
   serverTimestamp, documentId, getDocs, doc, getDoc, 
@@ -20,13 +20,51 @@ import {
 import ModalVolumeDetalhado from './ModalVolumeDetalhado';
 import ModalFaturamento from './ModalFaturamento';
 import ModalRankingDetalhado from './ModalRankingDetalhado';
+import TransicaoDashboardOverlay from './TransicaoDashboardOverlay';
 import '../css/PersonalDashboard.css';
 
 export default function PersonalDashboard({ user, isAdmin }) {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ==========================================
+  // TRANSIÇÃO DE ENTRADA SUAVE (OPERAÇÃO -> DASHBOARD)
+  // ==========================================
+  const veioDeTransicao = Boolean(location.state?.fromTransition);
+  const [overlayAtivo, setOverlayAtivo] = useState(veioDeTransicao);
+  const [overlaySaindo, setOverlaySaindo] = useState(false);
+  const [revelarCascata, setRevelarCascata] = useState(!veioDeTransicao);
+
+  useEffect(() => {
+    if (veioDeTransicao) {
+      // 1. Inicia o fade-out do Overlay
+      const t1 = setTimeout(() => {
+        setOverlaySaindo(true);
+      }, 800);
+
+      // 2. Dispara as animações em cascata no meio do fade-out do overlay
+      // Como o DOM já está montado em background, não há travamento de CPU (60fps)
+      const t2 = setTimeout(() => {
+        setRevelarCascata(true);
+      }, 950);
+
+      // 3. Remove o overlay completamente da memória
+      const t3 = setTimeout(() => {
+        setOverlayAtivo(false);
+        window.history.replaceState({}, document.title);
+      }, 1500);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [veioDeTransicao]);
+
   const [estatisticasPeriodo, setEstatisticasPeriodo] = useState([]); 
   const [loading, setLoading] = useState(true);
-  
+
   // Modais de Controle
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [isClosingHistory, setIsClosingHistory] = useState(false);
@@ -43,20 +81,20 @@ export default function PersonalDashboard({ user, isAdmin }) {
     setTimeout(() => {
       setIsModalTopOrdersOpen(false);
       setIsClosingTopOrders(false);
-    }, 350); // Sincronizado com os 350ms do CSS
+    }, 350);
   };
 
-  // Estados de Hover dos Cards (Flutuando para cima)
+  // Estados de Hover dos Cards
   const [isTopOrdersExpanded, setIsTopOrdersExpanded] = useState(false);
   const [isRankingHovered, setIsRankingHovered] = useState(false);
 
   // ==========================================
   // MARCO ZERO DO RANKING OFICIAL
   // ==========================================
-  const DATA_INICIO_NOVO_SISTEMA = '2026-08-14'; // YYYY-MM-DD
+  const DATA_INICIO_NOVO_SISTEMA = '2026-08-14';
 
   // ==========================================
-  // FILTROS DE DATA (FUSO HORÁRIO LOCAL SEGURO)
+  // FILTROS DE DATA
   // ==========================================
   const today = new Date();
   const ano = today.getFullYear();
@@ -78,18 +116,15 @@ export default function PersonalDashboard({ user, isAdmin }) {
   // Maiores Pedidos
   const [maioresPedidosBrutos, setMaioresPedidosBrutos] = useState([]);
   const [loadingTopOrders, setLoadingTopOrders] = useState(false);
-  
 
-  // MÁGICA AQUI: Congela os Top 5 na memória para não resetar a animação do gráfico
   const top5MaioresPedidos = useMemo(() => {
     return maioresPedidosBrutos.slice(0, 5);
   }, [maioresPedidosBrutos]);
 
   // Card Principal (Pedidos de Hoje)
   const [meusPedidosCount, setMeusPedidosCount] = useState(0);
-  const [loadingOperacao, setLoadingOperacao] = useState(true); // Inicializa como true para não piscar no início
+  const [loadingOperacao, setLoadingOperacao] = useState(true);
 
-  // Estados independentes para evitar recriar a query no Firebase
   const [pedidosRaizDia, setPedidosRaizDia] = useState([]);
   const [pedidosLegadosDia, setPedidosLegadosDia] = useState([]);
 
@@ -98,7 +133,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   const [volumeDataCompleto, setVolumeDataCompleto] = useState([]);
 
   // ==========================================
-  // MAPA GLOBAL DE USUÁRIOS (FOTO E APELIDO/NOME)
+  // MAPA GLOBAL DE USUÁRIOS
   // ==========================================
   const [mapaUsuarios, setMapaUsuarios] = useState({});
 
@@ -118,7 +153,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
         const nickKey = (data.nickname || '').toLowerCase().trim();
         const docIdKey = docSnap.id.toLowerCase().trim();
 
-        // Indexa por todas as chaves possíveis para garantir o casamento exato dos dados
         mapa[docSnap.id] = info;
         if (docIdKey) mapa[docIdKey] = info;
         if (emailCompleto) mapa[emailCompleto] = info;
@@ -131,18 +165,13 @@ export default function PersonalDashboard({ user, isAdmin }) {
     return () => unsub();
   }, []);
 
-  // Estado para transição cinematográfica
-  const [isNavigatingOut, setIsNavigatingOut] = useState(false);
-
+  // ==========================================
+  // NAVEGAÇÃO DIRETA (DISPARA TRANSIÇÃO NA OPERAÇÃO)
+  // ==========================================
   const handleHeroNavigation = (destino) => {
-    if (isNavigatingOut) return;
-    setIsNavigatingOut(true);
-    
-    // 580ms permite que a animação de recuo e fade complete com suavidade
-    setTimeout(() => {
-      navigate(destino);
-    }, 580);
+    navigate(destino, { state: { fromTransition: true } });
   };
+
   // ==========================================
   // BUSCA DADOS DE FATURAMENTO DIÁRIO
   // ==========================================
@@ -180,10 +209,10 @@ export default function PersonalDashboard({ user, isAdmin }) {
     }
 
     return { totalValor, totalPedidos, sparkline };
-  }, [dadosFaturamento, ano, mes]);
+  }, [dadosFaturamento, ano, mes, today]);
 
   // ==========================================
-  // 1. ESCUTA DE PEDIDOS DO DIA (INDEPENDENTE E BLINDADA)
+  // ESCUTA DE PEDIDOS DO DIA
   // ==========================================
   useEffect(() => {
     if (!user) return;
@@ -192,7 +221,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
     const startOfDay = new Date(Number(anoStr), Number(mesStr) - 1, Number(diaStr), 0, 0, 0);
     const endOfDay = new Date(Number(anoStr), Number(mesStr) - 1, Number(diaStr), 23, 59, 59);
 
-    // Listener 1: Pedidos na raiz
     const qRaiz = query(
       collection(db, 'pedidos'), 
       where('dataOperacao', '==', dataHojeLocal)
@@ -201,7 +229,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
       setPedidosRaizDia(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => console.error("Erro busca pedidos raiz:", err));
 
-    // Listener 2: Pedidos em subpastas legadas
     const qLegado = query(
       collectionGroup(db, 'pedidosMultiDocumento'),
       where('createdAt', '>=', Timestamp.fromDate(startOfDay)),
@@ -215,10 +242,10 @@ export default function PersonalDashboard({ user, isAdmin }) {
       unsubRaiz();
       unsubLegado();
     };
-  }, [user, dataHojeLocal]); // A mágica acontece aqui: as estatísticas foram removidas da dependência.
+  }, [user, dataHojeLocal]);
 
   // ==========================================
-  // 2. CONSOLIDAÇÃO DOS DADOS (SEM PISCAR O LOADER)
+  // CONSOLIDAÇÃO DOS DADOS
   // ==========================================
   useEffect(() => {
     if (!user) return;
@@ -267,7 +294,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
       });
     });
 
-    // Fallback para Admin caso não haja dados novos, mas o consolidado já exista
     if (isAdmin && contagemNfMinuta === 0 && estatisticasPeriodo && estatisticasPeriodo.length > 0) {
       const estHoje = estatisticasPeriodo.find(e => e.id === dataHojeLocal);
       if (estHoje) {
@@ -276,7 +302,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
     }
 
     setMeusPedidosCount(contagemNfMinuta);
-    setLoadingOperacao(false); // Aqui nós APENAS desativamos o loading. Sem recriar true!
+    setLoadingOperacao(false);
   }, [pedidosRaizDia, pedidosLegadosDia, isAdmin, estatisticasPeriodo, dataHojeLocal, user]);
 
   // ==========================================
@@ -364,7 +390,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   }, [startDate, endDate]);
 
   // ==========================================
-  // BUSCA DADOS DE HISTÓRICO DO MÊS (ESTATISTICAS DIARIAS)
+  // BUSCA DADOS DE HISTÓRICO
   // ==========================================
   useEffect(() => {
     if (!user) return;
@@ -433,7 +459,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   }, []);
 
   // ==========================================
-  // RANKING CALCULADO DO PERÍODO COM FOTO E NICKNAME INJETADOS
+  // RANKING CALCULADO DO PERÍODO
   // ==========================================
   const rankingDataCompleto = useMemo(() => {
     const mapa = {};
@@ -441,14 +467,11 @@ export default function PersonalDashboard({ user, isAdmin }) {
 
     estatisticasPeriodo.forEach(dia => {
       const idDia = String(dia.id).trim();
-      
-      // Ignora dados anteriores à data oficial de lançamento
       if (idDia < corteInicial) return;
 
       const rawRanking = dia.ranking;
       if (!rawRanking) return;
 
-      // 1. Tratamento se o Firebase gravou como Array
       if (Array.isArray(rawRanking)) {
         rawRanking.forEach(item => {
           if (!item || (!item.nome && !item.uid)) return;
@@ -472,7 +495,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
           mapa[nomeChave].skus += Number(item.skus || item.pontosSku || 0);
         });
       } 
-      // 2. Tratamento se o Firebase gravou como Objeto
       else if (typeof rawRanking === 'object') {
         Object.entries(rawRanking).forEach(([chave, stats]) => {
           if (stats === null || stats === undefined) return;
@@ -506,7 +528,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
       }
     });
 
-    // Injeta a foto de perfil e o nickname cadastrado no Firestore
     return Object.values(mapa).map(userItem => {
       const chaveBusca = userItem.nome.toLowerCase().trim();
       const userDoc = mapaUsuarios[userItem.uid] || mapaUsuarios[chaveBusca] || {};
@@ -523,7 +544,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   }, [estatisticasPeriodo, DATA_INICIO_NOVO_SISTEMA, mapaUsuarios]);
 
   // ==========================================
-  // FUNÇÕES DE NAVEGAÇÃO E CALENDÁRIO
+  // NAVEGAÇÃO E CALENDÁRIO
   // ==========================================
   const prevMonth = () => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
   const nextMonth = () => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
@@ -532,32 +553,19 @@ export default function PersonalDashboard({ user, isAdmin }) {
     if (!day) return;
     setLoadingDate(true);
 
-    // Formata a data clicada perfeitamente no formato YYYY-MM-DD
     const dataIsoFormatada = `${viewMonth.getFullYear()}-${String(viewMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
     try {
       setShowHistoryModal(false);
-      
-      // Direciona para a página de operação forçando a data do passado na URL
       const destino = isAdmin 
         ? `/operacao-adm?date=${dataIsoFormatada}` 
         : `/operacao?date=${dataIsoFormatada}`;
         
-      navigate(destino);
+      navigate(destino, { state: { fromTransition: true } });
     } catch (error) {
       alert("Erro ao buscar histórico.");
     } finally {
       setLoadingDate(false);
-    }
-  };
-
-  const handleAccessToday = async () => {
-    if (todayElement) navigate(`/elemento?id=${todayElement.id}`);
-    else {
-      try {
-        const docRef = await addDoc(collection(db, 'usuarios', user.uid, 'elementos'), { titulo: todayTitle, createdAt: serverTimestamp(), contagemDocumentos: 0 });
-        navigate(`/elemento?id=${docRef.id}`);
-      } catch (e) { console.error(e); }
     }
   };
 
@@ -608,469 +616,477 @@ export default function PersonalDashboard({ user, isAdmin }) {
   const getDayOfWeek = () => ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'][today.getDay()];
 
   return (
-    <div className="dashboard-wrapper">
-      <div className="dash-header-container">
-        <div className="dash-title-area">
-          <LayoutDashboard size={28} className="title-icon" />
-          <h2>Central de Operações</h2>
-        </div>
-        <div className="dash-actions-area">
-          <div className="dash-period-filter">
-            <CalendarIcon size={16} className="filter-icon" />
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="date-input" />
-            <span className="date-separator">até</span>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="date-input" />
-          </div>
-          
-          <button className="btn-history" onClick={() => setShowHistoryModal(true)}>
-            <Clock size={16} /> Ver Histórico
-          </button>
-        </div>
-      </div>
+    <>
+      <TransicaoDashboardOverlay isVisible={overlayAtivo} isExiting={overlaySaindo} />
 
-      {loading ? (
-        <div className="loading-state">
-           <Loader2 className="fa-spin" size={24} style={{ animation: 'spin 1s linear infinite', marginRight: '8px' }} /> Processando inteligência de dados...
-        </div>
-      ) : (
-        <div className="dashboard-free-layout">
-          
-        {/* HERO CARD PRINCIPAL */}
-      <div 
-        className={`hero-card ${isNavigatingOut ? 'hero-launching' : ''}`}
-        style={isAdmin ? { boxShadow: 'var(--hero-shadow, 0 10px 25px rgba(0, 0, 0, 0.4))' } : {}}
-      >
-        <div className="hero-content">
-          <div className="hero-badge" style={isAdmin ? { background: 'rgba(242, 101, 34, 0.9)' } : {}}>
-            {isAdmin ? 'OPERAÇÃO GLOBAL - HOJE' : 'SUA OPERAÇÃO - HOJE'}
+      <div className={`dashboard-wrapper ${revelarCascata ? 'dash-cascata-ativa' : 'dash-oculto'}`}>
+        
+        <div className="dash-header-container">
+          <div className="dash-title-area">
+            <LayoutDashboard size={28} className="title-icon" />
+            <h2>Central de Operações</h2>
           </div>
-          <h2 className="hero-title">{getDayOfWeek()}</h2>
-          <div className="hero-stats">
-            <div className="stat-box">
-              <h1 style={{ fontSize: '4rem', margin: '0', lineHeight: '1.2' }}>
-                {loadingOperacao ? (
-                  <Loader2 className="fa-spin" size={48} style={{ animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  meusPedidosCount
-                )}
-              </h1>
-              <span className="stat-label">{isAdmin ? 'Total de Pedidos Processados' : 'Meus Pedidos Hoje'}</span>
+          <div className="dash-actions-area">
+            <div className="dash-period-filter">
+              <CalendarIcon size={16} className="filter-icon" />
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="date-input" />
+              <span className="date-separator">até</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="date-input" />
             </div>
+            
+            <button className="btn-history" onClick={() => setShowHistoryModal(true)}>
+              <Clock size={16} /> Ver Histórico
+            </button>
           </div>
-          <div className="hero-footer">
-                <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
-                <button 
-                  className="btn-access hero-btn" 
-                  onClick={() => {
-                    // Agora enviamos todos para a mesma estrutura, separando apenas a rota Master/Comum
-                    const destino = isAdmin 
-                      ? `/operacao-adm?date=${dataHojeLocal}` 
-                      : `/operacao?date=${dataHojeLocal}`;
-                    
-                    handleHeroNavigation(destino);
+        </div>
+
+        {loading ? (
+          <div className="loading-state">
+            <Loader2 className="fa-spin" size={24} style={{ animation: 'spin 1s linear infinite', marginRight: '8px' }} /> Processando inteligência de dados...
+          </div>
+        ) : (
+          <div className="dashboard-free-layout">
+            
+            {/* HERO CARD PRINCIPAL */}
+            <div 
+              className="hero-card"
+              style={{ cursor: 'pointer', ...(isAdmin ? { boxShadow: 'var(--hero-shadow, 0 10px 25px rgba(0, 0, 0, 0.4))' } : {}) }}
+              onClick={() => {
+                const destino = isAdmin ? `/operacao-adm?date=${dataHojeLocal}` : `/operacao?date=${dataHojeLocal}`;
+                handleHeroNavigation(destino);
+              }}
+            >
+              <div className="hero-content">
+                <div className="hero-badge" style={isAdmin ? { background: 'rgba(242, 101, 34, 0.9)' } : {}}>
+                  {isAdmin ? 'OPERAÇÃO GLOBAL - HOJE' : 'SUA OPERAÇÃO - HOJE'}
+                </div>
+                <h2 className="hero-title">{getDayOfWeek()}</h2>
+                <div className="hero-stats">
+                  <div className="stat-box">
+                    <h1 style={{ fontSize: '4rem', margin: '0', lineHeight: '1.2' }}>
+                      {loadingOperacao ? (
+                        <Loader2 className="fa-spin" size={48} style={{ animation: 'spin 1s linear infinite' }} />
+                      ) : (
+                        meusPedidosCount
+                      )}
+                    </h1>
+                    <span className="stat-label">{isAdmin ? 'Total de Pedidos Processados' : 'Meus Pedidos Hoje'}</span>
+                  </div>
+                </div>
+                <div className="hero-footer">
+                  <div className="hero-date">{todayTitle}/{today.getFullYear()}</div>
+                  <button 
+                    className="btn-access hero-btn" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const destino = isAdmin 
+                        ? `/operacao-adm?date=${dataHojeLocal}` 
+                        : `/operacao?date=${dataHojeLocal}`;
+                      handleHeroNavigation(destino);
+                    }}
+                  >
+                    {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* BLOCO 1: VOLUME ESTATÍSTICO MENSAL */}
+            <div 
+              className="free-block volume-zone expandable-card" 
+              onClick={() => setModalVolumeAberto(true)} 
+              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+            >
+              <div className="block-header">
+                <h3>Volume Mensal</h3>
+                <span className="block-action">Ver Detalhes</span>
+              </div>
+              <div style={{ flex: 1, width: '100%', height: '150px', marginTop: '15px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={volumeDataCompleto} layout="vertical" margin={{ top: 0, right: 20, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" opacity={0.5} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="mes" type="category" tick={{ fill: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} />
+                    <RechartsTooltip 
+                      cursor={false} 
+                      contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
+                    />
+                    <Bar 
+                      dataKey="caixas" 
+                      name="Caixas" 
+                      fill="#c4709d" 
+                      barSize={8} 
+                      radius={[0, 4, 4, 0]} 
+                      isAnimationActive={true}
+                      animationBegin={200}
+                      animationDuration={1200}
+                      animationEasing="ease-out"
+                    />
+                    <Bar 
+                      dataKey="pedidos" 
+                      name="Pedidos" 
+                      fill="#0273a3" 
+                      barSize={8} 
+                      radius={[0, 4, 4, 0]} 
+                      isAnimationActive={true}
+                      animationBegin={400}
+                      animationDuration={1200}
+                      animationEasing="ease-out"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* BLOCO 2: FATURAMENTO & PEDIDOS */}
+            <div 
+              className="free-block media-zone expandable-card" 
+              onClick={() => setModalFaturamentoAberto(true)}
+              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+            >
+              <div className="block-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <DollarSign size={20} className="kpi-icon" style={{ color: '#10b981' }} />
+                  <h3>Faturamento</h3>
+                </div>
+                <span className="block-action">Preencher / Ver</span>
+              </div>
+
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#10b981', lineHeight: '1.2' }}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(resumoFaturamentoAtual.totalValor)}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  <strong>{resumoFaturamentoAtual.totalPedidos}</strong> pedidos faturados este mês
+                </div>
+              </div>
+
+              <div style={{ width: '100%', height: '70px', marginTop: '10px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={resumoFaturamentoAtual.sparkline} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="cardFatGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <RechartsTooltip 
+                      contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', padding: '4px 8px' }}
+                      formatter={(v) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v), 'Faturado']}
+                      labelFormatter={(dia) => `Dia ${dia}`}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="valor" 
+                      stroke="#10b981" 
+                      strokeWidth={2} 
+                      fillOpacity={1} 
+                      fill="url(#cardFatGrad)" 
+                      isAnimationActive={true}
+                      animationBegin={500}
+                      animationDuration={1500}
+                      animationEasing="ease-out"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* BLOCO 3: RANKING GERAL */}
+            <div 
+              className="free-block ranking-zone" 
+              style={{ position: 'relative', cursor: 'pointer' }}
+              onMouseEnter={() => setIsRankingHovered(true)}
+              onMouseLeave={() => setIsRankingHovered(false)}
+              onClick={() => setModalRankingAberto(true)}
+            >
+              <div className="kpi-header free-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Award size={20} className="kpi-icon gold" />
+                  <h4>Ranking Geral</h4>
+                </div>
+                <ChevronDown 
+                  size={18} 
+                  color="#a0aec0" 
+                  style={{ transform: isRankingHovered ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} 
+                />
+              </div>
+
+              <div className="ranking-list free-list" style={{ marginTop: '10px' }}>
+                {rankingDataCompleto.slice(0, 5).length === 0 ? (
+                  <div style={{ color: '#999', fontSize: '13px', textAlign: 'center', padding: '15px 0' }}>
+                    Nenhum dado a partir de {DATA_INICIO_NOVO_SISTEMA.split('-').reverse().join('/')}.
+                  </div>
+                ) : (
+                  rankingDataCompleto.slice(0, 5).map((u, i) => (
+                    <div key={`${u.nome}-${i}`} className={`ranking-row ${i === 0 ? 'first' : 'shadow-sm'}`}>
+                      <span className="rank-pos">{i + 1}º</span>
+                      <span className="rank-name" style={{ textTransform: 'capitalize' }}>{u.nome}</span>
+                      <span className="rank-points">{Number(u.pontos || 0).toLocaleString('pt-BR')} pts</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {isRankingHovered && (
+                <div 
+                  style={{
+                    position: 'absolute',
+                    bottom: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '108%',
+                    marginBottom: '10px',
+                    zIndex: 150,
+                    background: 'var(--bg-card)',
+                    boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.4)',
+                    borderRadius: '14px',
+                    padding: '16px',
+                    border: '1px solid var(--border-color)',
+                    maxHeight: '340px',
+                    overflowY: 'auto',
+                    animation: 'fadeIn 0.2s ease-out'
                   }}
                 >
-                  {isAdmin ? 'Gestão da Operação' : 'Acessar Minha Pasta'} <ChevronRight size={18} />
-                </button>
-              </div>
-        </div>
-      </div>
-          {/* BLOCO 1: VOLUME ESTATÍSTICO MENSAL */}
-          <div 
-            className="free-block volume-zone expandable-card" 
-            onClick={() => setModalVolumeAberto(true)} 
-            style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
-          >
-            <div className="block-header">
-              <h3>Volume Mensal</h3>
-              <span className="block-action">Ver Detalhes</span>
-            </div>
-            <div style={{ flex: 1, width: '100%', height: '150px', marginTop: '15px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={volumeDataCompleto} layout="vertical" margin={{ top: 0, right: 20, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" opacity={0.5} />
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="mes" type="category" tick={{ fill: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }} axisLine={false} tickLine={false} width={60} />
-                  <RechartsTooltip 
-                    cursor={false} 
-                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)' }}
-                  />
-                  <Bar 
-                    dataKey="caixas" 
-                    name="Caixas" 
-                    fill="#c4709d" 
-                    barSize={8} 
-                    radius={[0, 4, 4, 0]} 
-                    isAnimationActive={true}
-                    animationBegin={200}
-                    animationDuration={1200}
-                    animationEasing="ease-out"
-                  />
-                  <Bar 
-                    dataKey="pedidos" 
-                    name="Pedidos" 
-                    fill="#0273a3" 
-                    barSize={8} 
-                    radius={[0, 4, 4, 0]} 
-                    isAnimationActive={true}
-                    animationBegin={400}
-                    animationDuration={1200}
-                    animationEasing="ease-out"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* BLOCO 2: FATURAMENTO & PEDIDOS */}
-          <div 
-            className="free-block media-zone expandable-card" 
-            onClick={() => setModalFaturamentoAberto(true)}
-            style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
-          >
-            <div className="block-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <DollarSign size={20} className="kpi-icon" style={{ color: '#10b981' }} />
-                <h3>Faturamento</h3>
-              </div>
-              <span className="block-action">Preencher / Ver</span>
-            </div>
-
-            <div style={{ marginTop: '10px' }}>
-              <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#10b981', lineHeight: '1.2' }}>
-                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(resumoFaturamentoAtual.totalValor)}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                <strong>{resumoFaturamentoAtual.totalPedidos}</strong> pedidos faturados este mês
-              </div>
-            </div>
-
-            <div style={{ width: '100%', height: '70px', marginTop: '10px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={resumoFaturamentoAtual.sparkline} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="cardFatGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
-                    </linearGradient>
-                  </defs>
-                  <RechartsTooltip 
-                    contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.75rem', padding: '4px 8px' }}
-                    formatter={(v) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v), 'Faturado']}
-                    labelFormatter={(dia) => `Dia ${dia}`}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="valor" 
-                    stroke="#10b981" 
-                    strokeWidth={2} 
-                    fillOpacity={1} 
-                    fill="url(#cardFatGrad)" 
-                    isAnimationActive={true}
-                    animationBegin={500}
-                    animationDuration={1500}
-                    animationEasing="ease-out"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* BLOCO 3: RANKING GERAL */}
-          <div 
-            className="free-block ranking-zone" 
-            style={{ position: 'relative', cursor: 'pointer' }}
-            onMouseEnter={() => setIsRankingHovered(true)}
-            onMouseLeave={() => setIsRankingHovered(false)}
-            onClick={() => setModalRankingAberto(true)}
-          >
-            <div className="kpi-header free-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Award size={20} className="kpi-icon gold" />
-                <h4>Ranking Geral</h4>
-              </div>
-              <ChevronDown 
-                size={18} 
-                color="#a0aec0" 
-                style={{ transform: isRankingHovered ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} 
-              />
-            </div>
-
-            <div className="ranking-list free-list" style={{ marginTop: '10px' }}>
-              {rankingDataCompleto.slice(0, 5).length === 0 ? (
-                <div style={{ color: '#999', fontSize: '13px', textAlign: 'center', padding: '15px 0' }}>
-                  Nenhum dado a partir de {DATA_INICIO_NOVO_SISTEMA.split('-').reverse().join('/')}.
-                </div>
-              ) : (
-                rankingDataCompleto.slice(0, 5).map((u, i) => (
-                  <div key={`${u.nome}-${i}`} className={`ranking-row ${i === 0 ? 'first' : 'shadow-sm'}`}>
-                    <span className="rank-pos">{i + 1}º</span>
-                    <span className="rank-name" style={{ textTransform: 'capitalize' }}>{u.nome}</span>
-                    <span className="rank-points">{Number(u.pontos || 0).toLocaleString('pt-BR')} pts</span>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>CLASSIFICAÇÃO COMPLETA</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--secondary)', fontWeight: 'bold' }}>Clique p/ tabela</span>
                   </div>
-                ))
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {rankingDataCompleto.map((u, i) => (
+                      <div 
+                        key={`${u.nome}-${i}`} 
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          padding: '10px 12px', 
+                          background: i === 0 ? 'var(--primary)' : 'var(--bg-main)', 
+                          color: i === 0 ? '#ffffff' : 'var(--text-main)', 
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px', 
+                          fontWeight: 'bold', 
+                          fontSize: '0.85rem' 
+                        }}
+                      >
+                        <span style={{ display: 'flex', gap: '8px', textTransform: 'capitalize' }}>
+                          <span style={{ opacity: 0.7 }}>{i + 1}º</span> {u.nome}
+                        </span>
+                        <span style={{ color: i === 0 ? '#ffffff' : 'var(--text-main)' }}>
+                          {Number(u.pontos || 0).toLocaleString('pt-BR')} pts
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* POPOVER FLUTUANTE */}
-            {isRankingHovered && (
-              <div 
-                style={{
-                  position: 'absolute',
-                  bottom: '100%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '108%',
-                  marginBottom: '10px',
-                  zIndex: 150,
-                  background: 'var(--bg-card)',
-                  boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.4)',
-                  borderRadius: '14px',
-                  padding: '16px',
-                  border: '1px solid var(--border-color)',
-                  maxHeight: '340px',
-                  overflowY: 'auto',
-                  animation: 'fadeIn 0.2s ease-out'
-                }}
-              >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>CLASSIFICAÇÃO COMPLETA</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--secondary)', fontWeight: 'bold' }}>Clique p/ tabela</span>
+            {/* BLOCO 4: MAIORES PEDIDOS */}
+            <div 
+              className="free-block bottom-zone" 
+              style={{ position: 'relative', cursor: 'pointer' }}
+              onMouseEnter={() => setIsTopOrdersExpanded(true)}
+              onMouseLeave={() => setIsTopOrdersExpanded(false)}
+              onClick={() => setIsModalTopOrdersOpen(true)}
+            >
+              <div className="kpi-header free-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <BarChart2 size={20} className="kpi-icon green" />
+                  <h4>Maiores Pedidos</h4>
                 </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {rankingDataCompleto.map((u, i) => (
-                    <div 
-                      key={`${u.nome}-${i}`} 
-                      style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        padding: '10px 12px', 
-                        background: i === 0 ? 'var(--primary)' : 'var(--bg-main)', 
-                        color: i === 0 ? '#ffffff' : 'var(--text-main)', 
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px', 
-                        fontWeight: 'bold', 
-                        fontSize: '0.85rem' 
-                      }}
-                    >
-                      <span style={{ display: 'flex', gap: '8px', textTransform: 'capitalize' }}>
-                        <span style={{ opacity: 0.7 }}>{i + 1}º</span> {u.nome}
-                      </span>
-                      <span style={{ color: i === 0 ? '#ffffff' : 'var(--text-main)' }}>
-                        {Number(u.pontos || 0).toLocaleString('pt-BR')} pts
-                      </span>
-                    </div>
-                  ))}
+                <ChevronDown 
+                  size={18} 
+                  color="#a0aec0" 
+                  style={{ transform: isTopOrdersExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} 
+                />
+              </div>
+              
+              {loadingTopOrders ? (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '220px', color: 'var(--primary)' }}>
+                  <Loader2 size={32} className="fa-spin" style={{ animation: 'spin 1s linear infinite' }} />
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* BLOCO 4: MAIORES PEDIDOS */}
-          <div 
-            className="free-block bottom-zone" 
-            style={{ position: 'relative', cursor: 'pointer' }}
-            onMouseEnter={() => setIsTopOrdersExpanded(true)}
-            onMouseLeave={() => setIsTopOrdersExpanded(false)}
-            onClick={() => setIsModalTopOrdersOpen(true)}
-          >
-            <div className="kpi-header free-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <BarChart2 size={20} className="kpi-icon green" />
-                <h4>Maiores Pedidos</h4>
-              </div>
-              <ChevronDown 
-                size={18} 
-                color="#a0aec0" 
-                style={{ transform: isTopOrdersExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} 
-              />
-            </div>
-            
-            {loadingTopOrders ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '220px', color: 'var(--primary)' }}>
-                <Loader2 size={32} className="fa-spin" style={{ animation: 'spin 1s linear infinite' }} />
-              </div>
-            ) : maioresPedidosBrutos.length === 0 ? (
-              <div style={{ height: '220px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#999', fontSize: '13px' }}>
-                Nenhum romaneio com caixas no período.
-              </div>
-            ) : (
-              <>
-                <div style={{ height: '220px', width: '100%', marginTop: '10px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={top5MaioresPedidos} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
-                      <XAxis type="number" hide />
-                      <YAxis dataKey="romaneioCurto" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#4a5568', fontWeight: 600}} width={85} />
-                      <RechartsTooltip cursor={{fill: 'rgba(242, 101, 34, 0.05)'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-                      <Bar 
-                        dataKey="caixas" 
-                        fill="var(--secondary)" 
-                        radius={[0, 6, 6, 0]} 
-                        barSize={24}
-                        isAnimationActive={true}
-                        animationBegin={300}
-                        animationDuration={1200}
-                        animationEasing="ease-out"
-                      >
-                        {top5MaioresPedidos.map((e, i) => (
-                          <Cell 
-                            key={`top-order-${e.romaneioCurto}`} 
-                            fill={i === 0 ? 'var(--secondary)' : 'rgba(242, 101, 34, 0.6)'} 
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+              ) : maioresPedidosBrutos.length === 0 ? (
+                <div style={{ height: '220px', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#999', fontSize: '13px' }}>
+                  Nenhum romaneio com caixas no período.
                 </div>
-
-                {isTopOrdersExpanded && (
-                  <div style={{
-                      position: 'absolute', bottom: '100%', left: '0', width: '100%', marginBottom: '10px',
-                      zIndex: 100, background: 'var(--bg-card)', boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.4)',
-                      borderRadius: '12px', padding: '15px', border: '1px solid var(--border-color)',
-                      maxHeight: '350px', overflowY: 'auto'
-                  }}>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 'bold' }}>
-                      TOP 5 PEDIDOS (CLIQUE PARA DETALHES)
-                    </div>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {top5MaioresPedidos.map((p, i) => (
-                         <div 
-                           key={`${p.romaneioCurto}-${i}`} 
-                           style={{ 
-                             display: 'flex', 
-                             justifyContent: 'space-between', 
-                             padding: '12px', 
-                             background: 'var(--bg-main)', 
-                             color: 'var(--text-main)', 
-                             border: '1px solid var(--border-color)',
-                             borderRadius: '8px', 
-                             fontWeight: 'bold', 
-                             fontSize: '0.95rem' 
-                           }}
-                         >
-                            <span style={{ display: 'flex', gap: '10px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>{i + 1}º</span> {p.romaneioCurto}
-                            </span>
-                            <span style={{ color: 'var(--secondary)' }}>{p.caixas} cx</span>
-                         </div>
-                      ))}
-                    </div>
+              ) : (
+                <>
+                  <div style={{ height: '220px', width: '100%', marginTop: '10px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={top5MaioresPedidos} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="romaneioCurto" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#4a5568', fontWeight: 600}} width={85} />
+                        <RechartsTooltip cursor={{fill: 'rgba(242, 101, 34, 0.05)'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+                        <Bar 
+                          dataKey="caixas" 
+                          fill="var(--secondary)" 
+                          radius={[0, 6, 6, 0]} 
+                          barSize={24}
+                          isAnimationActive={true}
+                          animationBegin={300}
+                          animationDuration={1200}
+                          animationEasing="ease-out"
+                        >
+                          {top5MaioresPedidos.map((e, i) => (
+                            <Cell 
+                              key={`top-order-${e.romaneioCurto}`} 
+                              fill={i === 0 ? 'var(--secondary)' : 'rgba(242, 101, 34, 0.6)'} 
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                )}
-              </>
-            )}
-          </div>
 
-        </div>
-      )}
-
-      {/* MODAL DE HISTÓRICO */}
-      {showHistoryModal && (
-        <div className={`modal-overlay ${isClosingHistory ? 'modal-closing' : ''}`} onClick={() => !loadingDate && handleCloseHistory()}>
-          <div className="modal-content" style={{ maxWidth: '450px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CalendarIcon size={20} color="var(--primary)" /> Histórico de Separação</h3>
-              {!loadingDate && <button className="btn-close" onClick={handleCloseHistory}>×</button>}
+                  {isTopOrdersExpanded && (
+                    <div style={{
+                        position: 'absolute', bottom: '100%', left: '0', width: '100%', marginBottom: '10px',
+                        zIndex: 100, background: 'var(--bg-card)', boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.4)',
+                        borderRadius: '12px', padding: '15px', border: '1px solid var(--border-color)',
+                        maxHeight: '350px', overflowY: 'auto'
+                    }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 'bold' }}>
+                        TOP 5 PEDIDOS (CLIQUE PARA DETALHES)
+                      </div>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {top5MaioresPedidos.map((p, i) => (
+                           <div 
+                             key={`${p.romaneioCurto}-${i}`} 
+                             style={{ 
+                               display: 'flex', 
+                               justifyContent: 'space-between', 
+                               padding: '12px', 
+                               background: 'var(--bg-main)', 
+                               color: 'var(--text-main)', 
+                               border: '1px solid var(--border-color)',
+                               borderRadius: '8px', 
+                               fontWeight: 'bold', 
+                               fontSize: '0.95rem' 
+                             }}
+                           >
+                              <span style={{ display: 'flex', gap: '10px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>{i + 1}º</span> {p.romaneioCurto}
+                              </span>
+                              <span style={{ color: 'var(--secondary)' }}>{p.caixas} cx</span>
+                           </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            {renderCalendar()}
-          </div>
-        </div>
-      )}
 
-      {/* MODAL DE MAIORES PEDIDOS */}
-      {isModalTopOrdersOpen && (
-        <div 
-          className={`modal-overlay ${isClosingTopOrders ? 'modal-closing' : ''}`}
-          onClick={handleCloseTopOrders}
-          style={{
-            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-            zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center'
-          }}
-        >
+          </div>
+        )}
+
+        {/* MODAL DE HISTÓRICO */}
+        {showHistoryModal && (
+          <div className={`modal-overlay ${isClosingHistory ? 'modal-closing' : ''}`} onClick={() => !loadingDate && handleCloseHistory()}>
+            <div className="modal-content" style={{ maxWidth: '450px' }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CalendarIcon size={20} color="var(--primary)" /> Histórico de Separação</h3>
+                {!loadingDate && <button className="btn-close" onClick={handleCloseHistory}>×</button>}
+              </div>
+              {renderCalendar()}
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE MAIORES PEDIDOS */}
+        {isModalTopOrdersOpen && (
           <div 
-            className="modal-container-window"
-            style={{ 
-              width: '90vw', height: '85vh', background: 'var(--bg-main)', 
-              borderRadius: '16px', display: 'flex', flexDirection: 'column', 
-              overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' 
-            }} 
-            onClick={e => e.stopPropagation()}
+            className={`modal-overlay ${isClosingTopOrders ? 'modal-closing' : ''}`}
+            onClick={handleCloseTopOrders}
+            style={{
+              position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+              zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center'
+            }}
           >
-            <div style={{ padding: '20px 30px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(34, 197, 94, 0.1)', color: '#16a34a' }}>TOP 10 PERÍODO</div>
-                <h2 style={{ marginTop: '8px', fontSize: '1.4rem', color: 'var(--text-main)', margin: 0 }}>Detalhamento de Maiores Pedidos</h2>
+            <div 
+              className="modal-container-window"
+              style={{ 
+                width: '90vw', height: '85vh', background: 'var(--bg-main)', 
+                borderRadius: '16px', display: 'flex', flexDirection: 'column', 
+                overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' 
+              }} 
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ padding: '20px 30px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', background: 'rgba(34, 197, 94, 0.1)', color: '#16a34a' }}>TOP 10 PERÍODO</div>
+                  <h2 style={{ marginTop: '8px', fontSize: '1.4rem', color: 'var(--text-main)', margin: 0 }}>Detalhamento de Maiores Pedidos</h2>
+                </div>
+                <button 
+                  onClick={handleCloseTopOrders}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '5px' }}
+                >
+                  <X size={28}/>
+                </button>
               </div>
-              <button 
-                onClick={handleCloseTopOrders}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '5px' }}
-              >
-                <X size={28}/>
-              </button>
-            </div>
 
-            <div style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
-              <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead style={{ 
-                    background: 'var(--bg-main)', 
-                    color: 'var(--text-muted)', 
-                    borderBottom: '2px solid var(--border-color)' 
-                  }}>
-                    <tr>
-                      <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Rank</th>
-                      <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Cliente & Romaneio</th>
-                      <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Caixas</th>
-                      <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Produtos</th>
-                      <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Responsáveis</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {maioresPedidosBrutos.slice(0, 10).map((p, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: 'bold', color: '#a0aec0' }}>{i + 1}º</td>
-                        <td style={{ padding: '15px 20px', fontWeight: 'bold', color: 'var(--text-main)' }}>{p.nomeCompleto}</td>
-                        <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: '900', color: 'var(--secondary)' }}>{p.caixas}</td>
-                        <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: 'bold', color: '#3b82f6' }}>{p.totalItens}</td>
-                        <td style={{ padding: '15px 20px', color: 'var(--text-muted)', fontSize: '0.95rem' }}>{p.responsaveis}</td>
+              <div style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
+                <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ 
+                      background: 'var(--bg-main)', 
+                      color: 'var(--text-muted)', 
+                      borderBottom: '2px solid var(--border-color)' 
+                    }}>
+                      <tr>
+                        <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Rank</th>
+                        <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Cliente & Romaneio</th>
+                        <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Caixas</th>
+                        <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold' }}>Total Produtos</th>
+                        <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold' }}>Responsáveis</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {maioresPedidosBrutos.slice(0, 10).map((p, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: 'bold', color: '#a0aec0' }}>{i + 1}º</td>
+                          <td style={{ padding: '15px 20px', fontWeight: 'bold', color: 'var(--text-main)' }}>{p.nomeCompleto}</td>
+                          <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: '900', color: 'var(--secondary)' }}>{p.caixas}</td>
+                          <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: 'bold', color: '#3b82f6' }}>{p.totalItens}</td>
+                          <td style={{ padding: '15px 20px', color: 'var(--text-muted)', fontSize: '0.95rem' }}>{p.responsaveis}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* MODAL DE VOLUME ESTATÍSTICO */}
-      <ModalVolumeDetalhado 
-        showModal={modalVolumeAberto}
-        setShowModal={setModalVolumeAberto}
-        mesesResumo={volumeDataCompleto}
-      />
+        {/* MODAL DE VOLUME ESTATÍSTICO */}
+        <ModalVolumeDetalhado 
+          showModal={modalVolumeAberto}
+          setShowModal={setModalVolumeAberto}
+          mesesResumo={volumeDataCompleto}
+        />
 
-      {/* MODAL DE FATURAMENTO DIÁRIO & ANUAL */}
-      <ModalFaturamento 
-        showModal={modalFaturamentoAberto}
-        setShowModal={setModalFaturamentoAberto}
-        dadosFaturamento={dadosFaturamento}
-        isAdmin={isAdmin}
-        user={user}
-      />
+        {/* MODAL DE FATURAMENTO DIÁRIO & ANUAL */}
+        <ModalFaturamento 
+          showModal={modalFaturamentoAberto}
+          setShowModal={setModalFaturamentoAberto}
+          dadosFaturamento={dadosFaturamento}
+          isAdmin={isAdmin}
+          user={user}
+        />
 
-      {/* MODAL DE RANKING GERAL DETALHADO */}
-      <ModalRankingDetalhado 
-        showModal={modalRankingAberto}
-        setShowModal={setModalRankingAberto}
-        rankingData={rankingDataCompleto}
-        periodoInicio={startDate}
-        periodoFim={endDate}
-      />
+        {/* MODAL DE RANKING GERAL DETALHADO */}
+        <ModalRankingDetalhado 
+          showModal={modalRankingAberto}
+          setShowModal={setModalRankingAberto}
+          rankingData={rankingDataCompleto}
+          periodoInicio={startDate}
+          periodoFim={endDate}
+        />
 
-    </div>
+      </div>
+    </>
   );
 }

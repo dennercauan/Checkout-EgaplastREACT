@@ -1,0 +1,5 @@
+/* Blinda o fundo do navegador contra flashes brancos */
+html, body, #root {
+  background: var(--bg-main, #0f172a) !important;
+  min-height: 100vh;
+}

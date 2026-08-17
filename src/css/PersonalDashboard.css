@@ -36,7 +36,18 @@
   background-size: cover;
   font-family: 'Inter', -apple-system, sans-serif;
   transition: background 0.4s ease;
-  animation: fadeInDash 0.8s ease-out forwards;
+}
+
+/* Estados da Camada de Transição */
+.dashboard-wrapper.dash-oculto {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dashboard-wrapper.dash-cascata-ativa {
+  opacity: 1;
+  visibility: visible;
+  animation: dashWrapperFade 0.45s ease-out forwards;
 }
 
 .dashboard-free-layout {
@@ -56,15 +67,14 @@
   flex-direction: column;
   color: var(--text-main);
   transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.4s ease;
-  animation: slideUpFadeDash 0.6s ease-out backwards;
 }
 
 /* Posições no Grid */
 .hero-card { grid-column: span 8; }
-.volume-zone { grid-column: span 4; animation-delay: 0.2s !important; }
-.media-zone { grid-column: span 4; animation-delay: 0.3s !important; }
-.ranking-zone { grid-column: span 4; animation-delay: 0.4s !important; }
-.bottom-zone { grid-column: span 4; animation-delay: 0.5s !important; }
+.volume-zone { grid-column: span 4; }
+.media-zone { grid-column: span 4; }
+.ranking-zone { grid-column: span 4; }
+.bottom-zone { grid-column: span 4; }
 
 @media (max-width: 1024px) {
   .hero-card { grid-column: span 12; }
@@ -89,7 +99,6 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 25px;
-  animation: slideUpFadeDash 0.8s ease-out 0.2s backwards;
 }
 
 .dash-title-area {
@@ -184,7 +193,6 @@
   border: 1px solid var(--hero-border, var(--border-color)) !important;
   box-shadow: var(--hero-shadow, 0 10px 25px rgba(0, 0, 0, 0.25)) !important;
   transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
-  animation: popInDash 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s backwards !important;
 }
 
 .hero-badge {
@@ -362,14 +370,7 @@
   font-size: 0.9rem;
   font-weight: 600;
   transition: transform 0.2s ease, background 0.2s ease;
-  animation: slideUpFadeDash 0.4s ease-out backwards;
 }
-
-.ranking-row:nth-child(1) { animation-delay: 0.5s; }
-.ranking-row:nth-child(2) { animation-delay: 0.6s; }
-.ranking-row:nth-child(3) { animation-delay: 0.7s; }
-.ranking-row:nth-child(4) { animation-delay: 0.8s; }
-.ranking-row:nth-child(5) { animation-delay: 0.9s; }
 
 .ranking-row.first {
   background: var(--primary);
@@ -558,7 +559,7 @@
 
 /* ==========================================
    8. EFEITO EXPANSÃO / ZOOM
-   ========================================== */
+   ========================================= */
 .expandable-card {
   position: relative;
   z-index: 1;
@@ -582,15 +583,8 @@
 .expand-icon { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .expandable-card:hover .expand-icon { transform: rotate(180deg); color: var(--primary) !important; }
 
-/* ==========================================
-   9. ANIMAÇÕES GERAIS DE ENTRADA
-   ========================================== */
-@keyframes fadeInDash { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUpFadeDash { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes popInDash { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-
 /* =========================================
-   10. SISTEMA DE ANIMAÇÃO DE MODAIS DE ALTO IMPACTO
+   9. SISTEMA DE ANIMAÇÃO DE MODAIS DE ALTO IMPACTO
    ========================================= */
 
 .modal-overlay, .modal-overlay-search {
@@ -633,7 +627,6 @@
   animation: modalPopOutExpressive 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-/* --- KEYFRAMES DO BACKDROP --- */
 @keyframes backdropEnter {
   0% {
     opacity: 0;
@@ -664,7 +657,6 @@
   }
 }
 
-/* --- KEYFRAMES DA JANELA (POP EXPRESSIVO) --- */
 @keyframes modalPopInExpressive {
   0% {
     opacity: 0;
@@ -692,45 +684,51 @@
 }
 
 /* =========================================
-   TRANSIÇÃO CINEMATOGRÁFICA DE SAÍDA (DASHBOARD)
+   10. CASCATA CINEMATOGRÁFICA DE ENTRADA (STAGGERED DELAY)
    ========================================= */
 
-/* O Dashboard inteiro recua suavemente */
-.dashboard-wrapper.dashboard-fading-out {
-  pointer-events: none;
-  animation: dashRecedeOut 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+@keyframes dashWrapperFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
-@keyframes dashRecedeOut {
+@keyframes dashCascadeEntry {
   0% {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 0;
+    transform: translateY(26px) scale(0.98);
+    filter: blur(8px);
+  }
+  60% {
     filter: blur(0px);
   }
   100% {
-    opacity: 0;
-    transform: scale(0.97);
-    filter: blur(8px);
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
   }
 }
 
-/* O Hero-card ganha elevação e foco antes da dissolução */
-.hero-card.hero-launching {
-  animation: heroCardSmoothZoom 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
-  z-index: 999;
+/* Cascata sincronizada disparada exclusivamente por .dash-cascata-ativa */
+.dash-cascata-ativa .dash-header-container {
+  animation: dashCascadeEntry 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s backwards !important;
 }
 
-@keyframes heroCardSmoothZoom {
-  0% {
-    transform: scale(1) translateY(0);
-    box-shadow: var(--hero-shadow, 0 10px 25px rgba(0,0,0,0.3));
-  }
-  40% {
-    transform: scale(1.02) translateY(-4px);
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
-  }
-  100% {
-    transform: scale(1.04) translateY(-10px);
-    opacity: 0;
-  }
+.dash-cascata-ativa .hero-card {
+  animation: dashCascadeEntry 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.15s backwards !important;
+}
+
+.dash-cascata-ativa .volume-zone {
+  animation: dashCascadeEntry 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.25s backwards !important;
+}
+
+.dash-cascata-ativa .media-zone {
+  animation: dashCascadeEntry 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.35s backwards !important;
+}
+
+.dash-cascata-ativa .ranking-zone {
+  animation: dashCascadeEntry 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.45s backwards !important;
+}
+
+.dash-cascata-ativa .bottom-zone {
+  animation: dashCascadeEntry 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.55s backwards !important;
 }

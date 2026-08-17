@@ -26,17 +26,81 @@ export default function Navbar({ user, isAdmin }) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // ==========================================
-  // ESTADOS DO PERFIL E TEMAS
+  // ESTADOS DO PERFIL E TEMAS (COM PERSISTÊNCIA SÍNCRONA)
   // ==========================================
+  const dropdownRef = useRef(null);
+  const temaPersistido = localStorage.getItem('egaplast_theme') || 'light';
+  
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const dropdownRef = useRef(null);
   
-  const [userProfile, setUserProfile] = useState({ nickname: '', photoURL: '', theme: 'light' });
-  const [formProfile, setFormProfile] = useState({ nickname: '', photoURL: '', theme: 'light' });
+  const [userProfile, setUserProfile] = useState({ nickname: '', photoURL: '', theme: temaPersistido });
+  const [formProfile, setFormProfile] = useState({ nickname: '', photoURL: '', theme: temaPersistido });
+
+  const aplicarTemaGlobal = (tema) => {
+    const root = document.documentElement;
+    const temaFinal = tema || localStorage.getItem('egaplast_theme') || 'light';
+
+    root.setAttribute('data-theme', temaFinal);
+    localStorage.setItem('egaplast_theme', temaFinal);
+
+    if (temaFinal === 'dark') {
+      root.style.setProperty('--bg-main', 'radial-gradient(circle at 10% 10%, #181820 0%, #0c0c10 45%, #050507 100%)');
+      root.style.setProperty('--bg-card', '#0e0e11');
+      root.style.setProperty('--text-main', '#f8fafc');
+      root.style.setProperty('--text-muted', '#a1a1aa');
+      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.08)');
+      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
+      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
+      root.style.setProperty('--checkout-logo-blend', 'screen');
+      root.style.setProperty('color-scheme', 'dark');
+      root.style.setProperty('--text-highlight', '#ffffff'); 
+
+      root.style.setProperty('--bg-hero', 'linear-gradient(140deg, #3f3f46 0%, #27272a 45%, #141417 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.12)'); 
+      root.style.setProperty('--hero-border', 'rgba(255, 255, 255, 0.22)');
+      root.style.setProperty('--hero-shadow', '0 20px 45px -10px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25)');
+      document.body.style.background = '#050507';
+    } else if (temaFinal === 'dark-blue') {
+      root.style.setProperty('--bg-main', 'radial-gradient(ellipse at 15% 15%, #0c1e3f 0%, #071228 45%, #030814 100%)');
+      root.style.setProperty('--bg-card', '#0a1226');
+      root.style.setProperty('--text-main', '#f8fafc');
+      root.style.setProperty('--text-muted', '#94a3b8');
+      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.12)');
+      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
+      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
+      root.style.setProperty('--checkout-logo-blend', 'screen');
+      root.style.setProperty('color-scheme', 'dark');
+      root.style.setProperty('--text-highlight', '#38bdf8'); 
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.15)');
+      root.style.setProperty('--hero-border', 'rgba(56, 189, 248, 0.25)');
+      root.style.setProperty('--hero-shadow', '0 20px 40px -15px rgba(29, 78, 216, 0.4)');
+      document.body.style.background = '#030814';
+    } else {
+      root.style.setProperty('--bg-main', 'radial-gradient(ellipse at 20% 0%, #e0e7ff 0%, #edf2f7 40%, #f8fafc 100%)');
+      root.style.setProperty('--bg-card', '#ffffff');
+      root.style.setProperty('--text-main', '#0f172a');
+      root.style.setProperty('--text-muted', '#64748b');
+      root.style.setProperty('--border-color', '#cbd5e1');
+      root.style.setProperty('--logo-filter', 'none'); 
+      root.style.setProperty('--checkout-logo-filter', 'none'); 
+      root.style.setProperty('--checkout-logo-blend', 'multiply');
+      root.style.setProperty('color-scheme', 'light');
+      root.style.setProperty('--text-highlight', 'var(--primary)'); 
+      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #0d3269 0%, #1d4ed8 100%)'); 
+      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.25)');
+      root.style.setProperty('--hero-border', 'transparent');
+      root.style.setProperty('--hero-shadow', '0 15px 30px -10px rgba(13, 50, 105, 0.3)');
+      document.body.style.background = '#f8fafc';
+    }
+  };
 
   useEffect(() => {
+    // Aplicação imediata no ciclo de montagem
+    aplicarTemaGlobal(temaPersistido);
+
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'usuarios', user.uid), (docSnap) => {
       if (docSnap.exists()) {
@@ -44,7 +108,7 @@ export default function Navbar({ user, isAdmin }) {
         const profileData = {
           nickname: data.nickname || '',
           photoURL: data.photoURL || '',
-          theme: data.theme || 'light'
+          theme: data.theme || temaPersistido
         };
         setUserProfile(profileData);
         aplicarTemaGlobal(profileData.theme);
@@ -62,61 +126,6 @@ export default function Navbar({ user, isAdmin }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const aplicarTemaGlobal = (tema) => {
-    const root = document.documentElement;
-
-    if (tema === 'dark') {
-      root.style.setProperty('--bg-main', 'linear-gradient(145deg, #050505 0%, #0f0f13 50%, #18181b 100%)');
-      root.style.setProperty('--bg-card', '#0e0e11');
-      root.style.setProperty('--text-main', '#f8fafc');
-      root.style.setProperty('--text-muted', '#a1a1aa');
-      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.08)');
-      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
-      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
-      root.style.setProperty('--checkout-logo-blend', 'screen');
-      root.style.setProperty('color-scheme', 'dark');
-      root.style.setProperty('--text-highlight', '#ffffff'); 
-
-      root.style.setProperty('--bg-hero', 'linear-gradient(140deg, #3f3f46 0%, #27272a 45%, #141417 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.12)'); 
-      root.style.setProperty('--hero-border', 'rgba(255, 255, 255, 0.22)');
-      root.style.setProperty('--hero-shadow', '0 20px 45px -10px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25)');
-    }
-
-     else if (tema === 'dark-blue') {
-      root.style.setProperty('--bg-main', 'linear-gradient(145deg, #020617 0%, #061124 50%, #0b1936 100%)');
-      root.style.setProperty('--bg-card', '#0a1226');
-      root.style.setProperty('--text-main', '#f8fafc');
-      root.style.setProperty('--text-muted', '#94a3b8');
-      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.12)');
-      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
-      root.style.setProperty('--checkout-logo-filter', 'invert(1)');
-      root.style.setProperty('--checkout-logo-blend', 'screen');
-      root.style.setProperty('color-scheme', 'dark');
-      root.style.setProperty('--text-highlight', '#38bdf8'); 
-      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.15)');
-      root.style.setProperty('--hero-border', 'rgba(56, 189, 248, 0.25)');
-      root.style.setProperty('--hero-shadow', '0 20px 40px -15px rgba(29, 78, 216, 0.4)');
-
-    } else {
-      root.style.setProperty('--bg-main', 'linear-gradient(145deg, #e2e8f0 0%, #eef2f6 50%, #f8fafc 100%)');
-      root.style.setProperty('--bg-card', '#ffffff');
-      root.style.setProperty('--text-main', '#0f172a');
-      root.style.setProperty('--text-muted', '#64748b');
-      root.style.setProperty('--border-color', '#cbd5e1');
-      root.style.setProperty('--logo-filter', 'none'); 
-      root.style.setProperty('--checkout-logo-filter', 'none'); 
-      root.style.setProperty('--checkout-logo-blend', 'multiply');
-      root.style.setProperty('color-scheme', 'light');
-      root.style.setProperty('--text-highlight', 'var(--primary)'); 
-      root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #0d3269 0%, #1d4ed8 100%)'); 
-      root.style.setProperty('--bg-hero-badge', 'rgba(255, 255, 255, 0.25)');
-      root.style.setProperty('--hero-border', 'transparent');
-      root.style.setProperty('--hero-shadow', '0 15px 30px -10px rgba(13, 50, 105, 0.3)');
-    }
-  };
   
   const handleOpenSettings = () => {
     setFormProfile(userProfile);
@@ -147,6 +156,9 @@ export default function Navbar({ user, isAdmin }) {
   const handleSaveProfile = async () => {
     setIsSavingProfile(true);
     try {
+      // Salva imediatamente no localStorage antes do banco para resposta instantânea
+      aplicarTemaGlobal(formProfile.theme);
+
       await updateDoc(doc(db, 'usuarios', user.uid), {
         nickname: formProfile.nickname,
         photoURL: formProfile.photoURL,
@@ -216,7 +228,7 @@ export default function Navbar({ user, isAdmin }) {
     const termoNumero = Number(termoExato);
 
     try {
-      // 1. Busca na coleção principal 'pedidos' (string ou número)
+      // 1. Busca na coleção principal 'pedidos'
       const qPedidos = query(collection(db, 'pedidos'), where('romaneio', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapPedidos = await getDocs(qPedidos);
 
@@ -412,18 +424,18 @@ export default function Navbar({ user, isAdmin }) {
             </div>
 
             {isProfileMenuOpen && (
-              <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '10px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', width: '220px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', overflow: 'hidden', zIndex: 100, animation: 'fadeIn 0.2s ease-out' }}>
-                <div style={{ padding: '15px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
-                  <span style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase' }}>Sessão Ativa</span>
-                  <span style={{ display: 'block', fontSize: '0.85rem', color: '#334155', wordBreak: 'break-all' }}>{user?.email}</span>
+              <div style={{ position: 'absolute', top: '100%', right: '0', marginTop: '10px', background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', width: '220px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', overflow: 'hidden', zIndex: 100, animation: 'fadeIn 0.2s ease-out' }}>
+                <div style={{ padding: '15px', borderBottom: '1px solid var(--border-color, #f1f5f9)', background: 'rgba(0,0,0,0.02)' }}>
+                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)', fontWeight: 'bold', textTransform: 'uppercase' }}>Sessão Ativa</span>
+                  <span style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-main, #334155)', wordBreak: 'break-all' }}>{user?.email}</span>
                 </div>
                 
                 <div style={{ padding: '5px' }}>
                   <button 
                     onClick={handleOpenSettings}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 15px', background: 'transparent', border: 'none', textAlign: 'left', color: '#475569', fontSize: '0.9rem', cursor: 'pointer', borderRadius: '6px' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = 'var(--primary)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#475569'; }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 15px', background: 'transparent', border: 'none', textAlign: 'left', color: 'var(--text-main, #475569)', fontSize: '0.9rem', cursor: 'pointer', borderRadius: '6px' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                   >
                     <UserCircle size={18} /> Meu Perfil e Tema
                   </button>
@@ -431,7 +443,7 @@ export default function Navbar({ user, isAdmin }) {
                   <button 
                     onClick={() => { setIsProfileMenuOpen(false); setShowLogoutConfirm(true); }}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 15px', background: 'transparent', border: 'none', textAlign: 'left', color: '#ef4444', fontSize: '0.9rem', cursor: 'pointer', borderRadius: '6px' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
                     <Power size={18} /> Sair da Conta
@@ -449,13 +461,13 @@ export default function Navbar({ user, isAdmin }) {
           ========================================== */}
       {showSettingsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '500px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', overflow: 'hidden', border: '1px solid #e2e8f0', animation: 'fadeIn 0.3s ease-out' }}>
+          <div style={{ background: 'var(--bg-card, #fff)', borderRadius: '16px', width: '500px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', overflow: 'hidden', border: '1px solid var(--border-color, #e2e8f0)', animation: 'fadeIn 0.3s ease-out' }}>
             
-            <div style={{ background: '#f8fafc', padding: '20px 25px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.2rem' }}>
+            <div style={{ background: 'rgba(0,0,0,0.02)', padding: '20px 25px', borderBottom: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: 'var(--text-main, #0f172a)', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.2rem' }}>
                 <Settings size={22} color="var(--primary)"/> Configurações da Conta
               </h3>
-              <button onClick={() => setShowSettingsModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><SearchX size={24}/></button>
+              <button onClick={() => setShowSettingsModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted, #94a3b8)' }}><SearchX size={24}/></button>
             </div>
 
             <div style={{ padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -481,11 +493,11 @@ export default function Navbar({ user, isAdmin }) {
                 {formProfile.photoURL && (
                   <button onClick={handleRemoveImage} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>Remover Foto</button>
                 )}
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>JPG ou PNG (Max 1MB)</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)' }}>JPG ou PNG (Max 1MB)</span>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted, #64748b)', marginBottom: '8px' }}>
                   Como quer ser chamado? (Nickname)
                 </label>
                 <input 
@@ -493,45 +505,45 @@ export default function Navbar({ user, isAdmin }) {
                   value={formProfile.nickname} 
                   onChange={e => setFormProfile({...formProfile, nickname: e.target.value})}
                   placeholder="Ex: João Silva"
-                  style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '12px', background: 'var(--bg-input, #fff)', color: 'var(--text-main, #0f172a)', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div style={{ marginTop: '5px' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted, #64748b)', marginBottom: '12px' }}>
                   <Palette size={14} style={{ display: 'inline', marginRight: '4px' }}/> Personalizar Cores da Plataforma
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                   <div 
                     onClick={() => setFormProfile({...formProfile, theme: 'light'})}
-                    style={{ border: `2px solid ${formProfile.theme === 'light' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'light' ? '#f0f9ff' : '#fff' }}
+                    style={{ border: `2px solid ${formProfile.theme === 'light' ? 'var(--primary)' : 'var(--border-color, #e2e8f0)'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'light' ? 'rgba(56, 189, 248, 0.08)' : 'var(--bg-card, #fff)' }}
                   >
                     <div style={{ width: '100%', height: '40px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '4px', marginBottom: '8px' }}></div>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' }}>Claro (Padrão)</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main, #334155)' }}>Claro (Padrão)</span>
                   </div>
 
                   <div 
                     onClick={() => setFormProfile({...formProfile, theme: 'dark-blue'})}
-                    style={{ border: `2px solid ${formProfile.theme === 'dark-blue' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'dark-blue' ? '#eff6ff' : '#fff' }}
+                    style={{ border: `2px solid ${formProfile.theme === 'dark-blue' ? 'var(--primary)' : 'var(--border-color, #e2e8f0)'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'dark-blue' ? 'rgba(56, 189, 248, 0.12)' : 'var(--bg-card, #fff)' }}
                   >
                     <div style={{ width: '100%', height: '40px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '4px', marginBottom: '8px' }}></div>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' }}>Azul Escuro</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main, #334155)' }}>Azul Escuro</span>
                   </div>
 
                   <div 
                     onClick={() => setFormProfile({...formProfile, theme: 'dark'})}
-                    style={{ border: `2px solid ${formProfile.theme === 'dark' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'dark' ? '#f8fafc' : '#fff' }}
+                    style={{ border: `2px solid ${formProfile.theme === 'dark' ? 'var(--primary)' : 'var(--border-color, #e2e8f0)'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', background: formProfile.theme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'var(--bg-card, #fff)' }}
                   >
                     <div style={{ width: '100%', height: '40px', background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', marginBottom: '8px' }}></div>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' }}>Modo Escuro</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main, #334155)' }}>Modo Escuro</span>
                   </div>
                 </div>
               </div>
 
             </div>
 
-            <div style={{ padding: '20px 25px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '15px' }}>
-              <button onClick={() => setShowSettingsModal(false)} disabled={isSavingProfile} style={{ padding: '10px 20px', border: 'none', background: 'transparent', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
+            <div style={{ padding: '20px 25px', background: 'rgba(0,0,0,0.02)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'flex-end', gap: '15px' }}>
+              <button onClick={() => setShowSettingsModal(false)} disabled={isSavingProfile} style={{ padding: '10px 20px', border: 'none', background: 'transparent', color: 'var(--text-muted, #64748b)', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
               <button 
                 onClick={handleSaveProfile} 
                 disabled={isSavingProfile} 
@@ -557,10 +569,10 @@ export default function Navbar({ user, isAdmin }) {
                 <div style={{ background: '#fff5f5', padding: '20px', borderRadius: '50%', marginBottom: '20px', border: '1px solid #ffebeb' }}>
                   <Power size={48} color="#dc3545" />
                 </div>
-                <h3 style={{ fontSize: '1.6rem', color: '#a0a8b6', margin: '0 0 10px 0', fontWeight: '800' }}>
+                <h3 style={{ fontSize: '1.6rem', color: 'var(--text-main, #a0a8b6)', margin: '0 0 10px 0', fontWeight: '800' }}>
                   Sair do Sistema?
                 </h3>
-                <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
+                <p style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
                   Tem certeza que deseja desconectar sua conta? Você precisará realizar o login novamente para continuar operando.
                 </p>
                 
@@ -594,7 +606,7 @@ export default function Navbar({ user, isAdmin }) {
                 <h3 style={{ fontSize: '1.6rem', color: searchError.tipo === 'not_found' ? '#b8860b' : '#dc3545', margin: '0 0 10px 0', fontWeight: '800' }}>
                   {searchError.titulo}
                 </h3>
-                <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
+                <p style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
                   {searchError.mensagem}
                 </p>
                 
@@ -615,7 +627,7 @@ export default function Navbar({ user, isAdmin }) {
                   <ShieldAlert size={48} color="#dc3545" />
                 </div>
                 <h3 style={{ fontSize: '1.6rem', color: '#dc3545', margin: '0 0 10px 0', fontWeight: '800' }}>Acesso Restrito</h3>
-                <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
+                <p style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '35px' }}>
                   Este romaneio está sob a responsabilidade de outro conferente.<br/><br/>
                   Você pode visualizar o status da separação, mas não possui permissão para acessá-lo.
                 </p>
@@ -688,10 +700,6 @@ export default function Navbar({ user, isAdmin }) {
                   <button className="btn-cancel-search" onClick={fecharModal}>
                     Fechar
                   </button>
-                  
-                  {/* ==========================================
-                      ROTEAMENTO BLINDADO DE RESULTADOS 
-                      ========================================== */}
                   <button 
                     className="btn-access-search" 
                     onClick={() => {
@@ -705,7 +713,7 @@ export default function Navbar({ user, isAdmin }) {
                         : `/operacao?date=${dataStr}&openRomaneio=${encodeURIComponent(numRomaneio)}`;
 
                       if (isAdmin) {
-                        navigate(destinoUrl);
+                        navigate(destinoUrl, { state: { fromTransition: true } });
                         return;
                       }
 
@@ -718,8 +726,7 @@ export default function Navbar({ user, isAdmin }) {
                         return;
                       }
 
-                      // Agora envia TODO mundo direto para a Operacao, garantindo a data e abandonando a rota legado /elemento
-                      navigate(destinoUrl);
+                      navigate(destinoUrl, { state: { fromTransition: true } });
                     }} 
                   >
                     Acessar Operação <ExternalLink size={16} />

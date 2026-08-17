@@ -5,8 +5,8 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { 
-  Search, Power, ArrowLeft, Calendar, Plus, UserCircle, Settings, 
-  Palette, Camera, CheckCircle, SearchX, Loader2, X
+  Search, Power, ArrowLeft, Calendar, UserCircle, Settings, 
+  Palette, Camera, CheckCircle, SearchX, Loader2, Plus, CalendarIcon
 } from 'lucide-react';
 
 import logoEgaplast from '../img/egaplast.png';
@@ -16,24 +16,137 @@ export default function NavbarOperacao({
   isAdmin, 
   dataOperacaoAtiva, 
   buscaRomaneio, 
-  setBuscaRomaneio, 
-  handleOpenModal 
+  setBuscaRomaneio 
 }) {
-  const navigate = useNavigate();
   const location = useLocation();
+  const navigate = useNavigate();
   
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const dropdownRef = useRef(null);
-  
-  const [userProfile, setUserProfile] = useState({ nickname: '', photoURL: '', theme: 'light' });
-  const [formProfile, setFormProfile] = useState({ nickname: '', photoURL: '', theme: 'light' });
-  
 
+  const temaPersistido = localStorage.getItem('egaplast_theme') || 'light';
+
+  // 1. Controle de bloqueio duplo
+  const [isSaindo, setIsSaindo] = useState(false);
+
+  // ==========================================
+  // CORTINA GLOBAL ABSOLUTA (ANTI-FLASH BRANCO)
+  // ==========================================
+  const handleVoltarDashboard = () => {
+    if (isSaindo) return;
+    setIsSaindo(true); 
+
+    const tema = document.documentElement.getAttribute('data-theme') || 'light';
+    let bgColors = {
+      'light': '#f8fafc',
+      'dark-blue': '#030814',
+      'dark': '#050507'
+    };
+    
+    // Cria uma div bruta no navegador, protegida contra as montagens do React
+    const curtain = document.createElement('div');
+    curtain.id = 'global-transition-curtain';
+    curtain.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999999;
+      background: ${bgColors[tema] || '#0f172a'};
+      opacity: 0; transition: opacity 0.25s ease-out; pointer-events: all;
+    `;
+    document.body.appendChild(curtain);
+    
+    // Força o browser a processar a div antes de animá-la
+    void curtain.offsetWidth;
+    curtain.style.opacity = '1';
+
+    // Aguarda a tela escurecer antes de mandar o Router trocar a rota
+    setTimeout(() => {
+      navigate('/dashboard', { state: { fromTransition: true } });
+      
+      // Destrói a cortina suavemente somente após a Dashboard nova já estar fluída na tela
+      setTimeout(() => {
+        const c = document.getElementById('global-transition-curtain');
+        if (c) {
+           c.style.opacity = '0';
+           setTimeout(() => c.remove(), 300);
+        }
+      }, 200); 
+    }, 300);
+  };
+  
+  const [userProfile, setUserProfile] = useState({ nickname: '', photoURL: '', theme: temaPersistido });
+  const [formProfile, setFormProfile] = useState({ nickname: '', photoURL: '', theme: temaPersistido });
+
+  const aplicarTemaGlobal = (tema) => {
+    const root = document.documentElement;
+    const temaFinal = tema || localStorage.getItem('egaplast_theme') || 'light';
+    
+    root.setAttribute('data-theme', temaFinal);
+    localStorage.setItem('egaplast_theme', temaFinal);
+
+    if (temaFinal === 'dark') {
+      root.style.setProperty('--bg-main', 'radial-gradient(circle at 10% 10%, #181820 0%, #0c0c10 45%, #050507 100%)');
+      root.style.setProperty('--bg-card', 'linear-gradient(160deg, rgba(28, 28, 36, 0.85) 0%, rgba(16, 16, 22, 0.95) 100%)');
+      root.style.setProperty('--bg-card-hover', 'linear-gradient(160deg, rgba(38, 38, 50, 0.9) 0%, rgba(22, 22, 30, 0.98) 100%)');
+      root.style.setProperty('--bg-input', 'linear-gradient(145deg, rgba(20, 20, 26, 0.8) 0%, rgba(12, 12, 16, 0.9) 100%)');
+      root.style.setProperty('--text-main', '#f4f4f6');
+      root.style.setProperty('--text-muted', '#8f909e');
+      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.09)');
+      root.style.setProperty('--border-color-hover', 'rgba(255, 255, 255, 0.22)');
+      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)');
+      root.style.setProperty('--text-highlight', '#ffffff');
+      root.style.setProperty('--row-bg', 'linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0%, rgba(255, 255, 255, 0.01) 100%)');
+      root.style.setProperty('--row-hover', 'linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.025) 100%)');
+      root.style.setProperty('--btn-action-bg', 'linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%)');
+      root.style.setProperty('--btn-action-hover', 'linear-gradient(145deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.06) 100%)');
+      root.style.setProperty('--kpi-bg', 'linear-gradient(160deg, rgba(24, 24, 32, 0.9) 0%, rgba(14, 14, 18, 0.95) 100%)');
+      root.style.setProperty('--glow-accent', 'rgba(255, 255, 255, 0.05)');
+      document.body.style.background = '#050507';
+
+    } else if (temaFinal === 'dark-blue') {
+      root.style.setProperty('--bg-main', 'radial-gradient(ellipse at 15% 15%, #0c1e3f 0%, #071228 45%, #030814 100%)');
+      root.style.setProperty('--bg-card', 'linear-gradient(160deg, rgba(14, 30, 62, 0.75) 0%, rgba(7, 18, 40, 0.95) 100%)');
+      root.style.setProperty('--bg-card-hover', 'linear-gradient(160deg, rgba(20, 42, 85, 0.85) 0%, rgba(10, 24, 52, 0.98) 100%)');
+      root.style.setProperty('--bg-input', 'linear-gradient(145deg, rgba(8, 22, 48, 0.8) 0%, rgba(4, 12, 28, 0.9) 100%)');
+      root.style.setProperty('--text-main', '#f0f9ff');
+      root.style.setProperty('--text-muted', '#94a3b8');
+      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.16)');
+      root.style.setProperty('--border-color-hover', 'rgba(56, 189, 248, 0.35)');
+      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)');
+      root.style.setProperty('--text-highlight', '#38bdf8');
+      root.style.setProperty('--row-bg', 'linear-gradient(90deg, rgba(56, 189, 248, 0.05) 0%, rgba(15, 23, 42, 0.01) 100%)');
+      root.style.setProperty('--row-hover', 'linear-gradient(90deg, rgba(56, 189, 248, 0.1) 0%, rgba(56, 189, 248, 0.02) 100%)');
+      root.style.setProperty('--btn-action-bg', 'linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.04) 100%)');
+      root.style.setProperty('--btn-action-hover', 'linear-gradient(145deg, rgba(56, 189, 248, 0.22) 0%, rgba(56, 189, 248, 0.08) 100%)');
+      root.style.setProperty('--kpi-bg', 'linear-gradient(160deg, rgba(14, 30, 62, 0.85) 0%, rgba(6, 16, 36, 0.95) 100%)');
+      root.style.setProperty('--glow-accent', 'rgba(56, 189, 248, 0.15)');
+      document.body.style.background = '#030814';
+
+    } else {
+      root.style.setProperty('--bg-main', 'radial-gradient(ellipse at 20% 0%, #e0e7ff 0%, #edf2f7 40%, #f8fafc 100%)');
+      root.style.setProperty('--bg-card', 'linear-gradient(160deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%)');
+      root.style.setProperty('--bg-card-hover', 'linear-gradient(160deg, #ffffff 0%, #f1f5f9 100%)');
+      root.style.setProperty('--bg-input', 'linear-gradient(145deg, rgba(241, 245, 249, 0.8) 0%, rgba(226, 232, 240, 0.5) 100%)');
+      root.style.setProperty('--text-main', '#0f172a');
+      root.style.setProperty('--text-muted', '#64748b');
+      root.style.setProperty('--border-color', 'rgba(203, 213, 225, 0.7)');
+      root.style.setProperty('--border-color-hover', 'rgba(148, 163, 184, 0.8)');
+      root.style.setProperty('--logo-filter', 'none');
+      root.style.setProperty('--text-highlight', 'var(--primary)');
+      root.style.setProperty('--row-bg', 'linear-gradient(90deg, rgba(255, 255, 255, 0.8) 0%, rgba(248, 250, 252, 0.4) 100%)');
+      root.style.setProperty('--row-hover', 'linear-gradient(90deg, rgba(241, 245, 249, 0.9) 0%, rgba(226, 232, 240, 0.4) 100%)');
+      root.style.setProperty('--btn-action-bg', 'linear-gradient(145deg, rgba(241, 245, 249, 0.9) 0%, rgba(226, 232, 240, 0.5) 100%)');
+      root.style.setProperty('--btn-action-hover', 'linear-gradient(145deg, rgba(226, 232, 240, 0.9) 0%, rgba(203, 213, 225, 0.7) 100%)');
+      root.style.setProperty('--kpi-bg', 'linear-gradient(160deg, #ffffff 0%, #f8fafc 100%)');
+      root.style.setProperty('--glow-accent', 'rgba(13, 50, 105, 0.04)');
+      document.body.style.background = '#f8fafc';
+    }
+  };
+  
   useEffect(() => {
+    aplicarTemaGlobal(temaPersistido);
+
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'usuarios', user.uid), (docSnap) => {
       if (docSnap.exists()) {
@@ -41,7 +154,7 @@ export default function NavbarOperacao({
         const profileData = {
           nickname: data.nickname || '',
           photoURL: data.photoURL || '',
-          theme: data.theme || 'light'
+          theme: data.theme || temaPersistido
         };
         setUserProfile(profileData);
         aplicarTemaGlobal(profileData.theme);
@@ -59,68 +172,6 @@ export default function NavbarOperacao({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
- const aplicarTemaGlobal = (tema) => {
-    const root = document.documentElement;
-
-    if (tema === 'dark') {
-      // 1. TEMA DARK ONYX / CHARCOAL GRADIENT
-      root.style.setProperty('--bg-main', 'radial-gradient(circle at 10% 10%, #181820 0%, #0c0c10 45%, #050507 100%)');
-      root.style.setProperty('--bg-card', 'linear-gradient(160deg, rgba(28, 28, 36, 0.85) 0%, rgba(16, 16, 22, 0.95) 100%)');
-      root.style.setProperty('--bg-card-hover', 'linear-gradient(160deg, rgba(38, 38, 50, 0.9) 0%, rgba(22, 22, 30, 0.98) 100%)');
-      root.style.setProperty('--bg-input', 'linear-gradient(145deg, rgba(20, 20, 26, 0.8) 0%, rgba(12, 12, 16, 0.9) 100%)');
-      root.style.setProperty('--text-main', '#f4f4f6');
-      root.style.setProperty('--text-muted', '#8f909e');
-      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.09)');
-      root.style.setProperty('--border-color-hover', 'rgba(255, 255, 255, 0.22)');
-      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)');
-      root.style.setProperty('--text-highlight', '#ffffff');
-      root.style.setProperty('--row-bg', 'linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0%, rgba(255, 255, 255, 0.01) 100%)');
-      root.style.setProperty('--row-hover', 'linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.025) 100%)');
-      root.style.setProperty('--btn-action-bg', 'linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%)');
-      root.style.setProperty('--btn-action-hover', 'linear-gradient(145deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.06) 100%)');
-      root.style.setProperty('--kpi-bg', 'linear-gradient(160deg, rgba(24, 24, 32, 0.9) 0%, rgba(14, 14, 18, 0.95) 100%)');
-      root.style.setProperty('--glow-accent', 'rgba(255, 255, 255, 0.05)');
-
-    } else if (tema === 'dark-blue') {
-      // 2. TEMA MIDNIGHT / NEON CYBER GRADIENT
-      root.style.setProperty('--bg-main', 'radial-gradient(ellipse at 15% 15%, #0c1e3f 0%, #071228 45%, #030814 100%)');
-      root.style.setProperty('--bg-card', 'linear-gradient(160deg, rgba(14, 30, 62, 0.75) 0%, rgba(7, 18, 40, 0.95) 100%)');
-      root.style.setProperty('--bg-card-hover', 'linear-gradient(160deg, rgba(20, 42, 85, 0.85) 0%, rgba(10, 24, 52, 0.98) 100%)');
-      root.style.setProperty('--bg-input', 'linear-gradient(145deg, rgba(8, 22, 48, 0.8) 0%, rgba(4, 12, 28, 0.9) 100%)');
-      root.style.setProperty('--text-main', '#f0f9ff');
-      root.style.setProperty('--text-muted', '#94a3b8');
-      root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.16)');
-      root.style.setProperty('--border-color-hover', 'rgba(56, 189, 248, 0.35)');
-      root.style.setProperty('--logo-filter', 'brightness(0) invert(1)');
-      root.style.setProperty('--text-highlight', '#38bdf8');
-      root.style.setProperty('--row-bg', 'linear-gradient(90deg, rgba(56, 189, 248, 0.05) 0%, rgba(15, 23, 42, 0.01) 100%)');
-      root.style.setProperty('--row-hover', 'linear-gradient(90deg, rgba(56, 189, 248, 0.1) 0%, rgba(56, 189, 248, 0.02) 100%)');
-      root.style.setProperty('--btn-action-bg', 'linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.04) 100%)');
-      root.style.setProperty('--btn-action-hover', 'linear-gradient(145deg, rgba(56, 189, 248, 0.22) 0%, rgba(56, 189, 248, 0.08) 100%)');
-      root.style.setProperty('--kpi-bg', 'linear-gradient(160deg, rgba(14, 30, 62, 0.85) 0%, rgba(6, 16, 36, 0.95) 100%)');
-      root.style.setProperty('--glow-accent', 'rgba(56, 189, 248, 0.15)');
-
-    } else {
-      // 3. TEMA LIGHT FROSTED / AURA GRADIENT
-      root.style.setProperty('--bg-main', 'radial-gradient(circle at 10% 10%, #e0e7ff 0%, #f1f5f9 40%, #f8fafc 100%)');
-      root.style.setProperty('--bg-card', 'linear-gradient(160deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%)');
-      root.style.setProperty('--bg-card-hover', 'linear-gradient(160deg, #ffffff 0%, #f1f5f9 100%)');
-      root.style.setProperty('--bg-input', 'linear-gradient(145deg, rgba(241, 245, 249, 0.8) 0%, rgba(226, 232, 240, 0.5) 100%)');
-      root.style.setProperty('--text-main', '#0f172a');
-      root.style.setProperty('--text-muted', '#64748b');
-      root.style.setProperty('--border-color', 'rgba(203, 213, 225, 0.7)');
-      root.style.setProperty('--border-color-hover', 'rgba(148, 163, 184, 0.8)');
-      root.style.setProperty('--logo-filter', 'none');
-      root.style.setProperty('--text-highlight', 'var(--primary)');
-      root.style.setProperty('--row-bg', 'linear-gradient(90deg, rgba(255, 255, 255, 0.8) 0%, rgba(248, 250, 252, 0.4) 100%)');
-      root.style.setProperty('--row-hover', 'linear-gradient(90deg, rgba(241, 245, 249, 0.9) 0%, rgba(226, 232, 240, 0.4) 100%)');
-      root.style.setProperty('--btn-action-bg', 'linear-gradient(145deg, rgba(241, 245, 249, 0.9) 0%, rgba(226, 232, 240, 0.5) 100%)');
-      root.style.setProperty('--btn-action-hover', 'linear-gradient(145deg, rgba(226, 232, 240, 0.9) 0%, rgba(203, 213, 225, 0.7) 100%)');
-      root.style.setProperty('--kpi-bg', 'linear-gradient(160deg, #ffffff 0%, #f8fafc 100%)');
-      root.style.setProperty('--glow-accent', 'rgba(13, 50, 105, 0.04)');
-    }
-  };
 
   const handleOpenSettings = () => {
     setFormProfile(userProfile);
@@ -141,14 +192,19 @@ export default function NavbarOperacao({
   const handleSaveProfile = async () => {
     setIsSavingProfile(true);
     try {
+      aplicarTemaGlobal(formProfile.theme);
+
       await updateDoc(doc(db, 'usuarios', user.uid), {
         nickname: formProfile.nickname,
         photoURL: formProfile.photoURL,
         theme: formProfile.theme
       });
       setShowSettingsModal(false);
-    } catch (error) { alert("Erro ao salvar o perfil."); } 
-    finally { setIsSavingProfile(false); }
+    } catch (error) { 
+      alert("Erro ao salvar o perfil."); 
+    } finally { 
+      setIsSavingProfile(false); 
+    }
   };
 
   const handleLogout = async () => {
@@ -156,13 +212,12 @@ export default function NavbarOperacao({
       await signOut(auth);
       sessionStorage.removeItem('justLoggedIn');
       navigate('/');
-    } catch (error) { console.error("Erro ao desconectar: ", error); }
+    } catch (error) { 
+      console.error("Erro ao desconectar: ", error); 
+    }
   };
 
   const displayName = userProfile.nickname || (user?.email ? user.email.split('@')[0] : 'Usuário');
-  const primeiroNome = displayName.split(' ')[0];
-  const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-  const dataFormatada = `${dia}/${mes}`;
 
   return (
     <>
@@ -187,10 +242,9 @@ export default function NavbarOperacao({
           boxSizing: 'border-box'
         }}>
           
-          {/* LADO ESQUERDO: CONTROLE RETORNO + LOGO + IDENTIFICAÇÃO */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <button 
-              onClick={() => navigate('/dashboard')} 
+              onClick={handleVoltarDashboard} 
               style={{ 
                 background: 'rgba(0,0,0,0.03)',
                 border: '1px solid var(--border-color)', 
@@ -223,95 +277,69 @@ export default function NavbarOperacao({
               src={logoEgaplast} 
               alt="Egaplast Logo" 
               style={{ height: '36px', width: 'auto', objectFit: 'contain', filter: 'var(--logo-filter, none)', cursor: 'pointer' }} 
-              onClick={() => navigate('/dashboard')} 
+              onClick={handleVoltarDashboard} 
             />
             
             <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 4px' }} />
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '1.15rem', color: 'var(--text-main)', fontWeight: 800, letterSpacing: '-0.3px' }}>
-                Olá, <span style={{ color: 'var(--primary)' }}>{displayName}</span>
-              </span>
-              <span style={{ 
-                fontSize: '0.75rem', 
-                fontWeight: 700, 
-                color: 'var(--text-muted)', 
-                background: 'rgba(0,0,0,0.04)', 
-                padding: '3px 8px', 
-                borderRadius: '12px',
-                border: '1px solid var(--border-color)'
-              }}>
+                Olá, <span style={{ color: 'var(--text-highlight, #38bdf8)' }}>{displayName}</span>
               </span>
             </div>
           </div>
 
-          {/* LADO DIREITO: FERRAMENTAS & PERFIL */}
+          {/* ... restante dos controles de Data, Conta e Settings permanecem inalterados no Lado Direito ... */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             
-            {/* SELETOR DE DATA EM PULL-PILL */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px', 
-              background: 'rgba(0,0,0,0.02)', 
-              padding: '6px 12px', 
-              borderRadius: '10px', 
-              border: '1px solid var(--border-color)',
-              transition: 'border-color 0.2s ease'
-            }}>
-              <Calendar size={15} color="var(--text-muted)" />
+            <div 
+              style={{ 
+                position: 'relative',
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px', 
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.05))', 
+                padding: '8px 14px', 
+                borderRadius: '10px', 
+                border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))',
+                color: 'var(--text-main, #f8fafc)',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                letterSpacing: '0.3px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--text-highlight, #38bdf8)'}
+              onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.15))'}
+            >
+              <CalendarIcon size={16} style={{ color: 'var(--text-highlight, #38bdf8)', pointerEvents: 'none' }} />
+              
+              <span style={{ pointerEvents: 'none' }}>
+                {dataOperacaoAtiva.split('-').reverse().join('/')}
+              </span>
+
               <input 
                 type="date" 
                 value={dataOperacaoAtiva} 
-                onChange={(e) => { if (e.target.value) navigate(`${location.pathname}?date=${e.target.value}`); }}
-                style={{ 
-                  border: 'none', 
-                  outline: 'none', 
-                  color: 'var(--text-main)', 
-                  fontWeight: 600, 
-                  background: 'transparent', 
-                  fontSize: '0.85rem', 
-                  cursor: 'pointer', 
-                  fontFamily: 'inherit' 
+                onChange={(e) => {
+                  if (e.target.value) {
+                    navigate(`${location.pathname}?date=${e.target.value}`, { 
+                      state: { fromTransition: true } 
+                    });
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0,
+                  cursor: 'pointer',
+                  zIndex: 2
                 }}
               />
             </div>
 
-
-            {/* BOTÃO NOVO PEDIDO ELEVADO */}
-            <button 
-              onClick={handleOpenModal} 
-              style={{ 
-                padding: '8px 16px', 
-                borderRadius: '10px', 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '6px', 
-                fontWeight: 700, 
-                fontSize: '0.85rem', 
-                background: 'var(--primary)', 
-                color: '#fff', 
-                border: 'none', 
-                cursor: 'pointer', 
-                boxShadow: '0 4px 10px rgba(13, 50, 105, 0.2)', 
-                transition: 'all 0.25s ease', 
-                fontFamily: 'inherit' 
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 6px 14px rgba(13, 50, 105, 0.3)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 4px 10px rgba(13, 50, 105, 0.2)';
-              }}
-            >
-              <Plus size={16} /> Novo Pedido
-            </button>
-
-            <div style={{ width: '1px', height: '22px', background: 'var(--border-color)', margin: '0 2px' }} />
-
-            {/* MICRO-CARD PERFIL */}
             <div className="user-profile-section" ref={dropdownRef} style={{ position: 'relative' }}>
               <div 
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
@@ -444,7 +472,6 @@ export default function NavbarOperacao({
         </div>
       </nav>
 
-      {/* MODAL DE CONFIGURAÇÃO DE PERFIL */}
       {showSettingsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)', fontFamily: "'Inter', sans-serif" }}>
           <div style={{ background: '#fff', borderRadius: '16px', width: '480px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
@@ -509,7 +536,6 @@ export default function NavbarOperacao({
         </div>
       )}
 
-      {/* MODAL CONFIRMAÇÃO DE LOGOUT */}
       {showLogoutConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)', fontFamily: "'Inter', sans-serif" }} onClick={() => setShowLogoutConfirm(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '16px', maxWidth: '380px', width: '90%', padding: '36px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>

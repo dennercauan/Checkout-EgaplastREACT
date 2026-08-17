@@ -3,7 +3,8 @@ import React from 'react';
 import { 
   Boxes, Info, X, Layers, Search, Loader2, UploadCloud, 
   PieChart, CheckCircle2, ArrowUpDown, ChevronDown, Copy, 
-  Package, AlignLeft, Edit, FileText, Plus, Trash2, User 
+  Package, AlignLeft, Edit, FileText, Plus, Trash2, User,
+  Scale, AlertTriangle
 } from 'lucide-react';
 
 export default function ModalDetalhesPedido({
@@ -53,9 +54,6 @@ export default function ModalDetalhesPedido({
 }) {
   if (!showDetalhesModal || !pedidoModal) return null;
 
-  // ============================================================================
-  // LÓGICA DO RESUMO GERAL
-  // ============================================================================
   let detalheSkus = 0;
   const cxMapDetalhe = {};
   
@@ -91,53 +89,129 @@ export default function ModalDetalhesPedido({
 
   return (
     <div className="op-modal-overlay" onClick={() => !isSaving && setShowDetalhesModal(false)}>
-      <div className="op-modal-content" style={{width: '98vw', height: '95vh', maxWidth: '1600px', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '12px'}} onClick={(e) => e.stopPropagation()}>
+      <div 
+        className="op-modal-content" 
+        style={{
+          width: '98vw', 
+          height: '95vh', 
+          maxWidth: '1600px', 
+          padding: '0', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          overflow: 'hidden', 
+          borderRadius: '16px',
+          background: 'var(--bg-card)',
+          borderColor: 'var(--border-color)'
+        }} 
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* HEADER FIXO */}
-        <div className="op-modal-header" style={{flexShrink: 0, padding: '20px 30px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div 
+          className="op-modal-header" 
+          style={{
+            flexShrink: 0, 
+            padding: '20px 30px', 
+            borderBottom: '1px solid var(--border-color)', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            background: 'var(--bg-card)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {pedidoModal.isCaixaMaster ? (
                 <>
-                  <Boxes size={26} color="#1e3a8a"/>
-                  <h2 style={{ color: '#1e3a8a', fontSize: '1.4rem', margin: 0, fontWeight: 'bold' }}>
-                    Caixas do Pedido <span style={{ color: '#cbd5e1', fontWeight: '300', marginLeft: '8px' }}>{pedidoModal.romaneio}</span>
+                  <Boxes size={26} color="var(--text-highlight, #38bdf8)"/>
+                  <h2 style={{ color: 'var(--text-main)', fontSize: '1.4rem', margin: 0, fontWeight: 'bold' }}>
+                    Caixas do Pedido <span style={{ color: 'var(--text-muted)', fontWeight: '300', marginLeft: '8px' }}>{pedidoModal.romaneio}</span>
                   </h2>
                 </>
             ) : (
                 <>
-                  <div className="icon-wrap" style={{background: 'var(--primary)', color: '#fff'}}><Info size={24}/></div>
+                  <div className="icon-wrap" style={{background: 'var(--btn-action-bg, rgba(255,255,255,0.08))', color: 'var(--text-highlight, #38bdf8)', border: '1px solid var(--border-color)'}}>
+                    <Info size={24}/>
+                  </div>
                   <div>
-                    <h2>Painel do Romaneio: {pedidoModal.romaneio}</h2>
-                    <p>{pedidoModal.loja || 'Destino Padrão'} {pedidoModal.uf ? `- ${pedidoModal.uf}` : ''}</p>
+                    <h2 style={{ color: 'var(--text-main)', margin: '0 0 2px 0', fontSize: '1.35rem', fontWeight: 800 }}>
+                      Painel do Romaneio: <span style={{ color: 'var(--text-highlight, #38bdf8)' }}>{pedidoModal.romaneio}</span>
+                    </h2>
+                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                      {pedidoModal.loja || 'Destino Padrão'} {pedidoModal.uf ? `- ${pedidoModal.uf}` : ''}
+                    </p>
                   </div>
                 </>
             )}
           </div>
-          <button style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }} onClick={() => setShowDetalhesModal(false)} disabled={isSaving || isUploading}><X size={24}/></button>
+          <button 
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '6px', borderRadius: '8px', transition: 'color 0.2s' }} 
+            onClick={() => setShowDetalhesModal(false)} 
+            disabled={isSaving || isUploading}
+          >
+            <X size={24}/>
+          </button>
         </div>
         
         {/* Sistema de Abas */}
         {!pedidoModal.isCaixaMaster && (
-          <div className="modal-tabs-container" style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', padding: '0 25px', flexShrink: 0 }}>
+          <div 
+            className="modal-tabs-container" 
+            style={{ 
+              display: 'flex', 
+              borderBottom: '1px solid var(--border-color)', 
+              padding: '0 25px', 
+              flexShrink: 0,
+              background: 'var(--bg-card)'
+            }}
+          >
             <button 
               className={`modal-tab-btn ${activeTab === 'resumo' ? 'active' : ''}`}
               onClick={() => setActiveTab('resumo')}
-              style={{ padding: '12px 20px', background: 'none', border: 'none', borderBottom: `3px solid ${activeTab === 'resumo' ? 'var(--primary)' : 'transparent'}`, color: activeTab === 'resumo' ? 'var(--primary)' : '#64748b', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.2s ease' }}
+              style={{ 
+                padding: '14px 20px', 
+                background: 'none', 
+                border: 'none', 
+                borderBottom: `3px solid ${activeTab === 'resumo' ? 'var(--text-highlight, #38bdf8)' : 'transparent'}`, 
+                color: activeTab === 'resumo' ? 'var(--text-highlight, #38bdf8)' : 'var(--text-muted)', 
+                fontWeight: 700, 
+                fontSize: '0.92rem', 
+                cursor: 'pointer', 
+                transition: 'all 0.2s ease' 
+              }}
             >
               Resumo Geral
             </button>
             <button 
               className={`modal-tab-btn ${activeTab === 'caixas' ? 'active' : ''}`}
               onClick={() => setActiveTab('caixas')}
-              style={{ padding: '12px 20px', background: 'none', border: 'none', borderBottom: `3px solid ${activeTab === 'caixas' ? 'var(--primary)' : 'transparent'}`, color: activeTab === 'caixas' ? 'var(--primary)' : '#64748b', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.2s ease' }}
+              style={{ 
+                padding: '14px 20px', 
+                background: 'none', 
+                border: 'none', 
+                borderBottom: `3px solid ${activeTab === 'caixas' ? 'var(--text-highlight, #38bdf8)' : 'transparent'}`, 
+                color: activeTab === 'caixas' ? 'var(--text-highlight, #38bdf8)' : 'var(--text-muted)', 
+                fontWeight: 700, 
+                fontSize: '0.92rem', 
+                cursor: 'pointer', 
+                transition: 'all 0.2s ease' 
+              }}
             >
               Detalhamento Completo & WMS
             </button>
           </div>
         )}
         
-        {/* Corpo do Modal Rolável */}
-        <div className="op-modal-body" style={{ flex: 1, padding: '25px', overflowY: 'auto', background: '#f8fafc' }}>
+        {/* Corpo do Modal */}
+        <div 
+          className="op-modal-body" 
+          style={{ 
+            flex: 1, 
+            padding: '25px', 
+            overflowY: 'auto', 
+            background: 'var(--bg-main)',
+            color: 'var(--text-main)' 
+          }}
+        >
           
           {pedidoModal.isCaixaMaster ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
@@ -168,71 +242,145 @@ export default function ModalDetalhesPedido({
                   }) : [];
 
                   return (
-                    <div key={dIdx} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden', padding: '25px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
-                        <h4 style={{ color: '#1e3a8a', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <Layers size={22} color="#1e3a8a" /> {doc.tipo} 
-                          <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
+                    <div key={dIdx} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px' }}>
+                        <h4 style={{ color: 'var(--text-highlight, #38bdf8)', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 800 }}>
+                          <Layers size={22} color="var(--text-highlight, #38bdf8)" /> {doc.tipo} 
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
                         </h4>
                       </div>
 
+                      {/* RELATÓRIO PERSISTENTE DE AUDITORIA (SE JÁ EFETIVADO) */}
+                      {doc.auditoria && doc.auditoria.itens && doc.auditoria.itens.length > 0 && (
+                        <div style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Boxes size={18} color="var(--text-highlight, #38bdf8)" />
+                              <strong style={{ fontSize: '0.92rem', color: 'var(--text-main)', fontWeight: 800 }}>
+                                Auditoria de Volumes Consolidada
+                              </strong>
+                              {doc.auditoria.data && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                  ({new Date(doc.auditoria.data).toLocaleDateString('pt-BR')} às {new Date(doc.auditoria.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})
+                                </span>
+                              )}
+                            </div>
+                            
+                            <span style={{ 
+                              fontSize: '0.75rem', 
+                              fontWeight: 800, 
+                              padding: '4px 10px', 
+                              borderRadius: '12px', 
+                              background: (doc.auditoria.divergencias === 0 || doc.auditoria.diferenca === 0) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', 
+                              color: (doc.auditoria.divergencias === 0 || doc.auditoria.diferenca === 0) ? '#10b981' : '#ef4444',
+                              border: `1px solid ${(doc.auditoria.divergencias === 0 || doc.auditoria.diferenca === 0) ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                            }}>
+                              {(doc.auditoria.divergencias === 0 || doc.auditoria.diferenca === 0) 
+                                ? '100% Conforme (0 Divergências)' 
+                                : `${doc.auditoria.divergencias || Math.abs(doc.auditoria.diferenca)} Divergência(s) Detectada(s)`}
+                            </span>
+                          </div>
+
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                                  <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '0.72rem' }}>TIPO CAIXA</th>
+                                  <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '0.72rem' }}>PLANEJADO</th>
+                                  <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '0.72rem' }}>WMS REAL</th>
+                                  <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '0.72rem' }}>PESO (PLAN / REAL)</th>
+                                  <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '0.72rem' }}>DIFERENÇA</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {doc.auditoria.itens.map((it, iIdx) => (
+                                  <tr key={iIdx} style={{ borderBottom: '1px dashed var(--border-color)', background: it.status !== 'correto' && it.diffQtd !== 0 ? 'rgba(239, 68, 68, 0.04)' : 'transparent' }}>
+                                    <td style={{ padding: '8px 10px', fontWeight: 800, color: 'var(--text-highlight, #38bdf8)' }}>
+                                      {it.tipoCaixa}
+                                    </td>
+                                    <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                      {it.qtdPlanejada} cx
+                                    </td>
+                                    <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: 'var(--text-main)' }}>
+                                      {it.qtdEfetivada} cx
+                                    </td>
+                                    <td style={{ padding: '8px 10px', textAlign: 'center', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                                      {Number(it.pesoPlanejado || 0).toFixed(1)}kg / <strong style={{ color: 'var(--text-main)' }}>{Number(it.pesoEfetivado || 0).toFixed(1)}kg</strong>
+                                    </td>
+                                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                      {it.diffQtd === 0 ? (
+                                        <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 800 }}>OK</span>
+                                      ) : it.diffQtd < 0 ? (
+                                        <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '2px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 800 }}>{it.diffQtd} cx</span>
+                                      ) : (
+                                        <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 800 }}>+{it.diffQtd} cx</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
                       {!wmsSessions[dIdx] ? (
-                        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
-                          <FileText size={64} color="#94a3b8" style={{ marginBottom: '20px' }} />
-                          <h3 style={{ color: 'var(--primary)', margin: '0 0 10px 0', fontSize: '1.5rem' }}>Planejamento de Caixas Master</h3>
-                          <p style={{ color: '#64748b', fontSize: '1rem', marginBottom: '30px' }}>Faça o upload do arquivo CSV extraído do WMS para iniciar o cruzamento de dados de embalagem.</p>
+                        <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-input, rgba(0,0,0,0.1))', border: '2px dashed var(--border-color)', borderRadius: '12px' }}>
+                          <FileText size={64} color="var(--text-muted)" style={{ marginBottom: '20px', opacity: 0.6 }} />
+                          <h3 style={{ color: 'var(--text-main)', margin: '0 0 10px 0', fontSize: '1.5rem', fontWeight: 800 }}>Planejamento de Caixas Master</h3>
+                          <p style={{ color: 'var(--text-muted)', fontSize: '1rem', marginBottom: '30px' }}>Faça o upload do arquivo CSV extraído do WMS para iniciar o cruzamento de dados de embalagem.</p>
                           
                           <input 
                             type="file" accept=".csv" id={`plan-upload-${dIdx}`} style={{ display: 'none' }} 
                             onChange={(e) => handlePlanejamentoUpload(e, dIdx)} disabled={isUploading}
                           />
-                          <label htmlFor={`plan-upload-${dIdx}`} style={{ background: 'var(--primary)', color: '#fff', padding: '14px 35px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
+                          <label htmlFor={`plan-upload-${dIdx}`} style={{ background: 'var(--primary)', color: '#fff', padding: '14px 35px', borderRadius: '10px', fontSize: '1.05rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(13, 50, 105, 0.3)' }}>
                             {isUploading ? <Loader2 size={20} className="fa-spin"/> : <UploadCloud size={20}/>}
                             {isUploading ? 'Analisando Base de Dados...' : 'Selecionar Arquivo CSV WMS'}
                           </label>
                         </div>
                       ) : (
-                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
                           
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#fff', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '15px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '15px' }}>
                             <div>
-                              <div style={{ fontSize: '1.3rem', color: '#1e3a8a', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
+                              <div style={{ fontSize: '1.3rem', color: 'var(--text-highlight, #38bdf8)', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '-0.5px' }}>
                                 {wmsSessions[dIdx].loja || pedidoModal.loja || 'LOJA NÃO DEFINIDA'}
                               </div>
-                              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
-                                Romaneio WMS: <strong style={{ color: '#ea580c' }}>{wmsSessions[dIdx].romaneio || pedidoModal.romaneio}</strong>
+                              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                Romaneio WMS: <strong style={{ color: 'var(--secondary, #f26522)' }}>{wmsSessions[dIdx].romaneio || pedidoModal.romaneio}</strong>
                               </div>
                             </div>
                             
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <div style={{ position: 'relative' }}>
-                                <Search size={14} style={{ position: 'absolute', left: '12px', top: '10px', color: '#94a3b8' }}/>
+                                <Search size={14} style={{ position: 'absolute', left: '12px', top: '10px', color: 'var(--text-muted)' }}/>
                                 <input type="text" 
                                   placeholder="Buscar Produto ou SKU..." 
                                   value={buscasDocumentos[dIdx] || ''} 
                                   onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
-                                  style={{ padding: '8px 10px 8px 32px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', outline: 'none', width: '220px', color: '#334155' }}/>
+                                  style={{ padding: '8px 10px 8px 32px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.85rem', outline: 'none', width: '220px', background: 'var(--bg-input)', color: 'var(--text-main)' }}/>
                               </div>
                               
                               <div style={{ position: 'relative' }}>
                                 <button 
                                   onClick={() => setWmsPreResumoAberto(wmsPreResumoAberto === dIdx ? null : dIdx)}
-                                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', fontSize: '0.85rem', color: '#1e3a8a', fontWeight: 'bold', cursor: 'pointer' }}>
-                                  <FileText size={14} color="#ea580c"/> Pré-Resumo 
-                                  <span style={{ background: '#1e3a8a', color: '#fff', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem' }}>
+                                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>
+                                  <FileText size={14} color="var(--secondary)"/> Pré-Resumo 
+                                  <span style={{ background: 'var(--primary)', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem' }}>
                                     {totalVolumesGeral}
                                   </span>
                                 </button>
                                 
                                 {wmsPreResumoAberto === dIdx && (
-                                  <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '15px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', zIndex: 50 }}>
-                                    <h4 style={{ margin: '0 0 10px 0', borderBottom: '2px solid #f1f5f9', paddingBottom: '8px', color: 'var(--primary)', fontSize: '0.95rem' }}>Volumes Estimados</h4>
+                                  <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '15px', width: '320px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', zIndex: 50 }}>
+                                    <h4 style={{ margin: '0 0 10px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', color: 'var(--text-main)', fontSize: '0.95rem', fontWeight: 800 }}>Volumes Estimados</h4>
                                     <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                      {Object.keys(resumoTiposCaixa).length === 0 ? <span style={{fontSize: '0.8rem', color: '#94a3b8'}}>Nenhuma caixa projetada.</span> : ''}
+                                      {Object.keys(resumoTiposCaixa).length === 0 ? <span style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>Nenhuma caixa projetada.</span> : ''}
                                       {Object.keys(resumoTiposCaixa).map(k => (
-                                        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '6px 0', borderBottom: '1px dashed #e2e8f0' }}>
-                                          <strong style={{ color: '#334155' }}>{k}</strong>
-                                          <span>{resumoTiposCaixa[k].qtd} un <span style={{ color: '#cbd5e1', margin: '0 4px' }}>|</span> <strong style={{ color: '#10b981' }}>{resumoTiposCaixa[k].peso.toFixed(1)}kg</strong></span>
+                                        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '8px 0', borderBottom: '1px dashed var(--border-color)' }}>
+                                          <strong style={{ color: 'var(--text-main)' }}>{k}</strong>
+                                          <span>{resumoTiposCaixa[k].qtd} un <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>|</span> <strong style={{ color: '#10b981' }}>{resumoTiposCaixa[k].peso.toFixed(1)}kg</strong></span>
                                         </div>
                                       ))}
                                     </div>
@@ -240,58 +388,57 @@ export default function ModalDetalhesPedido({
                                 )}
                               </div>
                               
-                              <button onClick={() => setShowCaixasEfetivadasModal(dIdx)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#1e3a8a', cursor: 'pointer', display: 'flex' }} title="Estrutura de Caixas Salvas">
+                              <button onClick={() => setShowCaixasEfetivadasModal(dIdx)} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', padding: '8px', borderRadius: '8px', color: 'var(--text-main)', cursor: 'pointer', display: 'flex' }} title="Estrutura de Caixas Salvas">
                                 <Boxes size={16}/>
                               </button>
                                 
                               <button onClick={async () => {
                                 if(!window.confirm("Deseja realmente descartar este planejamento?")) return;
                                 setWmsSessions(prev => { const n = {...prev}; delete n[dIdx]; return n; });
-                              }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
+                              }} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', padding: '8px', borderRadius: '8px', color: '#ef4444', cursor: 'pointer', display: 'flex' }} title="Descartar Planejamento">
                                 <Trash2 size={16}/>
                               </button>
                               
-                              {/* BOTÃO ATUALIZADO COM O FLUXO UNIFICADO */}
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', background: pedidoModal.documentos[dIdx].caixas?.length > 0 ? '#0ea5e9' : '#22c55e', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', margin: 0 }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', background: pedidoModal.documentos[dIdx].caixas?.length > 0 ? '#0ea5e9' : '#22c55e', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', margin: 0 }}>
                                 {pedidoModal.documentos[dIdx].caixas?.length > 0 ? <PieChart size={16}/> : <CheckCircle2 size={16}/>}
                                 {pedidoModal.documentos[dIdx].caixas?.length > 0 ? 'Reimportar WMS' : 'Importar Caixas'}
                                 <input 
-  type="file" 
-  accept=".csv" 
-  style={{ display: 'none' }} 
-  onChange={(e) => {
-    setAuditModalData({ dIdx });
-    handleAuditoriaUpload(e, dIdx);
-  }}
-  disabled={isSaving}
-/>
+                                  type="file" 
+                                  accept=".csv" 
+                                  style={{ display: 'none' }} 
+                                  onChange={(e) => {
+                                    setAuditModalData({ dIdx });
+                                    handleAuditoriaUpload(e, dIdx);
+                                  }}
+                                  disabled={isSaving}
+                                />
                               </label>
                             </div>
                           </div>
                           
                           <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                              <thead style={{ background: '#e2e8f0', position: 'sticky', top: 0, zIndex: 10 }}>
+                              <thead style={{ background: 'var(--bg-input)', position: 'sticky', top: 0, zIndex: 10 }}>
                                 <tr>
-                                  <th style={{ padding: '12px 20px', textAlign: 'left', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO <ArrowUpDown size={10} style={{marginLeft: '4px', opacity: 0.5}}/></th>
-                                  <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD PEDIDO <ArrowUpDown size={10} style={{marginLeft: '4px', opacity: 0.5}}/></th>
-                                  <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO UC</th>
-                                  <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO CAIXA</th>
-                                  <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>PESO</th>
-                                  <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>SELECIONAR VARIAÇÃO</th>
-                                  <th style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '0.75rem' }}>TOTAL CX</th>
+                                  <th style={{ padding: '12px 20px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO</th>
+                                  <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD PEDIDO</th>
+                                  <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO UC</th>
+                                  <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>TIPO CAIXA</th>
+                                  <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>PESO</th>
+                                  <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>SELECIONAR VARIAÇÃO</th>
+                                  <th style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>TOTAL CX</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {skusFiltrados.length === 0 ? (
-                                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>Nenhum SKU encontrado.</td></tr>
+                                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>Nenhum SKU encontrado.</td></tr>
                                 ) : (
                                   skusFiltrados.map((sku, i) => {
                                     const isExpanded = skusExpandidos[`${dIdx}-${sku.ref}`];
 
                                     return (
                                       <React.Fragment key={i}>
-                                        <tr style={{ borderBottom: '1px solid #f1f5f9', background: sku.isMissing ? '#fef2f2' : (isExpanded ? '#f8fafc' : '#fff'), transition: 'background 0.2s' }}>
+                                        <tr style={{ borderBottom: '1px solid var(--border-color)', background: sku.isMissing ? 'rgba(239, 68, 68, 0.08)' : (isExpanded ? 'var(--bg-input)' : 'transparent'), transition: 'background 0.2s' }}>
                                           <td style={{ padding: '15px 20px' }}>
                                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                                               <div 
@@ -299,50 +446,50 @@ export default function ModalDetalhesPedido({
                                                 style={{ marginTop: '2px', cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s ease', padding: '2px' }}
                                                 title="Ver caixas deste produto"
                                               >
-                                                <ChevronDown size={18} color={isExpanded ? "#ea580c" : "#0284c7"} />
+                                                <ChevronDown size={18} color={isExpanded ? "var(--secondary)" : "var(--text-highlight, #38bdf8)"} />
                                               </div>
                                               
                                               <div>
-                                                <strong style={{ color: '#0284c7', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
-                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase' }}>{sku.desc}</span>
+                                                <strong style={{ color: 'var(--text-highlight, #38bdf8)', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase' }}>{sku.desc}</span>
                                               </div>
                                             </div>
                                           </td>
-                                          <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: '#1e293b' }}>{sku.qtdTotal}</td>
+                                          <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: 'var(--text-main)' }}>{sku.qtdTotal}</td>
                                           <td style={{ padding: '15px', textAlign: 'center' }}>
                                             {sku.isMissing ? (
-                                              <input type="number" placeholder="Qtd" value={sku.qtdPadrao || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'qtdPadrao', e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: '#fff' }}/>
+                                              <input type="number" placeholder="Qtd" value={sku.qtdPadrao || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'qtdPadrao', e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '6px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: 'var(--bg-card)', color: 'var(--text-main)' }}/>
                                             ) : (
-                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#475569', fontSize: '0.9rem' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: 'var(--text-main)', fontSize: '0.9rem' }}>
                                                 CX{sku.qtdPadrao} 
-                                                <span title="Copiar Código de Barras da Embalagem" onClick={(e) => {
+                                                <span title="Copiar Código de Barras" onClick={(e) => {
                                                     const variacao = sku.variacoesDisponiveis && sku.variacoesDisponiveis[sku.variacaoSelecionadaIdx || 0];
                                                     const eanToCopy = variacao?.codigoBarras || sku.codigoBarras || variacao?.ean || sku.ean || 'EAN-NÃO-CADASTRADO';
-                                                    if (eanToCopy !== 'EAN-NÃO-CADASTRADO') { navigator.clipboard.writeText(eanToCopy); } else { alert('O campo "codigoBarras" não foi encontrado nesta variação ou produto no banco de dados.'); }
+                                                    if (eanToCopy !== 'EAN-NÃO-CADASTRADO') { navigator.clipboard.writeText(eanToCopy); } else { alert('O campo "codigoBarras" não foi encontrado nesta variação ou produto.'); }
                                                     const spanRef = e.currentTarget;
                                                     spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-                                                    setTimeout(() => { spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }, 1500);
-                                                  }} style={{ cursor: 'pointer', display: 'flex', padding: '4px', background: '#f1f5f9', borderRadius: '4px' }}>
-                                                  <Copy size={15} color="#ea580c" />
+                                                    setTimeout(() => { spanRef.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'; }, 1500);
+                                                  }} style={{ cursor: 'pointer', display: 'flex', padding: '4px', background: 'var(--bg-input)', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                                                  <Copy size={15} color="var(--secondary)" />
                                                 </span>
                                               </div>
                                             )}
                                           </td>
                                           <td style={{ padding: '15px', textAlign: 'center' }}>
                                             {sku.isMissing ? (
-                                              <input type="text" placeholder="Ex: CAIXA 1" value={sku.caixaNome || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'caixaNome', e.target.value)} style={{ width: '90px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: '#fff' }}/>
+                                              <input type="text" placeholder="Ex: CAIXA 1" value={sku.caixaNome || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'caixaNome', e.target.value)} style={{ width: '90px', padding: '6px', border: '1px solid #ef4444', borderRadius: '6px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: 'var(--bg-card)', color: 'var(--text-main)' }}/>
                                             ) : (
-                                              <span style={{ color: '#475569', fontSize: '0.9rem' }}>{sku.caixaNome}</span>
+                                              <span style={{ color: 'var(--text-main)', fontSize: '0.9rem' }}>{sku.caixaNome}</span>
                                             )}
                                           </td>
                                           <td style={{ padding: '15px', textAlign: 'center' }}>
                                             {sku.isMissing ? (
                                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                                                <input type="number" step="0.1" placeholder="0.0" value={sku.pesoPadrao || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'pesoPadrao', e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '4px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: '#fff' }}/>
-                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>kg</span>
+                                                <input type="number" step="0.1" placeholder="0.0" value={sku.pesoPadrao || ''} onChange={(e) => handleInputManual(dIdx, sku.ref, 'pesoPadrao', e.target.value)} style={{ width: '60px', padding: '6px', border: '1px solid #ef4444', borderRadius: '6px', outline: 'none', textAlign: 'center', fontSize: '0.8rem', background: 'var(--bg-card)', color: 'var(--text-main)' }}/>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>kg</span>
                                               </div>
                                             ) : (
-                                              <span style={{ color: '#475569', fontSize: '0.9rem' }}>{sku.pesoPadrao}kg</span>
+                                              <span style={{ color: 'var(--text-main)', fontSize: '0.9rem' }}>{sku.pesoPadrao}kg</span>
                                             )}
                                           </td>
                                           <td style={{ padding: '15px', textAlign: 'center' }}>
@@ -356,16 +503,16 @@ export default function ModalDetalhesPedido({
                                               </button>
                                             ) : (
                                               sku.variacoesDisponiveis && sku.variacoesDisponiveis.length > 1 ? (
-                                                <select value={sku.variacaoSelecionadaIdx || 0} onChange={(e) => handleMudarVariacao(dIdx, sku.ref, parseInt(e.target.value))} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', outline: 'none', color: '#475569', width: '100%', maxWidth: '200px', background: '#f8fafc', cursor: 'pointer' }}>
+                                                <select value={sku.variacaoSelecionadaIdx || 0} onChange={(e) => handleMudarVariacao(dIdx, sku.ref, parseInt(e.target.value))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.78rem', outline: 'none', color: 'var(--text-main)', width: '100%', maxWidth: '200px', background: 'var(--bg-input)', cursor: 'pointer' }}>
                                                   {sku.variacoesDisponiveis.map((v, vIdx) => ( <option key={vIdx} value={vIdx}> {v.caixa} / {v.quantidade} un / {v.peso}kg </option> ))}
                                                 </select>
                                               ) : (
-                                                <span style={{ background: '#f1f5f9', color: '#94a3b8', padding: '4px 10px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid #e2e8f0' }}>Padrão Único</span>
+                                                <span style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>Padrão Único</span>
                                               )
                                             )}
                                           </td>
-                                          <td style={{ padding: '15px', textAlign: 'center', background: isExpanded ? '#f1f5f9' : '#f8fafc', borderLeft: '1px solid #e2e8f0', transition: 'background 0.2s' }}>
-                                            <div style={{ fontWeight: '900', color: '#1e3a8a', fontSize: '1.25rem' }}>
+                                          <td style={{ padding: '15px', textAlign: 'center', background: isExpanded ? 'var(--bg-input)' : 'rgba(0,0,0,0.02)', borderLeft: '1px solid var(--border-color)', transition: 'background 0.2s' }}>
+                                            <div style={{ fontWeight: '900', color: 'var(--text-highlight, #38bdf8)', fontSize: '1.25rem' }}>
                                               {sku.qtdPadrao > 0 ? Math.ceil(sku.qtdTotal / sku.qtdPadrao) : 0}
                                             </div>
                                           </td>
@@ -397,27 +544,26 @@ export default function ModalDetalhesPedido({
                                           }
 
                                           return (
-                                            <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', boxShadow: 'inset 0 4px 6px -4px rgba(0,0,0,0.05)' }}>
+                                            <tr style={{ background: 'var(--bg-input)', borderBottom: '2px solid var(--border-color)' }}>
                                               <td colSpan="7" style={{ padding: '20px 25px' }}>
-                                                
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
                                                    <Boxes size={18} color={isProjecao ? "#d97706" : "#10b981"}/>
-                                                   <h5 style={{ margin: 0, color: 'var(--primary)', fontSize: '0.95rem' }}>
+                                                   <h5 style={{ margin: 0, color: 'var(--text-main)', fontSize: '0.95rem', fontWeight: 800 }}>
                                                      {isProjecao ? 'Projeção de Fracionamento (Pré-WMS)' : 'Caixas Efetivadas no WMS'}
                                                    </h5>
-                                                   {isProjecao && <span style={{ background: '#fef3c7', color: '#d97706', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid #fde68a' }}>Estimativa Baseada na Variação</span>}
+                                                   {isProjecao && <span style={{ background: 'rgba(217, 119, 6, 0.15)', color: '#fbbf24', padding: '2px 8px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(217, 119, 6, 0.3)' }}>Estimativa Baseada na Variação</span>}
                                                 </div>
 
                                                 {caixasParaExibir.length === 0 ? (
-                                                  <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Nenhum dado matemático para gerar caixas.</div>
+                                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado matemático para gerar caixas.</div>
                                                 ) : (
                                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
                                                      {caixasParaExibir.map((cx, cIdx) => (
-                                                       <div key={cIdx} style={{ background: '#fff', border: `1px solid ${cx.real ? '#cbd5e1' : '#e2e8f0'}`, borderLeft: `4px solid ${cx.real ? '#10b981' : '#0ea5e9'}`, borderRadius: '6px', padding: '12px 15px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                                                         <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>{cx.titulo}</div>
+                                                       <div key={cIdx} style={{ background: 'var(--bg-card)', border: `1px solid var(--border-color)`, borderLeft: `4px solid ${cx.real ? '#10b981' : '#0ea5e9'}`, borderRadius: '8px', padding: '12px 15px' }}>
+                                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '6px' }}>{cx.titulo}</div>
                                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                                                           <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#334155', lineHeight: '1' }}>{cx.qtd} <span style={{fontSize: '0.75rem', fontWeight: 'normal', color: '#94a3b8'}}>un</span></div>
-                                                           <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{cx.peso}kg</div>
+                                                           <div style={{ fontSize: '1.25rem', fontWeight: '900', color: 'var(--text-main)', lineHeight: '1' }}>{cx.qtd} <span style={{fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-muted)'}}>un</span></div>
+                                                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>{cx.peso}kg</div>
                                                          </div>
                                                        </div>
                                                      ))}
@@ -450,12 +596,12 @@ export default function ModalDetalhesPedido({
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', overflow: 'hidden' }}>
                     
-                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                    <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                        <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: '#334155' }}>
-                          <AlignLeft size={18} color="#64748b"/> Observações
+                        <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 800 }}>
+                          <AlignLeft size={18} color="var(--text-muted)"/> Observações
                         </strong>
-                        <button onClick={() => setIsEditingObs(!isEditingObs)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#0ea5e9', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600 }}>
+                        <button onClick={() => setIsEditingObs(!isEditingObs)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-highlight, #38bdf8)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700 }}>
                           <Edit size={14}/> {isEditingObs ? 'Travar Edição' : 'Editar Texto'}
                         </button>
                       </div>
@@ -466,47 +612,47 @@ export default function ModalDetalhesPedido({
                           onChange={(e) => setObservacoes(e.target.value)} 
                           disabled={isSaving}
                           rows="3"
-                          style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', resize: 'none', fontSize: '0.85rem', color: '#475569', boxSizing: 'border-box' }}
+                          style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', resize: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'var(--bg-input)', boxSizing: 'border-box' }}
                           placeholder="Adicione observações aqui..."
                           autoFocus
                         />
                       ) : (
-                        <div style={{ fontSize: '0.9rem', color: '#64748b', margin: 0, padding: '10px', background: '#f8fafc', borderRadius: '6px', minHeight: '50px' }}>
-                          {observacoes || <span style={{fontStyle: 'italic', color: '#94a3b8'}}>Nenhuma observação informada.</span>}
+                        <div style={{ fontSize: '0.9rem', color: 'var(--text-main)', margin: 0, padding: '12px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '50px', lineHeight: 1.5 }}>
+                          {observacoes || <span style={{fontStyle: 'italic', color: 'var(--text-muted)'}}>Nenhuma observação informada.</span>}
                         </div>
                       )}
                     </div>
 
-                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                      <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: '#334155', marginBottom: '12px' }}>
-                        <FileText size={18} color="#64748b"/> Documentos
+                    <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                      <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: 'var(--text-main)', marginBottom: '12px', fontWeight: 800 }}>
+                        <FileText size={18} color="var(--text-muted)"/> Documentos
                       </strong>
                       
                       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexShrink: 0 }}>
-                        <select value={docTipo} onChange={(e) => setDocTipo(e.target.value)} disabled={isSaving} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', outline: 'none' }}>
+                        <select value={docTipo} onChange={(e) => setDocTipo(e.target.value)} disabled={isSaving} style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.88rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)' }}>
                           <option value="Nota Fiscal">Nota Fiscal</option>
                           <option value="Minuta">Minuta</option>
                           <option value="Bonificação">Bonificação</option>
                           <option value="Troca">Troca</option>
                         </select>
-                        <select value={docResponsavel} onChange={(e) => setDocResponsavel(e.target.value)} disabled={isSaving} style={{ flex: 1.5, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', outline: 'none' }}>
+                        <select value={docResponsavel} onChange={(e) => setDocResponsavel(e.target.value)} disabled={isSaving} style={{ flex: 1.5, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.88rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)' }}>
                           <option value="">Responsável...</option>
                           {localUser?.email && !usuarios.some(u => u.email === String(localUser.email).toLowerCase().trim()) && (<option value={String(localUser.email).toLowerCase().trim()}>{String(localUser.email).split('@')[0].toLowerCase()}</option>)}
                           {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
                         </select>
-                        <button onClick={handleAddDoc} disabled={isSaving} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <button onClick={handleAddDoc} disabled={isSaving} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '9px 14px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                           <Plus size={16}/>
                         </button>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, paddingRight: '5px' }}>
                         {docsTemporarios.length === 0 ? (
-                          <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Nenhum documento.</span>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Nenhum documento.</span>
                         ) : (
                           docsTemporarios.map(doc => (
-                            <div key={doc.idTemp} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.85rem', padding: '10px 12px', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div key={doc.idTemp} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem', padding: '12px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontWeight: 600 }}>{doc.tipo}</span>
+                                <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{doc.tipo}</span>
                                 <button onClick={() => handleRemoveDoc(doc.idTemp)} disabled={isSaving} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px' }}>
                                   <Trash2 size={16}/>
                                 </button>
@@ -514,15 +660,15 @@ export default function ModalDetalhesPedido({
                               
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
                                 {(doc.responsaveis || [doc.responsavel]).filter(Boolean).map(resp => (
-                                  <span key={resp} style={{ background: '#e2e8f0', color: '#475569', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <User size={10}/> {resp.split('@')[0]}
+                                  <span key={resp} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '4px 9px', borderRadius: '12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                                    <User size={11}/> {resp.split('@')[0]}
                                     <button onClick={() => handleRemoveResponsavelFromDoc(doc.idTemp, resp)} disabled={isSaving} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex' }}><X size={12}/></button>
                                   </span>
                                 ))}
                                 <select 
                                   onChange={(e) => { handleAddResponsavelToDoc(doc.idTemp, e.target.value); e.target.value = ""; }} 
                                   disabled={isSaving} 
-                                  style={{ fontSize: '0.75rem', padding: '3px 6px', borderRadius: '6px', border: '1px dashed #cbd5e1', outline: 'none', background: '#fff', color: '#64748b', cursor: 'pointer' }}
+                                  style={{ fontSize: '0.75rem', padding: '4px 8px', borderRadius: '8px', border: '1px dashed var(--border-color)', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer' }}
                                 >
                                   <option value="">+ Add Parceiro</option>
                                   {usuarios.map(u => (<option key={u.uid} value={u.email}>{u.email.split('@')[0]}</option>))}
@@ -536,7 +682,7 @@ export default function ModalDetalhesPedido({
                       <button 
                         onClick={handleSalvarEdicaoTab1} 
                         disabled={isSaving}
-                        style={{ marginTop: '15px', background: '#10b981', color: '#fff', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexShrink: 0 }}
+                        style={{ marginTop: '15px', background: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexShrink: 0, boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)' }}
                       >
                         {isSaving ? <Loader2 size={16} className="fa-spin"/> : <CheckCircle2 size={16}/>}
                         Salvar Alterações
@@ -544,11 +690,11 @@ export default function ModalDetalhesPedido({
                     </div>
                   </div>
 
-                  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                  <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexShrink: 0 }}>
-                      <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: '#334155' }}>
+                      <strong style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 800 }}>
                         <CheckCircle2 size={18} color="#10b981"/> Resumo de Caixas 
-                        <span style={{ marginLeft: '4px', fontSize: '0.75rem', background: '#ecfdf5', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
+                        <span style={{ marginLeft: '4px', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
                           {detalheSkus} SKUs processados
                         </span>
                       </strong>
@@ -562,13 +708,13 @@ export default function ModalDetalhesPedido({
                             const btn = e.currentTarget;
                             const originalText = btn.innerHTML;
                             btn.innerHTML = 'Copiado!';
-                            btn.style.color = '#10b981'; btn.style.borderColor = '#10b981'; btn.style.background = '#ecfdf5';
+                            btn.style.color = '#10b981'; btn.style.borderColor = '#10b981'; btn.style.background = 'rgba(16, 185, 129, 0.1)';
                             setTimeout(() => {
                               btn.innerHTML = originalText;
-                              btn.style.color = '#475569'; btn.style.borderColor = '#cbd5e1'; btn.style.background = '#f8fafc';
+                              btn.style.color = 'var(--text-main)'; btn.style.borderColor = 'var(--border-color)'; btn.style.background = 'var(--bg-input)';
                             }, 1500);
                           }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#475569', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
                           title="Copiar resumo no padrão WMS"
                         >
                           <Copy size={14} /> Copiar
@@ -578,17 +724,17 @@ export default function ModalDetalhesPedido({
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
                       {resumoOrdenadoComum.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '25px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#94a3b8', fontSize: '0.9rem' }}>
+                        <div style={{ textAlign: 'center', padding: '35px 20px', background: 'var(--bg-input)', border: '1px dashed var(--border-color)', borderRadius: '10px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                           Nenhuma caixa importada.
                         </div>
                       ) : (
                         resumoOrdenadoComum.map((k, idx) => (
-                          <div key={idx} style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? '#fef2f2' : '#f8fafc', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${k.isBonif ? '#fca5a5' : '#e2e8f0'}` }}>
+                          <div key={idx} style={{ fontSize: '0.88rem', color: 'var(--text-main)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: k.isBonif ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-input)', padding: '12px 14px', borderRadius: '8px', border: `1px solid ${k.isBonif ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)'}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <strong style={{color: k.isBonif ? '#ef4444' : 'var(--primary)'}}>{k.originalName}</strong> 
-                              <span style={{color: k.isBonif ? '#f87171' : '#94a3b8', fontSize: '0.8rem'}}>({k.peso.toFixed(2)} kg)</span>
+                              <strong style={{color: k.isBonif ? '#f87171' : 'var(--text-highlight, #38bdf8)'}}>{k.originalName}</strong> 
+                              <span style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>({k.peso.toFixed(2)} kg)</span>
                             </div>
-                            <span style={{fontWeight: 700, color: k.isBonif ? '#b91c1c' : '#334155'}}>{k.qtd} Un</span>
+                            <span style={{fontWeight: 800, color: k.isBonif ? '#fca5a5' : 'var(--text-main)'}}>{k.qtd} Un</span>
                           </div>
                         ))
                       )}
@@ -645,30 +791,30 @@ export default function ModalDetalhesPedido({
                     );
 
                     return (
-                      <div key={dIdx} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden', padding: '25px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+                      <div key={dIdx} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
                         
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-                          <h4 style={{ color: '#1e3a8a', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <Layers size={22} color="#1e3a8a" /> {doc.tipo} 
-                            <span style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+                          <h4 style={{ color: 'var(--text-highlight, #38bdf8)', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 800 }}>
+                            <Layers size={22} color="var(--text-highlight, #38bdf8)" /> {doc.tipo} 
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
                           </h4>
                           
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                             
                             {caixas.length > 0 && (
                               <div style={{ position: 'relative', width: '260px' }}>
-                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: '#94a3b8' }}/>
+                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }}/>
                                 <input 
                                   type="text" 
                                   placeholder="Buscar Produto ou SKU..." 
                                   value={buscasDocumentos[dIdx] || ''}
                                   onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
-                                  style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', outline: 'none', color: '#334155', boxSizing: 'border-box' }}
+                                  style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.85rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)', boxSizing: 'border-box' }}
                                 />
                               </div>
                             )}
 
-                            <label style={{ background: '#0ea5e9', color: '#fff', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <label style={{ background: '#0ea5e9', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {isUploading && docIndexSelecionado === dIdx ? <Loader2 size={16} className="fa-spin"/> : <UploadCloud size={16}/>}
                               {isUploading && docIndexSelecionado === dIdx ? 'Importando...' : 'Importar WMS (CSV)'}
                               <input type="file" accept=".csv" onChange={(e) => { setDocIndexSelecionado(dIdx); handleUploadWMSComum(e, dIdx); }} style={{ display: 'none' }} disabled={isUploading} />
@@ -676,7 +822,7 @@ export default function ModalDetalhesPedido({
                             
                             <button 
                               onClick={() => setShowCaixasEfetivadasModal(dIdx)} 
-                              style={{ background: caixas.length > 0 ? '#10b981' : '#f8fafc', color: caixas.length > 0 ? '#fff' : '#10b981', border: caixas.length > 0 ? 'none' : '1px solid #10b981', padding: '8px 16px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                              style={{ background: caixas.length > 0 ? '#10b981' : 'var(--bg-input)', color: caixas.length > 0 ? '#fff' : '#10b981', border: caixas.length > 0 ? 'none' : '1px solid #10b981', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                             >
                               <Boxes size={16}/> {caixas.length > 0 ? 'Ver Caixas e Resumo' : 'Criar Caixa Manual'}
                             </button>
@@ -686,16 +832,16 @@ export default function ModalDetalhesPedido({
                         {caixas.length > 0 ? (
                           <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                              <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0, zIndex: 10 }}>
+                              <thead style={{ background: 'var(--bg-input)', position: 'sticky', top: 0, zIndex: 10 }}>
                                 <tr>
-                                  <th style={{ padding: '12px 20px', textAlign: 'left', color: '#475569', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO</th>
-                                  <th style={{ padding: '12px 15px', textAlign: 'center', color: '#475569', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD TOTAL</th>
+                                  <th style={{ padding: '12px 20px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO</th>
+                                  <th style={{ padding: '12px 15px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD TOTAL</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {skusFiltrados.length === 0 ? (
                                   <tr>
-                                    <td colSpan="2" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+                                    <td colSpan="2" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                                       Nenhum produto encontrado para "{buscasDocumentos[dIdx]}".
                                     </td>
                                   </tr>
@@ -704,40 +850,40 @@ export default function ModalDetalhesPedido({
                                     const isExpanded = skusExpandidosComum[`${dIdx}-${sku.ref}`];
                                     return (
                                       <React.Fragment key={i}>
-                                        <tr style={{ borderBottom: '1px solid #f1f5f9', background: isExpanded ? '#f8fafc' : '#fff' }}>
+                                        <tr style={{ borderBottom: '1px solid var(--border-color)', background: isExpanded ? 'var(--bg-input)' : 'transparent' }}>
                                           <td style={{ padding: '15px 20px' }}>
                                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                                               <div 
                                                 onClick={() => setSkusExpandidosComum(prev => ({...prev, [`${dIdx}-${sku.ref}`]: !prev[`${dIdx}-${sku.ref}`]}))}
                                                 style={{ marginTop: '2px', cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}
                                               >
-                                                <ChevronDown size={18} color={isExpanded ? "#ea580c" : "#0284c7"} />
+                                                <ChevronDown size={18} color={isExpanded ? "var(--secondary)" : "var(--text-highlight, #38bdf8)"} />
                                               </div>
                                               <div>
-                                                <strong style={{ color: '#0284c7', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
-                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{sku.desc}</span>
+                                                <strong style={{ color: 'var(--text-highlight, #38bdf8)', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{sku.desc}</span>
                                               </div>
                                             </div>
                                           </td>
-                                          <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: '#1e293b' }}>{sku.qtdTotal}</td>
+                                          <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: 'var(--text-main)' }}>{sku.qtdTotal}</td>
                                         </tr>
 
                                         {isExpanded && (
-                                          <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                                          <tr style={{ background: 'var(--bg-input)', borderBottom: '2px solid var(--border-color)' }}>
                                             <td colSpan="2" style={{ padding: '15px 25px' }}>
                                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', color: '#10b981' }}>
                                                 <Package size={16} /> <strong style={{ fontSize: '0.85rem' }}>Embalagens Registradas</strong>
                                               </div>
                                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
                                                 {sku.caixasDetalhadas.map((detalhe, cIdx) => (
-                                                  <div key={cIdx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderLeft: '4px solid #10b981', borderRadius: '6px', padding: '10px' }}>
-                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={detalhe.idUnico}>
-                                                      <strong style={{ color: '#94a3b8' }}>ID WMS:</strong> {detalhe.idUnico}
+                                                  <div key={cIdx} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: '4px solid #10b981', borderRadius: '8px', padding: '12px' }}>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={detalhe.idUnico}>
+                                                      <strong style={{ color: 'var(--text-muted)' }}>ID WMS:</strong> {detalhe.idUnico}
                                                     </div>
-                                                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#334155' }}>{detalhe.tipoCaixa}</div>
+                                                    <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{detalhe.tipoCaixa}</div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '6px' }}>
-                                                      <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0ea5e9' }}>{detalhe.qtdNestaCaixa} <span style={{fontSize: '0.7rem', fontWeight: 'normal', color: '#64748b'}}>un</span></div>
-                                                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{parseFloat(detalhe.peso).toFixed(1)}kg</div>
+                                                      <div style={{ fontSize: '1.1rem', fontWeight: '900', color: 'var(--text-highlight, #38bdf8)' }}>{detalhe.qtdNestaCaixa} <span style={{fontSize: '0.7rem', fontWeight: 'normal', color: 'var(--text-muted)'}}>un</span></div>
+                                                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>{parseFloat(detalhe.peso).toFixed(1)}kg</div>
                                                     </div>
                                                   </div>
                                                 ))}
@@ -753,10 +899,10 @@ export default function ModalDetalhesPedido({
                             </table>
                           </div>
                         ) : (
-                          <div style={{ textAlign: 'center', padding: '60px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
-                            <FileText size={64} color="#94a3b8" style={{ marginBottom: '20px' }} />
-                            <h3 style={{ color: 'var(--primary)', margin: '0 0 10px 0', fontSize: '1.3rem' }}>Nenhuma Caixa Registrada</h3>
-                            <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0' }}>Importe o arquivo CSV do WMS, ou inicie criando uma caixa manualmente pelo botão superior.</p>
+                          <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-input)', border: '2px dashed var(--border-color)', borderRadius: '12px' }}>
+                            <FileText size={64} color="var(--text-muted)" style={{ marginBottom: '20px', opacity: 0.5 }} />
+                            <h3 style={{ color: 'var(--text-main)', margin: '0 0 10px 0', fontSize: '1.3rem', fontWeight: 800 }}>Nenhuma Caixa Registrada</h3>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0' }}>Importe o arquivo CSV do WMS, ou inicie criando uma caixa manualmente pelo botão superior.</p>
                           </div>
                         )}
                       </div>

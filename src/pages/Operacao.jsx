@@ -1,5 +1,5 @@
-import { useMotorRanking } from '../hooks/useMotorRanking';
 // src/pages/Operacao.jsx
+import { useMotorRanking } from '../hooks/useMotorRanking';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
@@ -13,7 +13,8 @@ import { auth, db } from '../firebase';
 import { 
   ArrowLeft, Plus, FileText, CheckCircle2, 
   Clock, MoreVertical, Search, Boxes, X, User, Trash2, PackagePlus, Loader2, Edit, Check, Pause, Play, AlertCircle, MapPin, UploadCloud,
-  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle, Gift, SearchX} from 'lucide-react';
+  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle, Gift, SearchX
+} from 'lucide-react';
 import '../css/Operacao.css';
 import ModalCaixasEfetivadas from '../components/ModalCaixasEfetivadas';
 import ModalCaixasMaster from '../components/ModalCaixasMaster';
@@ -29,11 +30,40 @@ import AnimacaoCriacaoPedido from '../components/AnimacaoCriacaoPedido';
 import ModalFluxoImportacaoWMS from '../components/ModalFluxoImportacaoWMS';
 import ModalSucesso from '../components/ModalSucesso';
 import ModalConfirmarExclusao from '../components/ModalConfirmarExclusao';
+import TransicaoOperacaoOverlay from '../components/TransicaoOperacaoOverlay';
 
 export default function Operacao({ isAdmin }) {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // ==========================================
+  // TRANSIÇÃO DE ENTRADA SUAVE (DASHBOARD -> OPERAÇÃO)
+  // ==========================================
+  const veioDeTransicao = Boolean(location.state?.fromTransition);
+  const [overlayAtivo, setOverlayAtivo] = useState(veioDeTransicao);
+  const [overlaySaindo, setOverlaySaindo] = useState(false);
+  const [revelarCascata, setRevelarCascata] = useState(!veioDeTransicao);
+
+  useEffect(() => {
+    if (veioDeTransicao) {
+      const t1 = setTimeout(() => {
+        setOverlaySaindo(true);
+        setRevelarCascata(true);
+      }, 900);
+
+      const t2 = setTimeout(() => {
+        setOverlayAtivo(false);
+        // Limpa o state de transição do histórico
+        window.history.replaceState({}, document.title);
+      }, 1400);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [veioDeTransicao]);
+
   const queryParams = new URLSearchParams(location.search);
   const dataUrl = queryParams.get('date'); 
   const today = new Date();
@@ -43,10 +73,10 @@ export default function Operacao({ isAdmin }) {
 
   const [titulo, setTitulo] = useState('Carregando...');
   const [ajustesDoDia, setAjustesDoDia] = useState([]);
-  const [controlePausas, setControlePausas] = useState({}); // <--- ADICIONE ESTA LINHA
+  const [controlePausas, setControlePausas] = useState({});
   const [localUser, setLocalUser] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
-  const [fluxoImportacao, setFluxoImportacao] = useState(null); // Guarda { etapa, dIdx, fileName, caixasFinais, totalCaixas, totalSkus, pesoTotal, amostraNomes, resumoTexto }
+  const [fluxoImportacao, setFluxoImportacao] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -54,7 +84,7 @@ export default function Operacao({ isAdmin }) {
   
   // ESTADOS DO MODAL UNIFICADO (DETALHES + WMS)
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('resumo'); // Controle das abas ('resumo' ou 'caixas')
+  const [activeTab, setActiveTab] = useState('resumo');
   const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
   const [docIndexSelecionado, setDocIndexSelecionado] = useState(0);
   const [caixasPrevia, setCaixasPrevia] = useState([]);
@@ -65,27 +95,29 @@ export default function Operacao({ isAdmin }) {
 
   const [showOpModal, setShowOpModal] = useState(false);
   const [opsDoDia, setOpsDoDia] = useState([]);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   const [showMasterModal, setShowMasterModal] = useState(false);
   const [caixasMaster, setCaixasMaster] = useState([]);
   const [buscaRomaneio, setBuscaRomaneio] = useState('');
   const [rankingExpandido, setRankingExpandido] = useState(null);
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
-const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
+  const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
 
-// NOVOS ESTADOS: EXPANSÃO, BUSCA E ADIÇÃO MANUAL
+  // ESTADOS: EXPANSÃO, BUSCA E ADIÇÃO MANUAL
   const [docsExpandidos, setDocsExpandidos] = useState({});
   const [buscasDocumentos, setBuscasDocumentos] = useState({});
   const [showAddCaixaModal, setShowAddCaixaModal] = useState(false);
   const [addCaixaForm, setAddCaixaForm] = useState({ docIdx: null, num: '', peso: '', sku: '', quantidade: '' });
   const [wmsSessions, setWmsSessions] = useState({});
-  // NOVOS ESTADOS PARA O WMS MASTER
+  
+  // ESTADOS PARA O WMS MASTER
   const [wmsPreResumoAberto, setWmsPreResumoAberto] = useState(null);
   const [showCaixasEfetivadasModal, setShowCaixasEfetivadasModal] = useState(null);
   const [auditModalData, setAuditModalData] = useState(null);
-  const [abaAtivaComum, setAbaAtivaComum] = useState({}); // Controla a aba por documento { [dIdx]: 0 ou 1 }
-  const [skusExpandidosComum, setSkusExpandidosComum] = useState({}); // Controla as gavetas { [`${dIdx}-${ref}`]: boolean }
-  const [modalSucesso, setModalSucesso] = useState(null); // Vai guardar { titulo, mensagem }
+  const [abaAtivaComum, setAbaAtivaComum] = useState({});
+  const [skusExpandidosComum, setSkusExpandidosComum] = useState({});
+  const [modalSucesso, setModalSucesso] = useState(null);
 
   const toggleDocExpandido = (idx) => {
     setDocsExpandidos(prev => ({ ...prev, [idx]: !prev[idx] }));
@@ -114,7 +146,7 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
   const [isIgnitingTracker, setIsIgnitingTracker] = useState(false);
 
   const handleAbrirAddCaixa = (docIdx) => {
-    setAddCaixaForm({ docIdx, num: '', peso: '' }); // Removemos sku e quantidade
+    setAddCaixaForm({ docIdx, num: '', peso: '' });
     setShowAddCaixaModal(true);
   };
 
@@ -131,11 +163,10 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       const numCaixaFormatado = addCaixaForm.num.toUpperCase().trim();
       const pesoNumerico = parseFloat(addCaixaForm.peso.replace(',', '.')) || 0;
       
-      // REGRA NOVA: Não mescla! Apenas empurra uma nova caixa separada para a lista
       novosDocs[addCaixaForm.docIdx].caixas.push({
         num: numCaixaFormatado,
         peso: pesoNumerico.toFixed(2),
-        produtos: [] // Deixa vazio para não obrigar digitação extensa
+        produtos: []
       });
 
       await updateDoc(ref, { documentos: novosDocs });
@@ -148,7 +179,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
   };
 
   const [currentTime, setCurrentTime] = useState(Date.now());
-
   const [pedidosNovos, setPedidosNovos] = useState([]);
   const [pedidosLegados, setPedidosLegados] = useState([]);
 
@@ -165,16 +195,10 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
   const [isEditingObs, setIsEditingObs] = useState(false);
   const [skusExpandidos, setSkusExpandidos] = useState({});
 
-
-
-
-  // ==========================================
   // ESTADOS PARA CADASTRO MANUAL DE VARIAÇÃO
-  // ==========================================
-  const [modalCodigoBarras, setModalCodigoBarras] = useState(null); // Guarda os dados do SKU que será salvo
+  const [modalCodigoBarras, setModalCodigoBarras] = useState(null);
   const [codigoBarrasInput, setCodigoBarrasInput] = useState('');
 
-  // ATUALIZA OS CAMPOS MANUAIS EM TEMPO REAL
   const handleInputManual = (dIdx, skuRef, campo, valor) => {
     setWmsSessions(prev => {
       const novoEstado = { ...prev };
@@ -195,21 +219,18 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     });
   };
 
-  // ABRE O MODAL DE CÓDIGO DE BARRAS
   const abrirModalSalvarManual = (dIdx, sku) => {
     setModalCodigoBarras({ dIdx, sku });
     setCodigoBarrasInput('');
   };
 
   const sincronizarTudoEmTempoReal = async () => {
-    // Pega a foto exata do momento atual da operação
-    const rankingAtual = rankingRef.current; 
+    const rankingAtual = rankingCalculado; 
     if (!rankingAtual || rankingAtual.length === 0) return;
 
     try {
       const rankingMap = {};
       rankingAtual.forEach(user => {
-        // Empacota os dados estruturados de SKUs e OPs
         rankingMap[user.nome] = {
           pontos: user.pontos || 0,
           skus: user.skus || 0,
@@ -219,16 +240,12 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       });
 
       const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-      
-      // Envia o pacote inteiro instantaneamente
       await setDoc(refDia, { ranking: rankingMap }, { merge: true });
-      
     } catch (error) {
       console.error("Falha ao sincronizar em tempo real:", error);
     }
   };
 
-  // SALVA A NOVA VARIAÇÃO NO BANCO DE DADOS (COM PROTEÇÃO ANTI-DUPLICIDADE E AUTO-UPDATE)
   const salvarVariacaoBanco = async () => {
     if (!codigoBarrasInput.trim()) {
       alert("Por favor, insira o código de barras.");
@@ -248,7 +265,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
         codigoBarras: codigoBarrasInput
       };
 
-      // 1. LÊ O BANCO ANTES DE SALVAR (Para evitar duplicidade)
       const docSnap = await getDoc(produtoRef);
       let novasVariacoes = [];
       let nomeProduto = sku.desc || '';
@@ -258,20 +274,17 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
         nomeProduto = dadosAtuais.nome || nomeProduto;
         const variacoesAtuais = dadosAtuais.variacoes || [];
 
-        // Procura se já existe uma variação com a mesma Quantidade e Tipo de Caixa
         const indexExistente = variacoesAtuais.findIndex(v => v.quantidade === novaVariacao.quantidade && v.caixa === novaVariacao.caixa);
 
         if (indexExistente > -1) {
-          variacoesAtuais[indexExistente] = novaVariacao; // Substitui a antiga (atualiza o EAN/Peso)
+          variacoesAtuais[indexExistente] = novaVariacao;
         } else {
-          variacoesAtuais.push(novaVariacao); // Adiciona como nova
+          variacoesAtuais.push(novaVariacao);
         }
         novasVariacoes = variacoesAtuais;
       } else {
-        novasVariacoes = [novaVariacao]; // Cria a primeira variação
+        novasVariacoes = [novaVariacao];
       }
-
-  
 
       const dadosParaSalvar = {
         ref: sku.ref,
@@ -279,17 +292,14 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
         variacoes: novasVariacoes
       };
 
-      // 2. SALVA NO FIREBASE
       await setDoc(produtoRef, dadosParaSalvar, { merge: true });
 
-      // 3. ATUALIZA A TELA DE PLANEJAMENTO (Tira o vermelho)
       setWmsSessions(prev => {
         const novo = { ...prev };
         const sIndex = novo[dIdx].skus.findIndex(s => s.ref === sku.ref);
         novo[dIdx].skus[sIndex].isMissing = false;
         novo[dIdx].skus[sIndex].codigoBarras = codigoBarrasInput;
         
-        // Dispara o Auto-save do planejamento
         const refFinal = pedidoModal._isLegacy ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) : doc(db, 'pedidos', pedidoModal.id);
         const novosDocs = [...pedidoModal.documentos];
         novosDocs[dIdx] = { ...novosDocs[dIdx], planejamentoWms: novo[dIdx] };
@@ -298,7 +308,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
         return novo;
       });
 
-      // 4. ATUALIZA O DICIONÁRIO NA MESMA HORA (Sem precisar de F5)
       setCaixasMaster(prev => {
         if (!prev) return prev;
         const index = prev.findIndex(p => p.ref === sku.ref || p.id === sku.ref);
@@ -325,7 +334,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     const file = e.target.files[0];
     if (!file) return;
 
-    // Etapa 1: Inicia a leitura com o fake loading
     setFluxoImportacao({
       etapa: 'lendo',
       dIdx,
@@ -400,7 +408,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
 
         const caixasFinais = Object.values(caixasMap);
 
-        // Gera o texto resumido para cópia
         const resumoContagem = {};
         caixasFinais.forEach(c => {
           const k = `${c.num} (${c.peso.toFixed(2)} kg)`;
@@ -408,7 +415,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
         });
         const resumoTextoGerado = Object.entries(resumoContagem).map(([k, v]) => `${k}: ${v} Un`).join('\n');
 
-        // Transita da leitura para a Prévia após 900ms
         setTimeout(() => {
           setFluxoImportacao({
             etapa: 'previa',
@@ -433,12 +439,10 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     reader.readAsText(file, 'ISO-8859-1');
   };
 
- // Confirmação unificada de gravação no Firestore
   const handleConfirmarGravacaoWMS = async () => {
     if (!fluxoImportacao) return;
     const { tipo, dIdx, fileName } = fluxoImportacao;
 
-    // A) FLUXO: PLANEJAMENTO MASTER
     if (tipo === 'master_planejamento') {
       const { skusProcessados } = fluxoImportacao;
       setFluxoImportacao(prev => ({ ...prev, etapa: 'gravando' }));
@@ -458,9 +462,13 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
         await updateDoc(refFinal, { documentos: novosDocumentos });
 
         setTimeout(() => {
-          setIsSaving(false);
-          setFluxoImportacao(prev => ({ ...prev, etapa: 'sucesso' }));
-        }, 700);
+        setIsSaving(false);
+        setFluxoImportacao(prev => ({ 
+          ...prev, 
+          etapa: 'sucesso',
+          auditoriaData: prev?.auditoriaData // <-- Mantém os dados da tabela no sucesso
+        }));
+      }, 700);
 
       } catch (error) {
         setIsSaving(false);
@@ -470,7 +478,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       return;
     }
 
-    // B) FLUXO: CAIXAS COMUNS OU AUDITORIA MASTER
     const { caixasFinais } = fluxoImportacao;
     const caixasComZero = caixasFinais.filter(c => parseFloat(c.peso) === 0);
     if (caixasComZero.length > 0) {
@@ -493,28 +500,24 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       const novosDocs = [...pedidoModal.documentos];
 
       if (tipo === 'master_auditoria') {
-        const session = wmsSessions[dIdx] || { skus: [] };
-        let planejado = 0;
-        session.skus.forEach(sku => {
-          if (sku.qtdPadrao > 0) planejado += Math.ceil(sku.qtdTotal / sku.qtdPadrao);
-        });
+        const auditoriaPayload = {
+          arquivo: fileName,
+          data: new Date().toISOString(),
+          totalPlanejado: fluxoImportacao.auditoriaData?.reduce((acc, i) => acc + i.qtdPlanejada, 0) || 0,
+          totalEfetivado: caixasFinais.length,
+          divergencias: fluxoImportacao.divergenciasCount || 0,
+          itens: fluxoImportacao.auditoriaData || []
+        };
 
         novosDocs[dIdx] = { 
           ...novosDocs[dIdx], 
           caixas: caixasFinais,
-          auditoria: {
-            arquivo: fileName,
-            planejado: planejado,
-            efetivado: caixasFinais.length,
-            diferenca: planejado - caixasFinais.length,
-            data: new Date().toISOString()
-          }
+          auditoria: auditoriaPayload
         };
       } else {
         novosDocs[dIdx] = { ...novosDocs[dIdx], caixas: caixasFinais };
       }
 
-      const todosPossuemCaixas = novosDocs.every(doc => doc.caixas && doc.caixas.length > 0);
       const payload = { 
         documentos: novosDocs,
         efetivado: true,
@@ -546,13 +549,12 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     }
   };
 
-  // Conclui e redireciona suavemente
   const handleConcluirFluxoWMS = () => {
     const { tipo, dIdx } = fluxoImportacao || {};
     setFluxoImportacao(null);
     
     if (tipo === 'master_planejamento') {
-      return; // Permanece na tela da estação master pronta
+      return;
     }
 
     if (dIdx !== undefined) {
@@ -560,19 +562,15 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     }
   };
 
-  // ==========================================
-  // ESTADOS E FUNÇÕES DO CRUD DE CAIXAS MANUAIS
-  // ==========================================
-  const [edicaoCaixa, setEdicaoCaixa] = useState(null); // Guarda { dIdx, cIdx (ou -1 pra nova) }
+  const [edicaoCaixa, setEdicaoCaixa] = useState(null);
   const [formCaixa, setFormCaixa] = useState({ num: '', peso: '', produtos: [] });
-  const [forceRender, setForceRender] = useState(0); // Força a tela a atualizar após edição
+  const [forceRender, setForceRender] = useState(0);
 
   const abrirFormCaixa = (dIdx, cIdx, caixaAtual = null) => {
     setEdicaoCaixa({ dIdx, cIdx });
     if (caixaAtual) {
-      setFormCaixa(JSON.parse(JSON.stringify(caixaAtual))); // Clone profundo
+      setFormCaixa(JSON.parse(JSON.stringify(caixaAtual)));
     } else {
-      // Puxa o último número de caixa para sugerir o próximo
       const totalCaixas = (pedidoModal.documentos[dIdx]?.caixas || []).length;
       setFormCaixa({ num: `CAIXA ${totalCaixas + 1}`, peso: '', produtos: [] });
     }
@@ -634,19 +632,16 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     try {
       const novosDocs = [...pedidoModal.documentos];
       const caixa = novosDocs[dIdx].caixas[cIdx];
-      // Inverte o status de bonificação da caixa específica
       caixa.isBonificacao = !caixa.isBonificacao;
       
       const refFinal = pedidoModal._isLegacy ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) : doc(db, 'pedidos', pedidoModal.id);
       await updateDoc(refFinal, { documentos: novosDocs });
       
-      setForceRender(prev => prev + 1); // Atualiza a tela na mesma hora
+      setForceRender(prev => prev + 1);
     } catch(e) {
       alert("Erro ao alterar o status da caixa.");
     }
   };
-  
-
 
   useEffect(() => {
     const timerInterval = setInterval(() => setCurrentTime(Date.now()), 1000);
@@ -658,7 +653,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       if (currentUser) {
         setLocalUser(currentUser);
         setDocResponsavel(String(currentUser.email).toLowerCase().trim());
-  
       } else {
         navigate('/');
       }
@@ -701,8 +695,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     const startOfDay = new Date(ano, mes - 1, dia, 0, 0, 0);
     const endOfDay = new Date(ano, mes - 1, dia, 23, 59, 59);
 
-    // 1. Removemos a trava "where('uidsVinculados', 'array-contains', localUser.uid)"
-    // Agora ele baixa TODOS os pedidos do dia para a tela!
     const qNovo = query(collection(db, 'pedidos'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubNovo = onSnapshot(qNovo, (snap) => setPedidosNovos(snap.docs.map(doc => ({ id: doc.id, _isLegacy: false, ...doc.data() }))));
 
@@ -711,7 +703,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       const legados = [];
       snap.forEach(doc => {
         const data = doc.data();
-        // 2. Removemos o IF que bloqueava a visão de pedidos legados de outros usuários
         const pathSegments = doc.ref.path.split('/');
         const elemIdOriginal = pathSegments.length > 3 ? pathSegments[3] : null;
         legados.push({ id: doc.id, _isLegacy: true, elementoIdOriginal: elemIdOriginal, ...data });
@@ -726,13 +717,11 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       setOpsDoDia(ops);
     });
 
-    // INJETE ESTE BLOCO AQUI:
     const qAjustes = query(collection(db, 'ajustesDiarios'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubAjustes = onSnapshot(qAjustes, (snap) => {
       setAjustesDoDia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // 👇 ADICIONE ESTE BLOCO NOVO AQUI 👇
     const refPausas = doc(db, 'controlePausas', dataOperacaoAtiva);
     const unsubPausas = onSnapshot(refPausas, (snap) => {
       if (snap.exists()) {
@@ -742,11 +731,8 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       }
     });
 
-    // ATUALIZE A LINHA DO RETURN PARA DESLIGAR ESTE TAMBÉM:
-    return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); };
-
-    return () => { unsubNovo(); unsubLegado(); unsubOp(); };
-  }, [localUser, dataOperacaoAtiva]); // Removido o isAdmin daqui, pois a visão agora é global
+    return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); unsubPausas(); };
+  }, [localUser, dataOperacaoAtiva]);
 
   const pedidosProcessados = useMemo(() => {
     return [...pedidosNovos, ...pedidosLegados].sort((a, b) => {
@@ -757,9 +743,12 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
   }, [pedidosNovos, pedidosLegados]);
 
   // ==========================================
-  // AUTO-ABERTURA DO MODAL VIA URL (BUSCA GLOBAL)
+  // AUTO-ABERTURA DO MODAL VIA URL (SINCRONIZADO COM O LOADING FAKE)
   // ==========================================
   useEffect(() => {
+    // Se estiver em transição, aguarda a cascata ser liberada antes de abrir o modal
+    if (!revelarCascata) return;
+
     const params = new URLSearchParams(location.search);
     const romaneioParaAbrir = params.get('openRomaneio');
 
@@ -771,17 +760,20 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
       );
 
       if (pedidoAlvo) {
-        // Abre o modal com todos os dados carregados
-        handleAbrirDetalhes(pedidoAlvo);
+        // Pequeno delay de 150ms para permitir que a tela da operação termine de se revelar suavemente
+        const timerModal = setTimeout(() => {
+          handleAbrirDetalhes(pedidoAlvo);
 
-        // Limpa o parâmetro openRomaneio da URL mantendo a data ativa
-        const dataAtiva = params.get('date') || dataHojeStr;
-        window.history.replaceState({}, '', `${location.pathname}?date=${dataAtiva}`);
+          // Limpa o parâmetro da URL preservando a data ativa
+          const dataAtiva = params.get('date') || dataHojeStr;
+          window.history.replaceState({}, '', `${location.pathname}?date=${dataAtiva}`);
+        }, 150);
+
+        return () => clearTimeout(timerModal);
       }
     }
-  }, [location.search, pedidosProcessados]);
+  }, [location.search, pedidosProcessados, revelarCascata, dataHojeStr]);
 
-  // 1. O "ÓCULOS" DO USUÁRIO: Separa apenas os pedidos que pertencem a ele (ou tudo, se for Admin)
   const pedidosVisiveis = useMemo(() => {
     if (isAdmin) return pedidosProcessados;
     return pedidosProcessados.filter(p => 
@@ -790,7 +782,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     );
   }, [pedidosProcessados, isAdmin, localUser]);
 
-  // 2. A Tabela usa os pedidos visíveis e aplica a barra de busca
   const pedidosFiltrados = useMemo(() => {
     if (!buscaRomaneio.trim()) return pedidosVisiveis;
     const termo = buscaRomaneio.toLowerCase();
@@ -800,19 +791,13 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     );
   }, [pedidosVisiveis, buscaRomaneio]);
 
-  // ==========================================
-  // CÁLCULO DE KPIS (CONTAGEM INDIVIDUAL DE NF E MINUTA)
-  // ==========================================
   const { totalPedidosKPI, totalCaixasHoje } = useMemo(() => {
     let contagemDocsValidos = 0;
     let contagemCaixas = 0;
 
     (pedidosVisiveis || []).forEach(pedido => {
       (pedido.documentos || []).forEach(doc => {
-        // Soma as caixas de qualquer documento
         contagemCaixas += (doc.caixas || []).length;
-
-        // Soma cada NF e Minuta individualmente
         const tipoDoc = String(doc.tipo || '').trim();
         if (tipoDoc === 'Nota Fiscal' || tipoDoc === 'Minuta') {
           contagemDocsValidos++;
@@ -826,7 +811,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     };
   }, [pedidosVisiveis]);
 
-  // 5. O Rastreador ao Vivo procura o pendente dentro dos pedidos VISÍVEIS
   const atividadeAtual = useMemo(() => {
     const pendente = pedidosVisiveis.find(p => !p.efetivado);
     if (!pendente) return null;
@@ -844,7 +828,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     if (!pedidoSelecionado) return null;
     return pedidosProcessados.find(p => p.id === pedidoSelecionado.id) || pedidoSelecionado;
   }, [pedidoSelecionado, pedidosProcessados]);
-
 
   useEffect(() => {
     const closeMenu = () => setDropdownOpen(null);
@@ -885,15 +868,13 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     const payload = { efetivado: novoStatus };
     
     if (novoStatus) {
-      // BLINDAGEM: Só registra o horário novo se for a primeira vez. 
       if (!pedido.primeiraEfetivacao) {
         payload.completedAt = serverTimestamp();
-        payload.primeiraEfetivacao = serverTimestamp(); // Cria a trava inquebrável
+        payload.primeiraEfetivacao = serverTimestamp();
       } else {
-        payload.completedAt = pedido.primeiraEfetivacao; // Restaura o horário original
+        payload.completedAt = pedido.primeiraEfetivacao;
       }
     } else {
-      // Se for um pedido antigo sendo desfeito, salva o horário original antes de apagar
       if (!pedido.primeiraEfetivacao && pedido.completedAt) {
         payload.primeiraEfetivacao = pedido.completedAt;
       }
@@ -904,13 +885,11 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     await atualizarEstatisticasMensais(pedido, novoStatus);
   };
 
-  // Abre o modal de confirmação
   const handleDeletePedido = (pedido) => {
     setPedidoParaExcluir(pedido);
     setDropdownOpen(null);
   };
 
-  // Executa a remoção definitiva no Firestore
   const handleConfirmarExclusaoDefinitiva = async () => {
     if (!pedidoParaExcluir) return;
     setIsExcluindoPedido(true);
@@ -926,7 +905,7 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     }
   };
 
- const handleAbrirDetalhes = (pedido) => {
+  const handleAbrirDetalhes = (pedido) => {
     setPedidoSelecionado(pedido);
     setDocIndexSelecionado(0);
     setCaixasPrevia([]); 
@@ -937,7 +916,7 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     setDocsTemporarios((pedido.documentos || []).map((doc, index) => ({ 
        ...doc, 
        idTemp: Date.now() + index,
-       dbIndex: index, // O PULO DO GATO: Marcador rastreador do banco de dados
+       dbIndex: index,
        responsaveis: doc.responsaveis || (doc.responsavel ? [doc.responsavel] : [])
     })));
     if (localUser?.email) setDocResponsavel(String(localUser.email).toLowerCase().trim());
@@ -945,11 +924,10 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     setShowDetalhesModal(true);
   };
 
- const handleRemoveDoc = (idTemp) => {
+  const handleRemoveDoc = (idTemp) => {
     setDocsTemporarios(docsTemporarios.filter(doc => doc.idTemp !== idTemp));
   };
 
-  // NOVAS FUNÇÕES: Adicionar e remover múltiplos colaboradores
   const handleAddResponsavelToDoc = (idTemp, email) => {
      if(!email) return;
      setDocsTemporarios(docsTemporarios.map(d => {
@@ -975,7 +953,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     setIsSaving(true);
     try {
       const documentosLimpos = docsTemporarios.map(({ idTemp, dbIndex, ...rest }) => {
-        // Resgata as caixas do banco de dados em tempo real para não sobrescrever a importação do WMS
         const caixasAtualizadas = (dbIndex !== undefined && pedidoModal.documentos[dbIndex]) 
             ? pedidoModal.documentos[dbIndex].caixas 
             : rest.caixas;
@@ -1023,7 +1000,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     reader.onload = (event) => {
       try {
         const text = event.target.result;
-        // Divide por linhas e remove linhas vazias
         const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
         
         if (lines.length <= 1) { 
@@ -1034,12 +1010,10 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
 
         const headers = lines[0].split(';').map(h => h.trim().toUpperCase().replace(/"/g, ''));
         
-        // Mapeamento Inteligente
         const idxCaixa = headers.findIndex(h => h.includes('TIPO EMBALAGEM') || h.includes('CAIXA') || h === 'DESCRIÇÃO TIPO EMBALAGEM EXPEDIÇÃO');
         const idxSKU = headers.findIndex(h => h === 'PRODUTO' || h.includes('SKU') || h.includes('CÓDIGO') || h === 'COD');
         const idxQtd = headers.findIndex(h => h === 'QUANTIDADE' || h.includes('QTD'));
         const idxPeso = headers.findIndex(h => h === 'PESO EMBALAGEM' || h.includes('PESO'));
-        // NOVO: Busca o identificador único da caixa física
         const idxIdEmbalagem = headers.findIndex(h => h.includes('ID EMBALAGEM') || h === 'ID EMBALAGEM EXPEDIÇÃO');
 
         if (idxCaixa === -1 || idxSKU === -1 || idxQtd === -1) {
@@ -1075,8 +1049,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
 
           if (!numCaixa || !sku || qtd === 0) continue;
           
-          // O SEGREDO: Agrupa pelo ID da Embalagem para respeitar caixas físicas diferentes.
-          // Se o CSV por acaso não tiver ID, ele usa a linha para não fundir caixas indevidamente.
           const chaveCaixaFisica = idEmbalagem || `${numCaixa}-linha-${i}`;
           
           if (!mapaCaixas[chaveCaixaFisica]) { 
@@ -1088,10 +1060,8 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
             }; 
           }
           
-          // Mantém o peso correto da embalagem sem somar bizarrices
           mapaCaixas[chaveCaixaFisica].peso = Math.max(mapaCaixas[chaveCaixaFisica].peso, peso);
           
-          // Agrupador de SKU dentro da mesma caixa física:
           const prodExistente = mapaCaixas[chaveCaixaFisica].produtos.find(p => p.sku === sku);
           if (prodExistente) {
              prodExistente.quantidade += qtd;
@@ -1100,7 +1070,6 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
           }
         }
 
-        // Converte para o array final
         const arrayCaixasFormatadas = Object.values(mapaCaixas).map(cx => ({ 
           ...cx, 
           peso: cx.peso.toFixed(2) 
@@ -1119,23 +1088,16 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     e.target.value = null; 
   };
 
-// ==========================================
-  // AUTO-LOAD DO WMS (Evita perda no F5 e limpa cache entre pedidos)
-  // ==========================================
   useEffect(() => {
     if (showDetalhesModal && pedidoModal?.isCaixaMaster) {
-      // Se abrir um pedido Master, busca apenas os dados dele
       const sessoesSalvas = {};
       (pedidoModal.documentos || []).forEach((doc, dIdx) => {
         if (doc.planejamentoWms) {
           sessoesSalvas[dIdx] = doc.planejamentoWms;
         }
       });
-      // SUBSTITUI completamente a memória (sem usar o prev)
       setWmsSessions(sessoesSalvas);
-      
     } else if (!showDetalhesModal) {
-      // Quando o modal fechar, "formata" a memória para não vazar pro próximo pedido
       setWmsSessions({});
       setAuditModalData(null);
       setShowCaixasEfetivadasModal(null);
@@ -1143,7 +1105,7 @@ const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
     }
   }, [showDetalhesModal, pedidoModal]);
 
-const handlePlanejamentoUpload = (e, dIdx) => {
+  const handlePlanejamentoUpload = (e, dIdx) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -1249,14 +1211,10 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     reader.readAsText(file, 'ISO-8859-1');
   };
 
-  // ==========================================
-  // LÊ O CSV FINAL DE CAIXAS DO WMS (AUDITORIA)
-  // ==========================================
   const handleAuditoriaUpload = (e, targetIdx = null) => {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Prioriza o dIdx passado diretamente pelo input
     const currentIdx = targetIdx !== null ? targetIdx : (auditModalData?.dIdx ?? 0);
 
     setFluxoImportacao({
@@ -1311,7 +1269,7 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         const caixasReais = Object.keys(map).map(id => {
           const prods = map[id];
           return {
-            num: prods[0].num || 'CX',
+            num: prods[0].num || 'CAIXA',
             peso: prods[0].peso || 0,
             isBonificacao: false,
             produtos: prods.map(p => ({
@@ -1319,6 +1277,64 @@ const handlePlanejamentoUpload = (e, dIdx) => {
               descricao: p.desc,
               quantidade: p.qtd
             }))
+          };
+        });
+
+        // -------------------------------------------------------------
+        // AUDITORIA BASEADA EM TIPOS DE CAIXA (PLANEJADO VS REAL WMS)
+        // -------------------------------------------------------------
+        const sessaoPlanejamento = wmsSessions[currentIdx]?.skus || [];
+        const mapaCaixasPlanejadas = {};
+
+        sessaoPlanejamento.forEach(sku => {
+          if (sku.qtdPadrao > 0) {
+            const qtdCxs = Math.ceil(sku.qtdTotal / sku.qtdPadrao);
+            const tipoCx = (sku.caixaNome || 'CAIXA').toUpperCase().trim();
+            const pesoPrevisto = qtdCxs * parseFloat(sku.pesoPadrao || 0);
+
+            if (!mapaCaixasPlanejadas[tipoCx]) {
+              mapaCaixasPlanejadas[tipoCx] = { qtd: 0, peso: 0 };
+            }
+            mapaCaixasPlanejadas[tipoCx].qtd += qtdCxs;
+            mapaCaixasPlanejadas[tipoCx].peso += pesoPrevisto;
+          }
+        });
+
+        const mapaCaixasReais = {};
+        caixasReais.forEach(cx => {
+          const tipoCx = (cx.num || 'CAIXA').toUpperCase().trim();
+          if (!mapaCaixasReais[tipoCx]) {
+            mapaCaixasReais[tipoCx] = { qtd: 0, peso: 0 };
+          }
+          mapaCaixasReais[tipoCx].qtd += 1;
+          mapaCaixasReais[tipoCx].peso += parseFloat(cx.peso || 0);
+        });
+
+        const todosTiposCaixa = Array.from(new Set([
+          ...Object.keys(mapaCaixasPlanejadas),
+          ...Object.keys(mapaCaixasReais)
+        ])).sort();
+
+        let divergenciasEncontradas = 0;
+        const auditoriaCaixasLista = todosTiposCaixa.map(tipoCx => {
+          const planQtd = mapaCaixasPlanejadas[tipoCx]?.qtd || 0;
+          const planPeso = mapaCaixasPlanejadas[tipoCx]?.peso || 0;
+          const realQtd = mapaCaixasReais[tipoCx]?.qtd || 0;
+          const realPeso = mapaCaixasReais[tipoCx]?.peso || 0;
+          const diffQtd = realQtd - planQtd;
+          const diffPeso = realPeso - planPeso;
+
+          if (diffQtd !== 0) divergenciasEncontradas++;
+
+          return {
+            tipoCaixa: tipoCx,
+            qtdPlanejada: planQtd,
+            pesoPlanejado: planPeso,
+            qtdEfetivada: realQtd,
+            pesoEfetivado: realPeso,
+            diffQtd,
+            diffPeso,
+            status: diffQtd === 0 ? 'correto' : (diffQtd > 0 ? 'sobra' : 'falta')
           };
         });
 
@@ -1340,7 +1356,9 @@ const handlePlanejamentoUpload = (e, dIdx) => {
             totalSkus: totalSkus,
             pesoTotal: pesoBruto,
             amostraNomes: caixasReais.slice(0, 8).map(c => c.num),
-            resumoTexto: resumoTextoGerado
+            resumoTexto: resumoTextoGerado,
+            auditoriaData: auditoriaCaixasLista,
+            divergenciasCount: divergenciasEncontradas
           });
         }, 900);
 
@@ -1354,7 +1372,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     reader.readAsText(file, 'ISO-8859-1');
   };
 
-  // TROCA A VARIAÇÃO DA CAIXA E SALVA AUTOMATICAMENTE
   const handleMudarVariacao = (dIdx, skuRef, indexVariacao) => {
     setWmsSessions(prev => {
       const novoEstado = { ...prev };
@@ -1368,11 +1385,9 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       const novaVariacao = sku.variacoesDisponiveis[indexVariacao];
 
       if (novaVariacao) {
-        // MÁGICA AQUI: Arranca as letras "CX" e deixa só os números para a matemática não zerar
         const qtdBruta = String(novaVariacao.quantidade || novaVariacao.qtdPadrao || novaVariacao.qtd || '0');
         const qtdLimpa = parseInt(qtdBruta.replace(/\D/g, '')) || 0;
 
-        // Trata o peso removendo "kg" e trocando vírgula por ponto
         const pesoBruto = String(novaVariacao.peso || novaVariacao.pesoPadrao || '0');
         const pesoLimpo = parseFloat(pesoBruto.replace(',', '.').replace(/[^\d.]/g, '')) || 0;
 
@@ -1386,9 +1401,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       sessao.skus = skus;
       novoEstado[dIdx] = sessao;
 
-      // -----------------------------------------------------
-      // AUTO-SAVE EM BACKGROUND (Salva a escolha no Firebase)
-      // -----------------------------------------------------
       const refFinal = pedidoModal._isLegacy 
         ? doc(db, 'usuarios', pedidoModal.criadorUid, 'elementos', pedidoModal.elementoIdOriginal, 'pedidosMultiDocumento', pedidoModal.id) 
         : doc(db, 'pedidos', pedidoModal.id);
@@ -1400,7 +1412,7 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       return novoEstado;
     });
   };
- // SALVA A AUDITORIA FINAL NO BANCO DE DADOS
+
   const confirmarAuditoriaWms = async () => {
     if (!auditModalData || !auditModalData.caixasReais) return;
     setIsSaving(true);
@@ -1416,7 +1428,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         pedidoRef = doc(db, 'pedidos', pedidoModal.id);
       }
 
-      // Gera o resumo rápido para o histórico
       let planejado = 0;
       session.skus.forEach(sku => {
         if (sku.qtdPadrao > 0) planejado += Math.ceil(sku.qtdTotal / sku.qtdPadrao);
@@ -1442,7 +1453,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
         completedAt: serverTimestamp()
       });
       
-      // 👇 GATILHO NOVO AQUI: Evita somar duas vezes caso o pedido já estivesse efetivado antes de auditar
       if (!pedidoModal.efetivado) {
         const pedidoAtualizado = { ...pedidoModal, documentos: novosDocumentos };
         await atualizarEstatisticasMensais(pedidoAtualizado, true);
@@ -1451,7 +1461,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       setAuditModalData(null);
       setShowCaixasEfetivadasModal(dIdx); 
       
-      // 👇 SAÍDA SUAVE COM MODAL ANIMADO EM VEZ DE ALERT
       setModalSucesso({
         titulo: "Auditoria Validada!",
         mensagem: "O arquivo do WMS foi processado, cruzado com o planejamento e salvo no histórico com sucesso!"
@@ -1474,7 +1483,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
       await updateDoc(ref, { documentos: novosDocs });
       setCaixasPrevia([]); 
       alert("Caixas importadas com sucesso!");
-      // O sistema agora permanece silenciosamente na ABA 2
     } catch (error) { 
       alert("Erro ao sincronizar caixas."); 
     } finally { 
@@ -1487,7 +1495,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     setShowPauseModal(true); 
     setDropdownOpen(null);
   };
-
 
   const handleResumePedido = async (pedido) => {
     const ref = obterReferenciaDocumento(pedido);
@@ -1506,19 +1513,15 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     const docsRemontados = (pedido.documentos || []).map((doc, index) => ({ 
        ...doc, 
        idTemp: Date.now() + index,
-       dbIndex: index // <-- RASTREADOR AQUI TAMBÉM
+       dbIndex: index
     }));
     setDocsTemporarios(docsRemontados);
     setShowModal(true); setDropdownOpen(null);
   };
 
   const handleOpenModal = () => {
-    // 👇 ADICIONADO: Reseta TUDO antes de abrir o modal
     resetForm();
-    
-    // Opcional: já define o responsável inicial com o email do usuário logado (facilita)
     if (localUser?.email) setDocResponsavel(String(localUser.email).toLowerCase().trim());
-    
     setShowModal(true);
   };
 
@@ -1537,7 +1540,6 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     setObservacoes(''); 
     setDocsTemporarios([]); 
     setDocTipo('Nota Fiscal');
-    // Força a limpeza ou pré-preenchimento
     setDocResponsavel(localUser?.email ? String(localUser.email).toLowerCase().trim() : ''); 
   };
 
@@ -1546,8 +1548,8 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     const novoDoc = { 
       idTemp: Date.now(), 
       tipo: docTipo, 
-      responsavel: docResponsavel, // Mantido pro legado
-      responsaveis: [docResponsavel], // Novo formato de Array
+      responsavel: docResponsavel,
+      responsaveis: [docResponsavel],
       caixas: [] 
     };
     setDocsTemporarios([...docsTemporarios, novoDoc]);
@@ -1593,21 +1595,15 @@ const handlePlanejamentoUpload = (e, dIdx) => {
           uidsVinculados, createdAt: serverTimestamp(), efetivado: false, isPaused: false, totalPausedTime: 0
         };
         
-        // Fecha o modal de criação imediatamente
         handleCloseModal();
-
-        // Salva no Firestore
         await addDoc(collection(db, 'pedidos'), novoPedido);
 
-        // Dispara a transição em tela cheia
         setPedidoRecemCriado({ romaneio, loja });
         
-        // Acende o brilho no Tracker Card quando o HUD central começa a sumir
         setTimeout(() => {
           setIsIgnitingTracker(true);
         }, 2400);
 
-        // Encerra e desmonta a camada de animação
         setTimeout(() => {
           setPedidoRecemCriado(null);
           setIsIgnitingTracker(false);
@@ -1620,30 +1616,24 @@ const handlePlanejamentoUpload = (e, dIdx) => {
     }
   };
 
-const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, currentTime);
-  
+  const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, currentTime);
 
-  // ==========================================
-  // LÓGICA DE SINCRONIZAÇÃO EM TEMPO REAL COM A PÁGINA ADM
-  // ==========================================
   useEffect(() => {
     if (!rankingCalculado || rankingCalculado.length === 0) return;
 
     const sincronizarComADM = async () => {
       try {
         const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-        
-        // Empacotamos TODOS os detalhes calculados para a ADM não ficar zerada
         const rankingParaSalvar = {};
         
         rankingCalculado.forEach(user => {
           rankingParaSalvar[user.nome] = {
             pontos: user.pontos || 0,
             skus: user.skus || 0,       
-            pontosSku: user.pontosSku || 0,       // <-- FALTAVA ESSA
+            pontosSku: user.pontosSku || 0,
             op: user.op || 0,           
             pedidos: user.pedidos || 0, 
-            bonusPedidos: user.bonusPedidos || 0, // <-- E FALTAVA ESSA
+            bonusPedidos: user.bonusPedidos || 0,
             decrescimo: user.decrescimo || 0,
             pointEvents: user.pointEvents || [],
             chartData: user.chartData || [],
@@ -1651,10 +1641,9 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
           };
         });
 
-        // Contagem de totais para o painel
         let totalPedidos = 0;
         let totalCaixas = 0;
-       pedidosProcessados.forEach(p => {
+        pedidosProcessados.forEach(p => {
            if (p.efetivado) {
               const temNfOuMinuta = (p.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
               if (temNfOuMinuta) totalPedidos++;
@@ -1665,7 +1654,6 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
            }
         });
 
-        // 1. Sanitiza o mapa de ranking garantindo que nada passe como undefined
         const rankingSanitizado = {};
         if (rankingParaSalvar && typeof rankingParaSalvar === 'object') {
           Object.entries(rankingParaSalvar).forEach(([nome, stats]) => {
@@ -1685,7 +1673,6 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
           });
         }
 
-        // 2. Payload blindado (JSON.parse remove qualquer chave residual com undefined)
         const payloadFinal = JSON.parse(JSON.stringify({
           ranking: rankingSanitizado,
           totalNfMinuta: totalPedidos || 0,
@@ -1693,7 +1680,6 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
           ultimaAtualizacao: Date.now()
         }));
 
-        // 3. Gravação com sobrescrita protegida
         await setDoc(refDia, payloadFinal);
 
       } catch (error) {
@@ -1701,18 +1687,11 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
       }
     };
 
-    // Dispara a sincronização instantaneamente SEMPRE que o rankingCalculado mudar
     sincronizarComADM();
-    
   }, [rankingCalculado, dataOperacaoAtiva, pedidosProcessados]);
-  // ==========================================
-  // ESTADOS E FUNÇÕES DO ALERTA DE PESO ZERO
-  // ==========================================
+
   const [alertaPesoZero, setAlertaPesoZero] = useState(null);
 
-  // ==========================================
-  // MOTOR DE ESTATÍSTICAS (GRÁFICO DO DASHBOARD)
-  // ==========================================
   const atualizarEstatisticasMensais = async (pedido, isEfetivando) => {
     try {
       const temNfOuMinuta = (pedido.documentos || []).some(doc => 
@@ -1758,7 +1737,6 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
       
       await updateDoc(refFinal, payload);
       
-      // O GATILHO DA ESTATÍSTICA FICA AQUI (Lê a variável recém montada em vez de mutar a antiga)
       if (todosPossuemCaixas && !pedidoModal.efetivado) {
         const pedidoAtualizado = { ...pedidoModal, documentos: novosDocs };
         await atualizarEstatisticasMensais(pedidoAtualizado, true);
@@ -1805,172 +1783,265 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
     setAlertaPesoZero(null);
   };
 
-  
-
-  // 👇 O SEU RETURN ORIGINAL FICA LOGO AQUI EMBAIXO
- return (
+  return (
     <>
+      {/* CAMADA DE TRANSIÇÃO CINEMATOGRÁFICA */}
+      <TransicaoOperacaoOverlay isVisible={overlayAtivo} isExiting={overlaySaindo} />
+
       <NavbarOperacao 
         user={localUser} 
         isAdmin={isAdmin} 
         dataOperacaoAtiva={dataOperacaoAtiva} 
         buscaRomaneio={buscaRomaneio} 
         setBuscaRomaneio={setBuscaRomaneio} 
-        handleOpenModal={handleOpenModal} 
       />
 
-      {/* WRAPPER COM A ANIMAÇÃO DE ENTRADA */}
-      <div className="op-wrapper">
+      {/* WRAPPER COM ANIMAÇÃO EM CASCATA SUAVE */}
+      <div className={`op-wrapper ${revelarCascata ? 'op-cascata-ativa' : 'op-oculta'}`}>
         <main className="op-main-content">
           <section className="op-live-section">
-          {atividadeAtual ? (
-            <div className={`live-tracker-card ${atividadeAtual.isPaused ? 'paused' : 'active'} ${isIgnitingTracker ? 'igniting' : ''}`}>
-              
-              {/* TOPO: IDENTIFICAÇÃO E CONTEXTO */}
-              <div className="live-tracker-top">
-                <div className="live-badge">
-                  {atividadeAtual.isPaused ? (
-                    <><AlertCircle size={14}/> Pausado</>
-                  ) : (
-                    <><div className="pulse-dot"></div> Em Separação</>
-                  )}
-                </div>
-                <h2 className="live-romaneio">{atividadeAtual.romaneio || 'S/N'}</h2>
-                <p className="live-loja">{atividadeAtual.loja || 'Destino Padrão'}</p>
+            {atividadeAtual ? (
+              <div className={`live-tracker-card ${atividadeAtual.isPaused ? 'paused' : 'active'} ${isIgnitingTracker ? 'igniting' : ''}`}>
                 
-                {/* NOVO BLOCO DE INFORMAÇÕES (DESTINO E DOCS) */}
-                <div className="live-extra-info">
-                  <div className="live-location">
-                    <MapPin size={14} /> 
-                    {atividadeAtual.local || 'DF'} {atividadeAtual.uf ? `- ${atividadeAtual.uf}` : ''}
-                  </div>
-                  
-                  <div className="live-docs-badges">
-                    {atividadeAtual.documentos && atividadeAtual.documentos.length > 0 ? (
-                      Array.from(new Set(atividadeAtual.documentos.map(d => d.tipo || 'S/N'))).map((tipo, idx) => {
-                        let corFundo = '#3b82f6'; // Azul Padrão (NF)
-                        if (tipo === 'Minuta') corFundo = '#8b5cf6'; // Roxo
-                        if (tipo === 'Bonificação') corFundo = '#ec4899'; // Rosa
-                        if (tipo === 'Troca') corFundo = '#f59e0b'; // Laranja
-                        
-                        return (
-                          <span key={idx} style={{ background: corFundo }}>
-                            {tipo}
-                          </span>
-                        );
-                      })
+                {/* TOPO: IDENTIFICAÇÃO E CONTEXTO */}
+                <div className="live-tracker-top">
+                  <div className="live-badge">
+                    {atividadeAtual.isPaused ? (
+                      <><AlertCircle size={14}/> Pausado</>
                     ) : (
-                      <span style={{ background: '#64748b' }}>Sem Documentos</span>
+                      <><div className="pulse-dot"></div> Em Separação</>
                     )}
                   </div>
+                  <h2 className="live-romaneio">{atividadeAtual.romaneio || 'S/N'}</h2>
+                  <p className="live-loja">{atividadeAtual.loja || 'Destino Padrão'}</p>
+                  
+                  <div className="live-extra-info">
+                    <div className="live-location">
+                      <MapPin size={14} /> 
+                      {atividadeAtual.local || 'DF'} {atividadeAtual.uf ? `- ${atividadeAtual.uf}` : ''}
+                    </div>
+                    
+                    <div className="live-docs-badges">
+                      {atividadeAtual.documentos && atividadeAtual.documentos.length > 0 ? (
+                        Array.from(new Set(atividadeAtual.documentos.map(d => d.tipo || 'S/N'))).map((tipo, idx) => {
+                          let corFundo = '#3b82f6';
+                          if (tipo === 'Minuta') corFundo = '#8b5cf6';
+                          if (tipo === 'Bonificação') corFundo = '#ec4899';
+                          if (tipo === 'Troca') corFundo = '#f59e0b';
+                          
+                          return (
+                            <span key={idx} style={{ background: corFundo }}>
+                              {tipo}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span style={{ background: '#64748b' }}>Sem Documentos</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {atividadeAtual.isPaused && (
+                    <div className="pause-reason-box">
+                      <strong>Motivo:</strong> {atividadeAtual.motivoPausa || 'Pausa Operacional'}
+                    </div>
+                  )}
                 </div>
 
-                {atividadeAtual.isPaused && (
-                  <div className="pause-reason-box">
-                    <strong>Motivo:</strong> {atividadeAtual.motivoPausa || 'Pausa Operacional'}
+                {/* MEIO: CRONÔMETRO E MÉTRICAS */}
+                <div className="live-tracker-middle">
+                  <div className="live-timer">
+                    <Clock size={32} className="timer-icon" />
+                    <div className="timer-display">{formatarCronometro(atividadeAtual)}</div>
                   </div>
-                )}
-              </div>
 
-              {/* MEIO: CRONÔMETRO E MÉTRICAS (Centralizado) */}
-              <div className="live-tracker-middle">
-                <div className="live-timer">
-                  <Clock size={32} className="timer-icon" />
-                  <div className="timer-display">{formatarCronometro(atividadeAtual)}</div>
-                </div>
-
-                <div className="live-stats">
-                  <div>
-                    <strong>{atividadeAtual.totalSkus || 0}</strong> SKUs Mapeados
-                  </div>
-                  <div>
-                    <strong>{atividadeAtual.documentos?.reduce((acc, d) => acc + (d.caixas?.length || 0), 0) || 0}</strong> Caixas
+                  <div className="live-stats">
+                    <div>
+                      <strong>{atividadeAtual.totalSkus || 0}</strong> SKUs Mapeados
+                    </div>
+                    <div>
+                      <strong>{atividadeAtual.documentos?.reduce((acc, d) => acc + (d.caixas?.length || 0), 0) || 0}</strong> Caixas
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* BASE: AÇÕES */}
-              <div className="live-actions">
-                {atividadeAtual.isPaused ? (
-                  <button className="btn-live-resume" onClick={() => handleResumePedido(atividadeAtual)}>
-                    <Play size={16}/> Retomar
-                  </button>
-                ) : (
-                  <>
-                    <button className="btn-live-pause" onClick={() => handleOpenPauseModal(atividadeAtual)}>
-                      <Pause size={16}/> Pausar
+                {/* BASE: AÇÕES */}
+                <div className="live-actions">
+                  {atividadeAtual.isPaused ? (
+                    <button className="btn-live-resume" onClick={() => handleResumePedido(atividadeAtual)}>
+                      <Play size={16}/> Retomar
                     </button>
-                    <button className="btn-live-caixas" onClick={() => handleAbrirDetalhes(atividadeAtual)}>
-                      <Boxes size={16}/> WMS
-                    </button>
-                    <button className="btn-live-finish" onClick={() => handleToggleEfetivado(atividadeAtual)}>
-                      <CheckCircle2 size={16}/> Finalizar
-                    </button>
-                  </>
-                )}
+                  ) : (
+                    <>
+                      <button className="btn-live-pause" onClick={() => handleOpenPauseModal(atividadeAtual)}>
+                        <Pause size={16}/> Pausar
+                      </button>
+                      <button className="btn-live-caixas" onClick={() => handleAbrirDetalhes(atividadeAtual)}>
+                        <Boxes size={16}/> WMS
+                      </button>
+                      <button className="btn-live-finish" onClick={() => handleToggleEfetivado(atividadeAtual)}>
+                        <CheckCircle2 size={16}/> Finalizar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="live-tracker-card empty">
+                <CheckCircle2 size={44} color="var(--text-muted)" style={{ marginBottom: '12px', opacity: 0.6 }} />
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 800 }}>
+                  Tudo Limpo!
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.4 }}>
+                  Nenhum romaneio em andamento.<br />Inicie um novo pedido para cronometrar.
+                </p>
+              </div>
+            )}
+
+            {/* INDICADORES RÁPIDOS */}
+            <div className="op-kpi-grid">
+              <div className="op-kpi-card">
+                <span className="kpi-label">Pedidos Hoje</span>
+                <span className="kpi-val">{totalPedidosKPI}</span>
+              </div>
+              <div className="op-kpi-card">
+                <span className="kpi-label">Caixas Fechadas</span>
+                <span className="kpi-val" style={{ color: 'var(--secondary, #f26522)' }}>
+                  {totalCaixasHoje}
+                </span>
               </div>
             </div>
-          ) : (
-            <div className="live-tracker-card empty">
-  <CheckCircle2 size={44} color="var(--text-muted)" style={{ marginBottom: '12px', opacity: 0.6 }} />
-  <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 800 }}>
-    Tudo Limpo!
-  </h3>
-  <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.4 }}>
-    Nenhum romaneio em andamento.<br />Inicie um novo pedido para cronometrar.
-  </p>
-</div>
-          )}
-
-          {/* INDICADORES RÁPIDOS */}
-          <div className="op-kpi-grid">
-            <div className="op-kpi-card">
-              <span className="kpi-label">Pedidos Hoje</span>
-              <span className="kpi-val">{totalPedidosKPI}</span>
-            </div>
-            <div className="op-kpi-card">
-              <span className="kpi-label">Caixas Fechadas</span>
-              <span className="kpi-val" style={{ color: 'var(--secondary, #f26522)' }}>
-                {totalCaixasHoje}
-              </span>
-            </div>
-          </div>
-        </section>
+          </section>
 
           {/* ==========================================
-              TABELA DE ROMANEIOS REESTILIZADA
+              TABELA DE ROMANEIOS
               ========================================== */}
           <section className="op-history-section">
             
-            {/* TOPO DA TABELA: TÍTULO, CONTAGEM E BUSCA DEDICADA */}
-            <div className="history-header">
+            {/* CABEÇALHO DA TABELA */}
+            <div className="history-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="history-title-area">
-                <div className="history-icon-badge">
-                  <Layers size={20} color="var(--primary)" />
-                </div>
-                <div>
-                  <h3>Romaneios Processados</h3>
-                  <span className="history-subtitle">
-                    {pedidosProcessados.filter(p => p.efetivado).length} finalizados de {pedidosProcessados.length} no dia
-                  </span>
-                </div>
-              </div>
+  <div className="history-icon-badge">
+    <Layers size={22} />
+  </div>
+  <div>
+    <h3>Romaneios Processados</h3>
+    <span className="history-subtitle">Lista de pedidos finalizados</span>
+  </div>
+</div>
 
-              {/* BARRA DE PESQUISA INTEGRADA */}
-              <div className="table-search-box">
-                <Search size={16} className="table-search-icon" />
-                <input 
-                  type="text"
-                  placeholder="Filtrar por romaneio, loja ou UF..."
-                  value={buscaRomaneio}
-                  onChange={(e) => setBuscaRomaneio(e.target.value)}
-                  className="table-search-input"
-                />
-                {buscaRomaneio && (
-                  <button onClick={() => setBuscaRomaneio('')} className="table-search-clear">
-                    <X size={14} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* BARRA DE PESQUISA EXPANSÍVEL */}
+                <div 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    background: isSearchExpanded ? 'var(--bg-input, rgba(0, 0, 0, 0.02))' : 'transparent',
+                    border: isSearchExpanded ? '1px solid var(--border-color, #cbd5e1)' : '1px solid transparent',
+                    borderRadius: '12px',
+                    width: isSearchExpanded ? '280px' : '40px',
+                    height: '40px',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    overflow: 'hidden',
+                    position: 'relative'
+                  }}
+                >
+                  <button 
+                    onClick={() => setIsSearchExpanded(true)}
+                    title="Buscar Romaneio"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      minWidth: '40px',
+                      height: '40px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: isSearchExpanded ? 'default' : 'pointer',
+                      color: isSearchExpanded ? 'var(--primary)' : 'var(--text-muted, #94a3b8)',
+                      transition: 'color 0.2s'
+                    }}
+                  >
+                    <Search size={18} />
                   </button>
-                )}
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Filtrar por romaneio, loja ou UF..." 
+                    value={buscaRomaneio} 
+                    onChange={(e) => setBuscaRomaneio(e.target.value)}
+                    style={{ 
+                      border: 'none', 
+                      background: 'transparent', 
+                      color: 'var(--text-main, #0f172a)',
+                      outline: 'none',
+                      width: '100%',
+                      opacity: isSearchExpanded ? 1 : 0,
+                      transition: 'opacity 0.2s',
+                      pointerEvents: isSearchExpanded ? 'auto' : 'none',
+                      fontFamily: 'inherit',
+                      fontSize: '0.88rem'
+                    }}
+                  />
+                  
+                  {isSearchExpanded && (
+                    <button 
+                      onClick={() => {
+                        setIsSearchExpanded(false);
+                        setBuscaRomaneio('');
+                      }}
+                      title="Fechar Busca"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        minWidth: '40px',
+                        height: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: 'var(--text-muted, #94a3b8)',
+                        transition: 'color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* BOTÃO NOVO PEDIDO FIXO NA DIREITA */}
+                <button 
+                  onClick={handleOpenModal}
+                  style={{ 
+                    padding: '9px 16px', 
+                    borderRadius: '10px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    fontWeight: 700, 
+                    fontSize: '0.85rem', 
+                    background: 'var(--primary)', 
+                    color: '#fff', 
+                    border: 'none', 
+                    cursor: 'pointer', 
+                    boxShadow: '0 4px 12px rgba(13, 50, 105, 0.2)', 
+                    transition: 'all 0.25s ease', 
+                    fontFamily: 'inherit',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 6px 14px rgba(13, 50, 105, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(13, 50, 105, 0.2)';
+                  }}
+                >
+                  <Plus size={16} /> Novo Pedido
+                </button>
               </div>
             </div>
             
@@ -2010,7 +2081,6 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
 
                       const temPermissao = isAdmin || pedido.criadorUid === localUser?.uid;
 
-                      // Status e Indicador Visual Lateral
                       let statusClass = "status-running";
                       let statusBadge;
 
@@ -2039,11 +2109,11 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
 
                       return (
                         <tr 
-  key={pedido.id} 
-  className={`clickable-row ${statusClass} ${dropdownOpen === pedido.id ? 'row-dropdown-open' : ''}`}
-  onClick={() => handleAbrirDetalhes(pedido)}
-  title="Clique para ver Detalhes"
->
+                          key={pedido.id} 
+                          className={`clickable-row ${statusClass} ${dropdownOpen === pedido.id ? 'row-dropdown-open' : ''}`}
+                          onClick={() => handleAbrirDetalhes(pedido)}
+                          title="Clique para ver Detalhes"
+                        >
                           {/* 1. ROMANEIO E BADGE */}
                           <td>
                             <div className="table-romaneio-cell">
@@ -2153,38 +2223,32 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
           </section>
 
           <section className="op-bottom-zone">
-              {/* RANKING DIÁRIO DE PRODUTIVIDADE */}
-              <RankingDiario 
-                rankingCalculado={rankingCalculado}
-                rankingExpandido={rankingExpandido}
-                setRankingExpandido={setRankingExpandido}
-                currentTime={currentTime}           
-                dataOperacaoAtiva={dataOperacaoAtiva} 
-              />
+            <RankingDiario 
+              rankingCalculado={rankingCalculado}
+              rankingExpandido={rankingExpandido}
+              setRankingExpandido={setRankingExpandido}
+              currentTime={currentTime}           
+              dataOperacaoAtiva={dataOperacaoAtiva} 
+            />
 
-              <div className="op-side-indicators">
-                  <div className="indicator-card op-card">
-                    <div className="indicator-icon" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
-                    <div className="indicator-content"><h4>Ordens de Produção</h4><span className="indicator-value">{opsDoDia.length} Registros</span><p>Controle de O.P.s hoje</p></div>
-                    <button className="indicator-btn" onClick={() => setShowOpModal(true)}>Gerenciar O.P.s</button>
-                  </div>
-
-                  <div className="indicator-card master-card">
-                    <div className="indicator-icon" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
-                    <div className="indicator-content"><h4>Caixas Master</h4><span className="indicator-value">{caixasMaster.length} Padrões</span><p>Dicionário de embalagens</p></div>
-                    <button className="indicator-btn" onClick={() => setShowMasterModal(true)}>Consultar Base</button>
-                  </div>
+            <div className="op-side-indicators">
+              <div className="indicator-card op-card">
+                <div className="indicator-icon" style={{background: '#e0e7ff', color: '#4f46e5'}}><Factory size={24}/></div>
+                <div className="indicator-content"><h4>Ordens de Produção</h4><span className="indicator-value">{opsDoDia.length} Registros</span><p>Controle de O.P.s hoje</p></div>
+                <button className="indicator-btn" onClick={() => setShowOpModal(true)}>Gerenciar O.P.s</button>
               </div>
+
+              <div className="indicator-card master-card">
+                <div className="indicator-icon" style={{background: '#fce7f3', color: '#db2777'}}><Package size={24}/></div>
+                <div className="indicator-content"><h4>Caixas Master</h4><span className="indicator-value">{caixasMaster.length} Padrões</span><p>Dicionário de embalagens</p></div>
+                <button className="indicator-btn" onClick={() => setShowMasterModal(true)}>Consultar Base</button>
+              </div>
+            </div>
           </section>
 
         </main>
       </div> 
-      {/* 🔴 O WRAPPER FECHOU AQUI! OS MODAIS AGORA ESTÃO LIVRES PARA COBRIR A TELA 🔴 */}
 
-      {/* ==========================================
-          MODAIS (RENDERIZADOS FORA DO WRAPPER)
-          ========================================== */}
-      
       {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
       <ModalDetalhesPedido 
         showDetalhesModal={showDetalhesModal}
@@ -2204,7 +2268,7 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
         setAuditModalData={setAuditModalData}
         handlePlanejamentoUpload={handlePlanejamentoUpload}
         handleUploadWMSComum={handleUploadWMSComum}
-        handleAuditoriaUpload={handleAuditoriaUpload} /* <-- ADICIONE ESTA LINHA */
+        handleAuditoriaUpload={handleAuditoriaUpload}
         docIndexSelecionado={docIndexSelecionado}
         setDocIndexSelecionado={setDocIndexSelecionado}
         skusExpandidos={skusExpandidos}
@@ -2247,7 +2311,6 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
         abrirFormCaixa={abrirFormCaixa}
         excluirCaixaManual={excluirCaixaManual}
       />
-
 
       {/* MODAL DE ORDEM DE PRODUÇÃO */}
       <ModalOrdemProducao 
@@ -2345,7 +2408,7 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
       {/* TRANSIÇÃO CINEMATOGRÁFICA DE NOVO PEDIDO */}
       <AnimacaoCriacaoPedido dadosPedido={pedidoRecemCriado} />
 
-      {/* FLUXO UNIFICADO DE IMPORTAÇÃO WMS (LEITURA -> PRÉVIA -> GRAVAÇÃO -> SUCESSO/CÓPIA) */}
+      {/* FLUXO UNIFICADO DE IMPORTAÇÃO WMS */}
       <ModalFluxoImportacaoWMS 
         etapa={fluxoImportacao?.etapa}
         dadosPrevia={fluxoImportacao}
@@ -2363,7 +2426,5 @@ const rankingCalculado = useMotorRanking(usuarios, opsDoDia, pedidosProcessados,
         isExcluindo={isExcluindoPedido}
       />
     </>
-
-    
   );
 }

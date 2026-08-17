@@ -1,0 +1,17 @@
+html[data-theme="dark"], 
+html[data-theme="dark"] body, 
+html[data-theme="dark"] #root {
+  background: #050505 !important;
+}
+
+html[data-theme="dark-blue"], 
+html[data-theme="dark-blue"] body, 
+html[data-theme="dark-blue"] #root {
+  background: #020617 !important;
+}
+
+html[data-theme="light"], 
+html[data-theme="light"] body, 
+html[data-theme="light"] #root {
+  background: #e2e8f0 !important;
+}
