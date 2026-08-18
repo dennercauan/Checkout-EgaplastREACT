@@ -43,7 +43,6 @@ export default function PersonalDashboard({ user, isAdmin }) {
       }, 800);
 
       // 2. Dispara as animações em cascata no meio do fade-out do overlay
-      // Como o DOM já está montado em background, não há travamento de CPU (60fps)
       const t2 = setTimeout(() => {
         setRevelarCascata(true);
       }, 950);
@@ -166,7 +165,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   }, []);
 
   // ==========================================
-  // NAVEGAÇÃO DIRETA (DISPARA TRANSIÇÃO NA OPERAÇÃO)
+  // NAVEGAÇÃO DIRETA (DISPARA TRANSIÇÃO NA OPERAÇÃO / ADM)
   // ==========================================
   const handleHeroNavigation = (destino) => {
     navigate(destino, { state: { fromTransition: true } });
@@ -624,7 +623,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
         <div className="dash-header-container">
           <div className="dash-title-area">
             <LayoutDashboard size={28} className="title-icon" />
-            <h2>Central de Operações</h2>
+            <h2>Central de Conferência</h2>
           </div>
           <div className="dash-actions-area">
             <div className="dash-period-filter">
@@ -658,7 +657,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
             >
               <div className="hero-content">
                 <div className="hero-badge" style={isAdmin ? { background: 'rgba(242, 101, 34, 0.9)' } : {}}>
-                  {isAdmin ? 'OPERAÇÃO GLOBAL - HOJE' : 'SUA OPERAÇÃO - HOJE'}
+                  {isAdmin ? 'OPERAÇÃO DO CHECKOUT - HOJE' : 'SUA OPERAÇÃO - HOJE'}
                 </div>
                 <h2 className="hero-title">{getDayOfWeek()}</h2>
                 <div className="hero-stats">
@@ -670,7 +669,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
                         meusPedidosCount
                       )}
                     </h1>
-                    <span className="stat-label">{isAdmin ? 'Total de Pedidos Processados' : 'Meus Pedidos Hoje'}</span>
+                    <span className="stat-label">{isAdmin ? 'Total de Pedidos Conferidos' : 'Meus Pedidos Hoje'}</span>
                   </div>
                 </div>
                 <div className="hero-footer">

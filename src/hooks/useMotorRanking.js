@@ -124,47 +124,47 @@ export function useMotorRanking(
         }
       });
     }
-
-    // 4. Decréscimo (20 min)
-    const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000; 
-    
-    Object.values(userStats).forEach(user => {
-       user.eventos.sort((a, b) => a.start - b.start);
+// 4. Decréscimo (20 min)
+       const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000; 
        
-       const merged = [];
-       user.eventos.forEach(ev => {
-          if (merged.length === 0) { merged.push({...ev}); return; }
-          const last = merged[merged.length - 1];
-          if (ev.start <= last.end) last.end = Math.max(last.end, ev.end); 
-          else merged.push({...ev});
-       });
+       Object.values(userStats).forEach(user => {
+          user.eventos.sort((a, b) => a.start - b.start);
+          
+          const merged = [];
+          user.eventos.forEach(ev => {
+             if (merged.length === 0) { merged.push({...ev}); return; }
+             const last = merged[merged.length - 1];
+             if (ev.start <= last.end) last.end = Math.max(last.end, ev.end); 
+             else merged.push({...ev});
+          });
 
-       for (let i = 1; i < merged.length; i++) {
-          const gapMs = merged[i].start - merged[i-1].end;
-          if (gapMs > LIMITE_OCIOSIDADE_MS) {
-             const excessoMs = gapMs - LIMITE_OCIOSIDADE_MS;
-             const penalidade = Math.floor(excessoMs / 60000) * 10;
-             user.decrescimo += penalidade; 
-             user.pontos -= penalidade; 
-             user.pointEvents.push({ time: merged[i-1].end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância', detalhe: 'A pausa permitida acabou. Iniciando perda de pontos.' });
-             user.pointEvents.push({ time: merged[i].start - 1000, delta: -penalidade, label: '❌ Multa Aplicada (Retorno)', detalhe: `Perdeu ${penalidade} pts` });
-          }
-       }
-       
-       if (merged.length > 0 && isHoje) {
-          const ultimaTarefa = merged[merged.length - 1];
-          if (ultimaTarefa.end < tempoReferencia) {
-             const ociosidadeAtualMs = tempoReferencia - ultimaTarefa.end;
-             if (ociosidadeAtualMs > LIMITE_OCIOSIDADE_MS) {
-                const excessoMs = ociosidadeAtualMs - LIMITE_OCIOSIDADE_MS;
+          for (let i = 1; i < merged.length; i++) {
+             const gapMs = merged[i].start - merged[i-1].end;
+             if (gapMs > LIMITE_OCIOSIDADE_MS) {
+                const excessoMs = gapMs - LIMITE_OCIOSIDADE_MS;
                 const penalidade = Math.floor(excessoMs / 60000) * 10;
-                user.decrescimo += penalidade;
-                user.pontos -= penalidade;
-                user.pointEvents.push({ time: ultimaTarefa.end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância', detalhe: 'A pausa permitida acabou. Iniciando sangramento.' });
-                user.pointEvents.push({ time: tempoReferencia, delta: -penalidade, label: '⚠️ Sangramento Atual', detalhe: `Parado há ${Math.floor(ociosidadeAtualMs / 60000)} min.` });
+                user.decrescimo += penalidade; 
+                user.pontos -= penalidade; 
+                user.pointEvents.push({ time: merged[i-1].end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância', detalhe: 'A pausa permitida acabou. Iniciando perda de pontos.', sourceType: 'calculado' });
+                user.pointEvents.push({ time: merged[i].start - 1000, delta: -penalidade, label: '❌ Multa Aplicada (Retorno)', detalhe: `Perdeu ${penalidade} pts`, sourceType: 'calculado' });
              }
           }
-       }
+          
+          // Sangramento em aberto: avaliado apenas até o tempoReferencia (17h30)
+          if (merged.length > 0 && isHoje) {
+             const ultimaTarefa = merged[merged.length - 1];
+             if (ultimaTarefa.end < tempoReferencia) {
+                const ociosidadeAtualMs = tempoReferencia - ultimaTarefa.end;
+                if (ociosidadeAtualMs > LIMITE_OCIOSIDADE_MS) {
+                   const excessoMs = ociosidadeAtualMs - LIMITE_OCIOSIDADE_MS;
+                   const penalidade = Math.floor(excessoMs / 60000) * 10;
+                   user.decrescimo += penalidade;
+                   user.pontos -= penalidade;
+                   user.pointEvents.push({ time: ultimaTarefa.end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância', detalhe: 'A pausa permitida acabou. Iniciando sangramento.', sourceType: 'calculado' });
+                   user.pointEvents.push({ time: tempoReferencia, delta: -penalidade, label: '⚠️ Sangramento Atual', detalhe: `Parado até o corte (${Math.floor(ociosidadeAtualMs / 60000)} min de intervalo).`, sourceType: 'calculado' });
+                }
+             }
+          }
 
        user.eventosMesclados = merged;
        if (user.pontos < 0) user.pontos = 0;

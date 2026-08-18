@@ -32,6 +32,9 @@ import ModalSucesso from '../components/ModalSucesso';
 import AnimacaoCriacaoPedido from '../components/AnimacaoCriacaoPedido';
 import ModalConfirmarExclusao from '../components/ModalConfirmarExclusao';
 import ModalFluxoImportacaoWMS from '../components/ModalFluxoImportacaoWMS';
+import ModalImprimirEtiqueta from '../components/ModalImprimirEtiqueta';
+import { Tag } from 'lucide-react';
+import TransicaoAdmOverlay from '../components/TransicaoAdmOverlay';
 import '../css/Operacao.css'; 
 
 export default function OperacaoAdm() {
@@ -43,31 +46,37 @@ export default function OperacaoAdm() {
   const [alertaPesoZero, setAlertaPesoZero] = useState(null);
   const [modalSucesso, setModalSucesso] = useState(null);
   const [localUser, setLocalUser] = useState({ uid: 'admin-god-mode', email: 'admin' });
+  const [transferenciaSucesso, setTransferenciaSucesso] = useState(false);
+  const [pedidoParaEtiqueta, setPedidoParaEtiqueta] = useState(null);
   
-  const today = new Date();
-  const dataHojeStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // Data local segura (Evita divergência de UTC)
+  const getHojeFormatado = () => {
+    const hoje = new Date();
+    const ano = hoje.getFullYear();
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+    const dia = String(hoje.getDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
+  };
   
   const dataOperacaoAtiva = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get('date') || dataHojeStr;
-  }, [location.search, dataHojeStr]);
+    return params.get('date') || getHojeFormatado();
+  }, [location.search]);
 
   const [rankingExpandido, setRankingExpandido] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [dadosDeEstatisticasFirebase, setDadosDeEstatisticasFirebase] = useState({});
   const [rankingArrayFirebase, setRankingArrayFirebase] = useState([]);
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
-const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
-const [fluxoImportacao, setFluxoImportacao] = useState(null);
+  const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
+  const [fluxoImportacao, setFluxoImportacao] = useState(null);
 
-// ---> ADICIONE ESTAS LINHAS AQUI <---
   const [pedidoParaTransferir, setPedidoParaTransferir] = useState(null);
   const [novaDataTransferencia, setNovaDataTransferencia] = useState('');
   const [isTransferindo, setIsTransferindo] = useState(false);
 
   const handleAbrirTransferencia = (pedido) => {
     setPedidoParaTransferir(pedido);
-    // Sugere automaticamente o dia de amanhã no calendário
     const amanha = new Date();
     amanha.setDate(amanha.getDate() + 1);
     const amanhaStr = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}`;
@@ -119,61 +128,73 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
     }
   };
 
-const handleConfirmarTransferencia = async () => {
-    if (!pedidoParaTransferir || !novaDataTransferencia) return alert("Selecione uma data válida.");
+  const handleConfirmarTransferencia = async () => {
+    if (!pedidoParaTransferir || !novaDataTransferencia) return;
     setIsTransferindo(true);
     try {
       const agora = Date.now();
       
-      // 1. Converte o dia escolhido para o início da manhã (08:00) do dia alvo
-      const [ano, mes, dia] = novaDataTransferencia.split('-');
-      const dataAlvoAlinhada = new Date(Number(ano), Number(mes) - 1, Number(dia), 8, 0, 0);
-      const novaDataTimestamp = Timestamp.fromDate(dataAlvoAlinhada);
+      const dataOrig = pedidoParaTransferir.dataOperacao || dataOperacaoAtiva;
+      const [anoO, mesO, diaO] = dataOrig.split('-');
+      const corteExpedienteOrig = new Date(Number(anoO), Number(mesO) - 1, Number(diaO), 17, 30, 0).getTime();
 
-      // 2. MATEMÁTICA DO CRONÔMETRO: Preservar o tempo ativo acumulado
       const startOriginal = pedidoParaTransferir.createdAt?.toMillis 
         ? pedidoParaTransferir.createdAt.toMillis() 
-        : (pedidoParaTransferir.createdAt || agora);
+        : (typeof pedidoParaTransferir.createdAt === 'number' ? pedidoParaTransferir.createdAt : agora);
       
       const totalPausedOriginal = pedidoParaTransferir.totalPausedTime || 0;
       
-      // Define até quando o tempo correu hoje (respeitando a trava das 17h30 se já passou dela)
-      const fimDeExpedienteHoje = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 17, 30, 0).getTime();
-      const momentoCorte = agora > fimDeExpedienteHoje ? fimDeExpedienteHoje : agora;
-      
-      // Tempo que o conferente efetivamente trabalhou nesse pedido até agora
-      const tempoTrabalhadoAcumulado = Math.max(0, momentoCorte - startOriginal - totalPausedOriginal);
+      let momentoFinalOriginal = agora;
+      if (pedidoParaTransferir.isPaused && pedidoParaTransferir.lastPauseStart) {
+        momentoFinalOriginal = pedidoParaTransferir.lastPauseStart;
+      } else {
+        momentoFinalOriginal = Math.min(agora, corteExpedienteOrig);
+      }
 
-      // Nova matemática: O novo tempo pausado deve ser a diferença entre o novo Start (amanhã 8h) 
-      // e o momento em que ele vai abrir amanhã, descontando o tempo já trabalhado.
-      // Como ele vai amanhecer pausado (isPaused: true), o tempo parado vai contar a partir de "novaDataTimestamp".
-      const novoTotalPausedTime = dataAlvoAlinhada.getTime() - tempoTrabalhadoAcumulado;
+      const tempoTrabalhadoAcumulado = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
 
-      // 3. Determina o caminho exato do documento (Legado ou Novo)
+      const [anoD, mesD, diaD] = novaDataTransferencia.split('-');
+      const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 8, 0, 0).getTime();
+
+      const novoCreatedAtMs = dataAlvoBase - tempoTrabalhadoAcumulado;
+      const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(novoCreatedAtMs));
+
       let ref;
       if (pedidoParaTransferir._isLegacy || (pedidoParaTransferir.criadorUid && pedidoParaTransferir.elementoIdOriginal)) {
-        ref = doc(db, 'usuarios', pedidoParaTransferir.criadorUid, 'elementos', pedidoParaTransferir.elementoIdOriginal, 'pedidosMultiDocumento', pedidoParaTransferir.id);
+        ref = doc(
+          db, 
+          'usuarios', 
+          pedidoParaTransferir.criadorUid, 
+          'elementos', 
+          pedidoParaTransferir.elementoIdOriginal, 
+          'pedidosMultiDocumento', 
+          pedidoParaTransferir.id
+        );
       } else {
         ref = doc(db, 'pedidos', pedidoParaTransferir.id);
       }
 
-      // 4. Salva no banco mantendo o histórico de tempo intacto e congelado na nova data
       await updateDoc(ref, {
         dataOperacao: novaDataTransferencia,
-        createdAt: novaDataTimestamp,           // Alinha com o filtro de data da query do Firestore
-        isPaused: true,                         // Começa o dia pausado para não sangrar tempo de madrugada
-        lastPauseStart: dataAlvoAlinhada.getTime(), // A pausa conta a partir das 08:00 do dia seguinte
-        totalPausedTime: novoTotalPausedTime,   // Modificador matemático que salva o tempo trabalhado anterior
+        createdAt: novoCreatedAtTimestamp,
+        isPaused: true,
+        lastPauseStart: dataAlvoBase,
+        totalPausedTime: 0,
         motivoPausa: "Transferido do dia anterior",
+        efetivado: false,
+        completedAt: deleteField(),
         updatedAt: serverTimestamp()
       });
 
-      // 5. Remove localmente da lista de visualização do dia atual imediatamente
       setPedidosNovos(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
       setPedidosLegados(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
+      
+      setTransferenciaSucesso(true);
+      setTimeout(() => {
+        setTransferenciaSucesso(false);
+        setPedidoParaTransferir(null);
+      }, 1800);
 
-      setPedidoParaTransferir(null);
-      alert(`Romaneio transferido! O tempo acumulado foi preservado e o pedido estará disponível em ${novaDataTransferencia}.`);
     } catch (error) {
       console.error("Erro ao transferir:", error);
       alert("Erro ao transferir romaneio: " + error.message);
@@ -181,7 +202,6 @@ const handleConfirmarTransferencia = async () => {
       setIsTransferindo(false);
     }
   };
-  // ------------------------------------
 
   const [controlePausas, setControlePausas] = useState({});
   const [showModalIntervencao, setShowModalIntervencao] = useState(false);
@@ -197,9 +217,6 @@ const handleConfirmarTransferencia = async () => {
   const [ajustesDoDia, setAjustesDoDia] = useState([]);
   const [pedidoRecemCriado, setPedidoRecemCriado] = useState(null);
 
-  // ==========================================
-  // STATES PARA CONTROLE DE PEDIDOS E MODAIS
-  // ==========================================
   const [showModalPedido, setShowModalPedido] = useState(false);
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [isClosingModal, setIsClosingModal] = useState(false);
@@ -228,9 +245,6 @@ const handleConfirmarTransferencia = async () => {
   const [isEditingObs, setIsEditingObs] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // ==========================================
-  // CONTROLE DE CAIXAS (MODAL DE RESUMO)
-  // ==========================================
   const [showCaixasEfetivadasModal, setShowCaixasEfetivadasModal] = useState(null);
   const [edicaoCaixa, setEdicaoCaixa] = useState(null);
   const [formCaixa, setFormCaixa] = useState({ num: '', peso: '', produtos: [] });
@@ -318,9 +332,42 @@ const handleConfirmarTransferencia = async () => {
     return () => unsubAuth();
   }, []);
 
+  const veioDeTransicao = Boolean(location.state?.fromTransition);
+  const [overlayAtivo, setOverlayAtivo] = useState(veioDeTransicao);
+  const [overlaySaindo, setOverlaySaindo] = useState(false);
+  const [paginaVisivel, setPaginaVisivel] = useState(!veioDeTransicao);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+
+    if (veioDeTransicao) {
+      // 1. Inicia o fade-out do Overlay
+      const t1 = setTimeout(() => {
+        setOverlaySaindo(true);
+      }, 750);
+
+      // 2. Revela a página suavemente enquanto o overlay desaparece
+      const t2 = setTimeout(() => {
+        setPaginaVisivel(true);
+      }, 900);
+
+      // 3. Destrói o overlay da memória
+      const t3 = setTimeout(() => {
+        setOverlayAtivo(false);
+        window.history.replaceState({}, document.title);
+      }, 1400);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [veioDeTransicao]);
+
   const limiteExpediente = useMemo(() => {
     const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-    return new Date(ano, mes - 1, dia, 17, 30, 0).getTime();
+    return new Date(Number(ano), Number(mes) - 1, Number(dia), 17, 30, 0).getTime();
   }, [dataOperacaoAtiva]);
 
   const isExpedienteEncerrado = currentTime >= limiteExpediente;
@@ -401,8 +448,8 @@ const handleConfirmarTransferencia = async () => {
     setPedidosLegados([]);
 
     const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-    const startOfDay = new Date(ano, mes - 1, dia, 0, 0, 0);
-    const endOfDay = new Date(ano, mes - 1, dia, 23, 59, 59);
+    const startOfDay = new Date(Number(ano), Number(mes) - 1, Number(dia), 0, 0, 0);
+    const endOfDay = new Date(Number(ano), Number(mes) - 1, Number(dia), 23, 59, 59);
 
     const qNovo = query(collection(db, 'pedidos'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubNovo = onSnapshot(qNovo, (snap) => {
@@ -444,7 +491,6 @@ const handleConfirmarTransferencia = async () => {
 
   const pedidosEmAndamento = useMemo(() => pedidosProcessados.filter(p => !p.efetivado), [pedidosProcessados]);
 
-  // Filtro de busca na tabela (por romaneio, loja ou UF)
   const pedidosFiltrados = useMemo(() => {
     if (!buscaRomaneio.trim()) return pedidosProcessados;
     const termo = buscaRomaneio.toLowerCase();
@@ -529,7 +575,6 @@ const handleConfirmarTransferencia = async () => {
   }, [pedidosProcessados, rankingCalculado]);
 
   const equipeAtivaHoje = useMemo(() => {
-    // Se há equipe fixa configurada, prioriza exibir exatamente ela
     if (equipeFixaUids.length > 0) {
       return usuarios
         .filter(u => equipeFixaUids.includes(u.uid))
@@ -540,7 +585,6 @@ const handleConfirmarTransferencia = async () => {
         });
     }
 
-    // Fallback: caso nenhuma equipe fixa tenha sido marcada ainda
     const nomesAtivos = new Set();
     if (rankingCalculado) rankingCalculado.forEach(r => nomesAtivos.add(r.nome));
     if (controlePausas) Object.keys(controlePausas).forEach(n => nomesAtivos.add(n));
@@ -589,8 +633,6 @@ const handleConfirmarTransferencia = async () => {
       }
     }
   }, [location.search, pedidosProcessados, dataOperacaoAtiva]);
-
-
 
   // UPLOAD WMS COMUM COM PRÉVIA
   const handleUploadWMSComum = (e, dIdx) => {
@@ -813,8 +855,6 @@ const handleConfirmarTransferencia = async () => {
     reader.readAsText(file, 'ISO-8859-1');
   };
 
-
-
   // CONFIRMAR GRAVAÇÃO NO FIREBASE
   const handleConfirmarGravacaoWMS = async () => {
     if (!fluxoImportacao) return;
@@ -922,7 +962,6 @@ const handleConfirmarTransferencia = async () => {
     }
   };
 
-  // CONCLUIR FLUXO E ABRIR DETALHES DAS CAIXAS
   const handleConcluirFluxoWMS = () => {
     const { tipo, dIdx } = fluxoImportacao || {};
     setFluxoImportacao(null);
@@ -1127,11 +1166,9 @@ const handleConfirmarTransferencia = async () => {
         payload.createdAt = serverTimestamp();
         payload.efetivado = false;
 
-        // 1. Fecha o formulário e dispara a animação HUD
         handleCloseModalPedido();
         setPedidoRecemCriado({ romaneio: payload.romaneio, loja: payload.loja });
 
-        // 2. Grava no banco na reta final do efeito (2.1s)
         setTimeout(async () => {
           try {
             await setDoc(doc(collection(db, 'pedidos')), payload);
@@ -1140,7 +1177,6 @@ const handleConfirmarTransferencia = async () => {
           }
         }, 2100);
 
-        // 3. Desmonta o overlay ao finalizar
         setTimeout(() => {
           setPedidoRecemCriado(null);
         }, 2800);
@@ -1173,7 +1209,6 @@ const handleConfirmarTransferencia = async () => {
     } catch (error) { alert(`Falha ao sincronizar pausa: ${error.message}`); }
   };
 
-  // FUNÇÃO DE CONTROLE DE PAUSA DO ROMANEIO DIRETAMENTE PELA ADM
   const handleTogglePausaRomaneio = async (pedido) => {
     if (pedido.efetivado) return;
     try {
@@ -1181,7 +1216,6 @@ const handleConfirmarTransferencia = async () => {
       const agora = Date.now();
 
       if (pedido.isPaused) {
-        // Retomar Romaneio
         const lastStart = pedido.lastPauseStart || agora;
         const totalP = pedido.totalPausedTime || 0;
         const diffPausa = Math.max(0, agora - lastStart);
@@ -1194,7 +1228,6 @@ const handleConfirmarTransferencia = async () => {
           updatedAt: serverTimestamp()
         });
       } else {
-        // Pausar Romaneio
         await updateDoc(ref, {
           isPaused: true,
           lastPauseStart: agora,
@@ -1351,30 +1384,49 @@ const handleConfirmarTransferencia = async () => {
 
   return (
     <>
-      {/* NAVBAR GLOBAL COMPLETA */}
-      <NavbarOperacao 
-        user={localUser} 
-        isAdmin={true} 
-        dataOperacaoAtiva={dataOperacaoAtiva} 
-        buscaRomaneio={buscaRomaneio} 
-        setBuscaRomaneio={setBuscaRomaneio} 
-      />
+      <TransicaoAdmOverlay isVisible={overlayAtivo} isExiting={overlaySaindo} />
 
-      <div className="op-wrapper">
-        <main style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '25px', width: '100%', boxSizing: 'border-box' }}>
+      <div 
+        className="operacao-adm-container" 
+        style={{
+          opacity: paginaVisivel ? 1 : 0,
+          transform: paginaVisivel ? 'translateY(0)' : 'translateY(8px)',
+          transition: 'opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+          minHeight: '100vh',
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-start',
+          alignItems: 'center',
+          margin: 0,
+          padding: '0 0 40px 0',
+          boxSizing: 'border-box'
+        }}
+      >
+        <div style={{ width: '100%' }}>
+          <NavbarOperacao 
+            user={localUser} 
+            isAdmin={true} 
+            dataOperacaoAtiva={dataOperacaoAtiva} 
+            buscaRomaneio={buscaRomaneio} 
+            setBuscaRomaneio={setBuscaRomaneio} 
+          />
+        </div>
+
+        <div className="op-wrapper" style={{ width: '100%', maxWidth: '1500px', margin: '0 auto', padding: '0 15px', boxSizing: 'border-box' }}>
+          <main style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '25px', width: '100%', boxSizing: 'border-box' }}>
           
-          {/* BARRA DE AÇÕES DA LIDERANÇA */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
             <div>
               <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.4rem', fontWeight: 800 }}>Painel de Gestão da Liderança</h2>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Monitoramento de produtividade e controle de auditoria da equipe.</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Monitoramento de produtividade e controle da equipe.</span>
             </div>
 
             <button 
               onClick={() => setShowModalIntervencao(true)} 
               style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}
             >
-              <Settings size={18} /> Ajustes e Penalidades
+              <Settings size={18} /> Ajustes
             </button>
           </div>
 
@@ -1391,7 +1443,7 @@ const handleConfirmarTransferencia = async () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
-                  <Activity size={20} color="var(--primary)" /> Painel de Comando: Equipe ao Vivo
+                  <Activity size={20} color="var(--primary)" /> Atividades em Andamento
                 </h3>
                 {pedidosEmAndamento.length > 0 && (
                   <span style={{ background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1405,7 +1457,6 @@ const handleConfirmarTransferencia = async () => {
                 )}
               </div>
 
-              {/* BOTÃO PARA CONFIGURAR EQUIPE */}
               <button 
                 onClick={abrirModalEquipe}
                 style={{ 
@@ -1429,15 +1480,14 @@ const handleConfirmarTransferencia = async () => {
               </button>
             </div>
             
-            {/* GRID SIMÉTRICO: 3 COLUNAS EM TELAS NORMAIS / 6 EM TELAS ULTRA-LARGAS */}
-<div 
-  style={{ 
-    display: 'grid', 
-    gridTemplateColumns: 'repeat(auto-fit, minmax(max(31%, 280px), 1fr))', 
-    gap: '15px', 
-    width: '100%' 
-  }}
->
+            <div 
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(max(31%, 280px), 1fr))', 
+                gap: '15px', 
+                width: '100%' 
+              }}
+            >
               {equipeAtivaHoje.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '24px', width: '100%', background: 'var(--bg-card)', borderRadius: '12px', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
                   Nenhum conferente selecionado na equipe fixa. Clique em <strong>Definir Equipe</strong> acima.
@@ -1459,7 +1509,6 @@ const handleConfirmarTransferencia = async () => {
                      statusColor = '#f59e0b'; statusText = 'Em Pausa (Protegido)'; statusIcon = <Coffee size={14} />;
                      conteudoCentral = (<div style={{ padding: '15px 0', color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center' }}><ShieldCheck size={32} color="#f59e0b" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '700', color: 'var(--text-main)' }}>Ociosidade congelada.</div><div style={{ fontSize: '0.8rem' }}>Nenhum ponto será descontado.</div></div>);
                   } else if (pedidoAtivo) {
-                     // CASO O PEDIDO ESTEJA PAUSADO NA TABELA
                      if (pedidoAtivo.isPaused) {
                        statusColor = '#6366f1'; statusText = 'Romaneio Pausado'; statusIcon = <Pause size={14} />;
                        conteudoCentral = (
@@ -1484,7 +1533,7 @@ const handleConfirmarTransferencia = async () => {
                      }
                   } else {
                      const limiteOciosidadeMs = 20 * 60 * 1000; const tolerenciaExcedida = tempoOciosoMs > limiteOciosidadeMs;
-                     statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; statusText = tolerenciaExcedida ? 'Ocioso (Sangrando)' : 'Livre (Na tolerância)'; statusIcon = tolerenciaExcedida ? <AlertTriangle size={14} /> : <Clock size={14} />;
+                     statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; statusText = tolerenciaExcedida ? 'Ocioso' : 'Livre'; statusIcon = tolerenciaExcedida ? <AlertTriangle size={14} /> : <Clock size={14} />;
                      conteudoCentral = (
                        <div style={{ padding: '15px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', flex: 1, justifyContent: 'center' }}>
                           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Tempo inativo após última tarefa:</span>
@@ -1542,7 +1591,6 @@ const handleConfirmarTransferencia = async () => {
                           transition: 'all 0.2s ease', 
                           marginTop: '6px',
                           fontFamily: 'inherit',
-                          /* Cores 100% dinâmicas vinculadas às variáveis do tema ativo */
                           background: isPaused 
                             ? 'var(--bg-input, rgba(255, 255, 255, 0.08))' 
                             : 'var(--primary, #3b82f6)',
@@ -1595,25 +1643,20 @@ const handleConfirmarTransferencia = async () => {
             </div>
           </section>
 
-          {/* ==========================================
-              TABELA DE ROMANEIOS (IDÊNTICA À OPERACAO.JSX COM TODOS OS PEDIDOS)
-              ========================================== */}
+          {/* TABELA DE ROMANEIOS */}
           <section className="op-history-section">
-            
-            {/* CABEÇALHO DA TABELA */}
             <div className="history-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="history-title-area">
                 <div className="history-icon-badge">
                   <Layers size={22} />
                 </div>
                 <div>
-                  <h3>Romaneios Processados</h3>
+                  <h3>Romaneios Conferidos</h3>
                   <span className="history-subtitle">Lista de pedidos da operação geral</span>
                 </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {/* BARRA DE PESQUISA EXPANSÍVEL */}
                 <div 
                   style={{ 
                     display: 'flex', 
@@ -1693,7 +1736,6 @@ const handleConfirmarTransferencia = async () => {
                   )}
                 </div>
 
-                {/* BOTÃO NOVO PEDIDO */}
                 <button 
                   onClick={abrirModalNovoPedido}
                   style={{ 
@@ -1713,44 +1755,32 @@ const handleConfirmarTransferencia = async () => {
                     fontFamily: 'inherit',
                     flexShrink: 0
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 6px 14px rgba(13, 50, 105, 0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(13, 50, 105, 0.2)';
-                  }}
                 >
                   <Plus size={16} /> Novo Pedido
                 </button>
               </div>
             </div>
             
-            {/* CONTAINER DA TABELA COM ALTURA MÍNIMA E RESPIRO */}
-<div 
-  className="op-table-wrapper scrollable-table-wrapper" 
-  style={{ minHeight: '380px', paddingBottom: '90px' }}
->
-  <table className="op-table">
+            <div className="op-table-wrapper scrollable-table-wrapper" style={{ minHeight: '380px', paddingBottom: '90px' }}>
+              <table className="op-table">
                 <thead>
                   <tr>
                     <th style={{ width: '18%' }}>Romaneio & Status</th>
                     <th style={{ width: '27%' }}>Destino / Local</th>
                     <th style={{ width: '22%' }}>Observações</th>
-                    <th style={{ width: '23%' }}>Documentos & Carga</th>
+                    <th style={{ width: '23%' }}>Documentos & Caixas</th>
                     <th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pedidosFiltrados.length === 0 ? (
-  <tr>
-    <td colSpan="5" className="empty-table-row" style={{ height: '280px', verticalAlign: 'middle' }}>
-      <SearchX size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
-      <p>{buscaRomaneio ? `Nenhum romaneio correspondente a "${buscaRomaneio}"` : 'Nenhum pedido processado nesta data.'}</p>
-    </td>
-  </tr>
-) : (
+                    <tr>
+                      <td colSpan="5" className="empty-table-row" style={{ height: '280px', verticalAlign: 'middle' }}>
+                        <SearchX size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                        <p>{buscaRomaneio ? `Nenhum romaneio correspondente a "${buscaRomaneio}"` : 'Nenhum pedido processado nesta data.'}</p>
+                      </td>
+                    </tr>
+                  ) : (
                     pedidosFiltrados.map(pedido => {
                       let caixasCount = 0; 
                       let skusCount = 0;
@@ -1797,7 +1827,6 @@ const handleConfirmarTransferencia = async () => {
                           onClick={() => abrirModalDetalhes(pedido)}
                           title="Clique para ver Detalhes"
                         >
-                          {/* 1. ROMANEIO E BADGE */}
                           <td>
                             <div className="table-romaneio-cell">
                               <div className="romaneio-title-wrap">
@@ -1808,7 +1837,6 @@ const handleConfirmarTransferencia = async () => {
                             </div>
                           </td>
                           
-                          {/* 2. DESTINO, UF & RESPONSÁVEIS */}
                           <td>
                             <div className="table-store-name">{pedido.loja || 'Destino não especificado'}</div>
                             <div className="table-location-sub">
@@ -1820,14 +1848,12 @@ const handleConfirmarTransferencia = async () => {
                             </div>
                           </td>
 
-                          {/* 3. OBSERVAÇÕES */}
                           <td>
                             <div className="table-obs-text">
                               {pedido.observacoes ? pedido.observacoes : <span className="obs-empty">Sem observações...</span>}
                             </div>
                           </td>
                           
-                          {/* 4. DOCUMENTOS E VOLUMES */}
                           <td>
                             <div className="table-docs-container">
                               <div className="doc-pills-row">
@@ -1852,7 +1878,6 @@ const handleConfirmarTransferencia = async () => {
                             </div>
                           </td>
 
-                          {/* 5. AÇÕES */}
                           <td className="actions-cell">
                             <div onClick={(e) => e.stopPropagation()} className="action-buttons-wrap">
                               <button className="action-btn btn-caixas" title="Painel do Romaneio" onClick={() => abrirModalDetalhes(pedido)}>
@@ -1870,19 +1895,29 @@ const handleConfirmarTransferencia = async () => {
                                       <Edit size={14}/> Editar Dados
                                     </button>
                                     
-                                    {/* OPÇÃO DE PAUSAR/RETOMAR O CRONÔMETRO DIRETAMENTE */}
                                     {!pedido.efetivado && (
                                       <button className="dropdown-item" onClick={() => handleTogglePausaRomaneio(pedido)}>
                                         {pedido.isPaused ? <><PlayCircle size={14}/> Retomar Separação</> : <><PauseCircle size={14}/> Pausar Separação</>}
                                       </button>
                                     )}
                                     
-{/* ---> ADICIONE A OPÇÃO DE TRANSFERÊNCIA AQUI <--- */}
                                     <div className="dropdown-divider"></div>
                                     <button className="dropdown-item" onClick={() => handleAbrirTransferencia(pedido)} style={{ color: 'var(--text-highlight, #38bdf8)' }}>
                                       <CalendarDays size={14}/> Transferir para outro dia
                                     </button>
-                                    {/* ----------------------------------------------- */}
+
+                                    {/* OPÇÃO DE IMPRESSÃO DE ETIQUETA */}
+                                    <button 
+                                      className="dropdown-item" 
+                                      onClick={() => {
+                                        setPedidoParaEtiqueta(pedido);
+                                        setDropdownOpen(null);
+                                      }}
+                                      style={{ color: '#f59e0b' }}
+                                    >
+                                      <Tag size={14}/> Imprimir Etiqueta (90x40)
+                                    </button>
+                                    <div className="dropdown-divider"></div>
 
                                     <div className="dropdown-divider"></div>
                                     <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
@@ -1943,7 +1978,9 @@ const handleConfirmarTransferencia = async () => {
 
           </div>
         </section>
-      </div>
+      </div> {/* <-- Fecha op-wrapper */}
+
+      </div> {/* ✅ FECHA operacao-adm-container AQUI ANTES DOS MODAIS! */}
 
       {showModalIntervencao && (
         <div 
@@ -1991,7 +2028,7 @@ const handleConfirmarTransferencia = async () => {
                 fontWeight: 800,
                 letterSpacing: '-0.3px'
               }}>
-                <Settings size={20} color="var(--primary, #3b82f6)" /> Lançamento de Ajustes e Penalidades
+                <Settings size={20} color="var(--primary, #3b82f6)" /> Lançamento de Ajustes 
               </h3>
               
               <button 
@@ -2023,7 +2060,7 @@ const handleConfirmarTransferencia = async () => {
         </div>
       )}
 
-      {/* MODAL: CRIAR / EDITAR PEDIDO */}
+      {/* MODAIS */}
       <ModalCriarEditarPedido
         showModal={showModalPedido} isClosingModal={isClosingModal} handleCloseModal={handleCloseModalPedido} isSaving={isSaving} editingId={editingId}
         romaneio={romaneio} setRomaneio={setRomaneio} loja={loja} setLoja={setLoja} local={local} setLocal={setLocal} uf={uf} setUf={setUf}
@@ -2034,7 +2071,6 @@ const handleConfirmarTransferencia = async () => {
         handleRemoveResponsavelFromDoc={(id, email) => setDocsTemporarios(docsTemporarios.map(d => d.idTemp === id ? {...d, responsaveis: d.responsaveis.filter(r => r !== email)} : d))}
       />
 
-      {/* MODAL PRINCIPAL: PAINEL DO ROMANEIO (DETALHES + WMS) */}
       <ModalDetalhesPedido 
         showDetalhesModal={showDetalhesModal} setShowDetalhesModal={setShowDetalhesModal} pedidoModal={pedidoModal} isSaving={isSaving} isUploading={isUploading}
         activeTab={activeTab} setActiveTab={setActiveTab} wmsSessions={wmsSessions} setWmsSessions={setWmsSessions} buscasDocumentos={buscasDocumentos}
@@ -2053,7 +2089,6 @@ const handleConfirmarTransferencia = async () => {
         handleSalvarEdicaoTab1={() => alert('Edições pela ADM salvas!')}
       />
 
-      {/* MODAL DE RESUMO E EDIÇÃO DE CAIXAS */}
       <ModalCaixasEfetivadas 
         showCaixasEfetivadasModal={showCaixasEfetivadasModal}
         setShowCaixasEfetivadasModal={setShowCaixasEfetivadasModal}
@@ -2069,7 +2104,6 @@ const handleConfirmarTransferencia = async () => {
         excluirCaixaManual={excluirCaixaManual}
       />
 
-      {/* AUDITORIA WMS */}
       <AuditoriaWms 
         auditModalData={auditModalData}
         setAuditModalData={setAuditModalData}
@@ -2079,19 +2113,16 @@ const handleConfirmarTransferencia = async () => {
         isSaving={isSaving}
       />
 
-      {/* MODAL: ALERTA DE PESO ZERO */}
       <ModalAlertaPeso 
         alertaPesoZero={alertaPesoZero}
         handleResolvePesoZero={handleResolvePesoZero}
       />
 
-      {/* MODAL: SUCESSO ANIMADO */}
       <ModalSucesso 
         modalSucesso={modalSucesso}
         setModalSucesso={setModalSucesso}
       />
 
-      {/* MODAL DE ORDEM DE PRODUÇÃO */}
       <ModalOrdemProducao 
         showOpModal={showOpModal}
         setShowOpModal={setShowOpModal}
@@ -2101,7 +2132,6 @@ const handleConfirmarTransferencia = async () => {
         dataOperacaoAtiva={dataOperacaoAtiva}
       />
 
-      {/* MODAL: DICIONÁRIO DE CAIXAS MASTER */}
       <ModalCaixasMaster 
         showMasterModal={showMasterModal}
         setShowMasterModal={setShowMasterModal}
@@ -2118,11 +2148,11 @@ const handleConfirmarTransferencia = async () => {
         isExcluindo={isExcluindoPedido}
       />
 
-   <ModalConfirmarExclusao 
-        pedidoParaExcluir={pedidoParaExcluir}
-        onConfirmar={handleConfirmarExclusaoDefinitiva}
-        onCancelar={() => setPedidoParaExcluir(null)}
-        isExcluindo={isExcluindoPedido}
+      {/* MODAL DE IMPRESSÃO DE ETIQUETA TÉRMICA */}
+      <ModalImprimirEtiqueta 
+        pedido={pedidoParaEtiqueta} 
+        isOpen={Boolean(pedidoParaEtiqueta)} 
+        onClose={() => setPedidoParaEtiqueta(null)} 
       />
 
       {/* MODAL DE SELEÇÃO DA EQUIPE FIXA */}
@@ -2229,137 +2259,132 @@ const handleConfirmarTransferencia = async () => {
         </div>
       )}
 
-      {/* ---> ADICIONE O MODAL DE TRANSFERÊNCIA AQUI <--- */}
-      {/* MODAL DE TRANSFERÊNCIA DE ROMANEIO COM TIPOGRAFIA CORRIGIDA */}
+      {/* MODAL DE TRANSFERÊNCIA DE DIA */}
       {pedidoParaTransferir && (
         <div 
           style={{ 
             position: 'fixed', 
             inset: 0, 
-            backgroundColor: 'rgba(5, 5, 10, 0.75)', 
-            zIndex: 99999, 
+            backgroundColor: 'rgba(5, 5, 10, 0.78)', 
+            zIndex: 999999, 
             display: 'flex', 
             justifyContent: 'center', 
             alignItems: 'center', 
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
+            backdropFilter: 'blur(8px)', 
+            padding: '20px',
             fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
           }} 
-          onClick={() => !isTransferindo && setPedidoParaTransferir(null)}
+          onClick={() => !isTransferindo && !transferenciaSucesso && setPedidoParaTransferir(null)}
         >
           <div 
             style={{ 
               background: 'var(--bg-card, #1e293b)', 
-              width: '95%', 
-              maxWidth: '420px', 
+              width: '100%', 
+              maxWidth: '440px', 
               borderRadius: '16px', 
-              overflow: 'hidden', 
               border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
-              padding: '26px', 
+              padding: '24px', 
               boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)',
+              position: 'relative',
               fontFamily: 'inherit'
             }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '18px' }}>
-              <div style={{ 
-                background: 'rgba(56, 189, 248, 0.12)', 
-                width: '46px',
-                height: '46px',
-                borderRadius: '12px', 
-                color: 'var(--text-highlight, #38bdf8)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <CalendarDays size={24} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontSize: '1.2rem', fontWeight: 800, letterSpacing: '-0.3px' }}>
-                  Transferir Romaneio
+            {transferenciaSucesso ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 0', textAlign: 'center', fontFamily: 'inherit' }}>
+                <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+                  <CheckCircle2 size={32} color="#10b981" />
+                </div>
+                <h3 style={{ margin: '0 0 6px 0', color: 'var(--text-main, #f8fafc)', fontSize: '1.2rem', fontWeight: 800 }}>
+                  Transferência Concluída!
                 </h3>
-                <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.84rem', fontWeight: 500 }}>
-                  Mover para outra data de operação
-                </span>
+                <p style={{ margin: 0, color: 'var(--text-muted, #94a3b8)', fontSize: '0.88rem' }}>
+                  Romaneio <strong>{pedidoParaTransferir.romaneio}</strong> transferido para o dia <strong>{novaDataTransferencia}</strong> preservando o tempo decorrido.
+                </p>
               </div>
-            </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ background: 'rgba(59, 130, 246, 0.15)', padding: '8px', borderRadius: '10px', color: '#3b82f6' }}>
+                      <CalendarDays size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontSize: '1.15rem', fontWeight: 800 }}>Transferir Romaneio</h3>
+                      <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.82rem' }}>Mover separação para outro dia mantendo o progresso</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setPedidoParaTransferir(null)}
+                    disabled={isTransferindo}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-            <div style={{ marginBottom: '22px' }}>
-              <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted, #94a3b8)', fontSize: '0.88rem', lineHeight: 1.5 }}>
-                O romaneio <strong style={{ color: 'var(--text-main, #f8fafc)', fontWeight: 700 }}>{pedidoParaTransferir.romaneio}</strong> será movido. Selecione a nova data de execução:
-              </p>
-              <input 
-                type="date" 
-                value={novaDataTransferencia}
-                onChange={(e) => setNovaDataTransferencia(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '12px 14px', 
-                  borderRadius: '10px', 
-                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))', 
-                  background: 'var(--bg-input, rgba(0, 0, 0, 0.25))', 
-                  color: 'var(--text-main, #f8fafc)', 
-                  fontSize: '0.95rem', 
-                  outline: 'none', 
-                  colorScheme: 'dark', 
-                  fontFamily: 'inherit',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+                <div style={{ background: 'var(--bg-input, rgba(255, 255, 255, 0.03))', border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Romaneio Selecionado:</div>
+                  <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '1.05rem' }}>{pedidoParaTransferir.romaneio || 'Sem número'}</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 600 }}>
+                    {
+                      pedidoParaTransferir.cliente || 
+                      pedidoParaTransferir.loja || 
+                      pedidoParaTransferir.destinatario || 
+                      pedidoParaTransferir.razaoSocial || 
+                      (pedidoParaTransferir.documentos && pedidoParaTransferir.documentos[0]?.cliente) ||
+                      (pedidoParaTransferir.documentos && pedidoParaTransferir.documentos[0]?.destinatario) ||
+                      'Cliente não informado'
+                    }
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button 
-                onClick={() => setPedidoParaTransferir(null)} 
-                disabled={isTransferindo}
-                style={{ 
-                  flex: 1, 
-                  padding: '11px 16px', 
-                  background: 'var(--bg-input, rgba(255, 255, 255, 0.05))', 
-                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
-                  color: 'var(--text-muted, #94a3b8)', 
-                  borderRadius: '10px', 
-                  fontWeight: 700, 
-                  fontSize: '0.88rem',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={handleConfirmarTransferencia} 
-                disabled={isTransferindo}
-                style={{ 
-                  flex: 1.4, 
-                  padding: '11px 18px', 
-                  background: 'var(--primary, #3b82f6)', 
-                  color: '#fff', 
-                  border: 'none', 
-                  borderRadius: '10px', 
-                  fontWeight: 700, 
-                  fontSize: '0.88rem',
-                  cursor: isTransferindo ? 'not-allowed' : 'pointer', 
-                  display: 'flex', 
-                  justifyContent: 'center', 
-                  alignItems: 'center', 
-                  gap: '8px',
-                  fontFamily: 'inherit',
-                  boxShadow: '0 4px 14px rgba(59, 130, 246, 0.3)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {isTransferindo ? <Loader2 size={16} className="fa-spin"/> : <ArrowRight size={16}/>}
-                <span>Transferir</span>
-              </button>
-            </div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
+                    Nova Data da Operação:
+                  </label>
+                  <input 
+                    type="date"
+                    value={novaDataTransferencia}
+                    onChange={(e) => setNovaDataTransferencia(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '10px 12px', 
+                      borderRadius: '8px', 
+                      background: 'var(--bg-input, #0f172a)', 
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))', 
+                      color: 'var(--text-main, #fff)', 
+                      fontFamily: 'inherit',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button 
+                    onClick={() => setPedidoParaTransferir(null)}
+                    disabled={isTransferindo}
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleConfirmarTransferencia}
+                    disabled={isTransferindo || !novaDataTransferencia}
+                    style={{ flex: 1.4, padding: '10px', borderRadius: '8px', background: '#3b82f6', border: 'none', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}
+                  >
+                    {isTransferindo ? <Loader2 size={16} className="fa-spin" /> : <ArrowRight size={16} />}
+                    Confirmar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
-      {/* ------------------------------------------------ */}
 
-    </>
+  </>
   );
 }

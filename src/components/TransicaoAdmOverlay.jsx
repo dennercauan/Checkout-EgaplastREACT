@@ -1,8 +1,8 @@
-// src/components/TransicaoDashboardOverlay.jsx
+// src/components/TransicaoAdmOverlay.jsx
 import React from 'react';
-import { LayoutDashboard } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
-export default function TransicaoDashboardOverlay({ isVisible, isExiting }) {
+export default function TransicaoAdmOverlay({ isVisible, isExiting }) {
   if (!isVisible) return null;
 
   return (
@@ -11,15 +11,15 @@ export default function TransicaoDashboardOverlay({ isVisible, isExiting }) {
         position: 'fixed',
         inset: 0,
         zIndex: 9999999,
-        background: 'var(--bg-main, #0f172a)',
+        background: 'var(--bg-main, #09090b)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        transition: isExiting ? 'opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
-        transition: 'opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        opacity: isExiting ? 0 : 1,
+        transition: 'opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
         pointerEvents: 'all',
         fontFamily: "'Inter', sans-serif"
       }}
@@ -29,12 +29,12 @@ export default function TransicaoDashboardOverlay({ isVisible, isExiting }) {
         <div style={{
           position: 'absolute',
           inset: 0,
-          border: '3px solid var(--text-highlight, #38bdf8)',
+          border: '3px solid #3b82f6',
           borderRadius: '50%',
           borderTopColor: 'transparent',
           animation: 'spin 0.8s linear infinite'
         }} />
-        <LayoutDashboard size={28} color="var(--text-highlight, #38bdf8)" style={{ position: 'absolute', inset: '21px' }} />
+        <ShieldCheck size={28} color="#3b82f6" style={{ position: 'absolute', inset: '21px' }} />
       </div>
 
       <h3 style={{
@@ -44,7 +44,7 @@ export default function TransicaoDashboardOverlay({ isVisible, isExiting }) {
         color: 'var(--text-main, #ffffff)',
         letterSpacing: '-0.3px'
       }}>
-        Carregando Dashboard...
+        Carregando Gestão da Operação...
       </h3>
       <p style={{
         margin: 0,
@@ -52,14 +52,14 @@ export default function TransicaoDashboardOverlay({ isVisible, isExiting }) {
         color: 'var(--text-muted, #94a3b8)',
         fontWeight: 500
       }}>
-        Sincronizando indicadores, gráficos de faturamento e ranking geral.
+        Sincronizando painel, ranking de produtividade e conferências.
       </p>
 
       <div style={{ width: '220px', height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden', marginTop: '24px' }}>
         <div style={{
           height: '100%',
           width: '100%',
-          background: 'linear-gradient(90deg, var(--text-highlight, #38bdf8), #6366f1)',
+          background: 'linear-gradient(90deg, #3b82f6, #6366f1)',
           animation: 'progressPulse 1.1s ease-in-out infinite'
         }} />
       </div>

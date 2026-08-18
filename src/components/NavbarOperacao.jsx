@@ -516,7 +516,7 @@ export default function NavbarOperacao({
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#64748b', marginBottom: '6px' }}>Como quer ser chamado?</label>
-                <input type="text" value={formProfile.nickname} onChange={e => setFormProfile({...formProfile, nickname: e.target.value})} placeholder="Ex: João Silva" style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                <input type="text" value={formProfile.nickname} onChange={e => setFormProfile({...formProfile, nickname: e.target.value})} placeholder="Ex: João" style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
               </div>
 
               <div>
@@ -524,15 +524,15 @@ export default function NavbarOperacao({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                   <div onClick={() => setFormProfile({...formProfile, theme: 'light'})} style={{ border: `2px solid ${formProfile.theme === 'light' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', background: formProfile.theme === 'light' ? '#f0f9ff' : '#fff' }}>
                     <div style={{ width: '100%', height: '36px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '4px', marginBottom: '6px' }}></div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Claro</span>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Claro (Padrão)</span>
                   </div>
                   <div onClick={() => setFormProfile({...formProfile, theme: 'dark-blue'})} style={{ border: `2px solid ${formProfile.theme === 'dark-blue' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', background: formProfile.theme === 'dark-blue' ? '#eff6ff' : '#fff' }}>
                     <div style={{ width: '100%', height: '36px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '4px', marginBottom: '6px' }}></div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Navy</span>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Azul Escuro</span>
                   </div>
                   <div onClick={() => setFormProfile({...formProfile, theme: 'dark'})} style={{ border: `2px solid ${formProfile.theme === 'dark' ? 'var(--primary)' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px', cursor: 'pointer', textAlign: 'center', background: formProfile.theme === 'dark' ? '#f8fafc' : '#fff' }}>
                     <div style={{ width: '100%', height: '36px', background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', marginBottom: '6px' }}></div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Escuro</span>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Modo Escuro</span>
                   </div>
                 </div>
               </div>

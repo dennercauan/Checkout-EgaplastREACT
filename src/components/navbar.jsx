@@ -362,7 +362,7 @@ export default function Navbar({ user, isAdmin }) {
             <input 
               type="text" 
               className="search-expandable" 
-              placeholder="Buscar Romaneio ou O.P..." 
+              placeholder="Buscar Romaneio" 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               disabled={isSearching}
@@ -504,7 +504,7 @@ export default function Navbar({ user, isAdmin }) {
                   type="text" 
                   value={formProfile.nickname} 
                   onChange={e => setFormProfile({...formProfile, nickname: e.target.value})}
-                  placeholder="Ex: João Silva"
+                  placeholder="Ex: João"
                   style={{ width: '100%', padding: '12px', background: 'var(--bg-input, #fff)', color: 'var(--text-main, #0f172a)', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '8px', fontSize: '1rem', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>

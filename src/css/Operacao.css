@@ -177,21 +177,25 @@ body {
 }
 
 /* ==========================================
-   4. ÁREA DE TRABALHO (GRID PRINCIPAL)
+   4. ÁREA DE TRABALHO (GRID PRINCIPAL COM ALTURA MÍNIMA FIXA)
    ========================================== */
 .op-main-content {
   display: grid;
   grid-template-columns: 340px 1fr;
   gap: 24px;
   align-items: stretch;
+  min-height: 520px; /* Garante que a linha inteira mantenha a altura */
 }
 
 @media (max-width: 1024px) {
-  .op-main-content { grid-template-columns: 1fr; }
+  .op-main-content { 
+    grid-template-columns: 1fr; 
+    min-height: auto;
+  }
 }
 
 /* ==========================================
-   5. LADO ESQUERDO: TRACKER & CARD DE STATUS (HERO HUD DINÂMICO)
+   5. LADO ESQUERDO: TRACKER & CARD DE STATUS
    ========================================== */
 .op-live-section {
   display: flex;
@@ -202,6 +206,7 @@ body {
 
 .live-tracker-card {
   flex: 1;
+  min-height: 400px; /* Fixa a altura do card mesmo quando estiver vazio */
   border-radius: 24px;
   padding: 24px;
   position: relative;
@@ -213,7 +218,7 @@ body {
   box-sizing: border-box;
 }
 
-/* --- ESTADO 1: ATIVO / EM SEPARAÇÃO (ADAPTAÇÃO GLOBAL POR TEMA) --- */
+/* --- ESTADO 1: ATIVO / EM SEPARAÇÃO --- */
 .live-tracker-card.active {
   background: var(--bg-card, #ffffff) !important;
   border: 1px solid var(--border-color, rgba(226, 232, 240, 0.9)) !important;
@@ -243,7 +248,7 @@ body {
 }
 
 .live-tracker-card.active .live-extra-info {
-  background: rgba(0, 0, 0, 0.2) !important;
+  background: var(--bg-input, rgba(0, 0, 0, 0.04)) !important;
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
 }
 
@@ -252,9 +257,9 @@ body {
 }
 
 .live-tracker-card.active .live-timer {
-  background: rgba(0, 0, 0, 0.25) !important;
+  background: var(--bg-input, rgba(0, 0, 0, 0.04)) !important;
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 .live-tracker-card.active .timer-display {
@@ -274,7 +279,7 @@ body {
   color: var(--text-main, #ffffff) !important;
 }
 
-/* Refino para Tema Claro */
+/* Tema Claro: Refino Ativo */
 :root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.active {
   background: #ffffff !important;
   border-color: #e2e8f0 !important;
@@ -299,17 +304,17 @@ body {
   color: #0f172a !important;
 }
 
-/* --- ESTADO 2: PAUSADO --- */
+/* --- ESTADO 2: PAUSADO (ALTO CONTRASTE TEMA CLARO & ESCURO) --- */
 .live-tracker-card.paused {
-  background: linear-gradient(165deg, rgba(245, 158, 11, 0.12) 0%, var(--bg-card) 100%) !important;
+  background: var(--bg-card, #ffffff) !important;
   border: 1px solid rgba(245, 158, 11, 0.35) !important;
   border-top: 5px solid #f59e0b !important;
-  box-shadow: 0 20px 40px -12px rgba(245, 158, 11, 0.25) !important;
+  box-shadow: 0 20px 40px -12px rgba(245, 158, 11, 0.2) !important;
 }
 
 .live-tracker-card.paused .live-badge {
-  background: rgba(245, 158, 11, 0.2) !important;
-  color: #fbbf24 !important;
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b !important;
   border: 1px solid rgba(245, 158, 11, 0.4) !important;
 }
 
@@ -319,46 +324,111 @@ body {
 }
 
 .live-tracker-card.paused .live-romaneio {
-  color: #fef08a !important;
+  color: var(--text-main, #f8fafc) !important;
 }
 
 .live-tracker-card.paused .live-loja {
-  color: #fde68a !important;
-  opacity: 0.85;
+  color: var(--text-muted, #94a3b8) !important;
 }
 
+/* Container de Localização e Documentos */
 .live-tracker-card.paused .live-extra-info {
-  background: rgba(0, 0, 0, 0.25) !important;
-  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+  background: var(--bg-input, rgba(255, 255, 255, 0.05)) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12)) !important;
 }
 
+.live-tracker-card.paused .live-location {
+  color: var(--text-main, #f8fafc) !important;
+}
+
+.live-tracker-card.paused .live-location svg {
+  color: #38bdf8 !important;
+}
+
+/* Box do Motivo da Pausa */
 .live-tracker-card.paused .pause-reason-box {
-  background: rgba(245, 158, 11, 0.15) !important;
-  border: 1px solid rgba(245, 158, 11, 0.35) !important;
-  color: #fef08a !important;
+  background: rgba(245, 158, 11, 0.12) !important;
+  border: 1px dashed rgba(245, 158, 11, 0.45) !important;
+  color: #fbbf24 !important;
   font-weight: 700;
 }
 
+/* Box do Cronômetro Travado */
 .live-tracker-card.paused .live-timer {
-  background: rgba(0, 0, 0, 0.25) !important;
-  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+  background: var(--bg-input, rgba(255, 255, 255, 0.04)) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12)) !important;
 }
 
 .live-tracker-card.paused .timer-display {
-  color: #fde68a !important;
+  color: #fbbf24 !important;
 }
 
 .live-tracker-card.paused .timer-icon {
   color: #f59e0b !important;
 }
 
+/* Métricas Inferiores (SKUs / Caixas) */
 .live-tracker-card.paused .live-stats {
-  border-top: 1px solid rgba(245, 158, 11, 0.25) !important;
-  color: #fde68a !important;
+  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1)) !important;
+  color: var(--text-muted, #94a3b8) !important;
 }
 
 .live-tracker-card.paused .live-stats strong {
-  color: #fef08a !important;
+  color: var(--text-main, #f8fafc) !important;
+}
+
+/* ----------------------------------------------------
+   OVERRIDES EXCLUSIVOS PARA TEMA CLARO (LIGHT THEME)
+   ---------------------------------------------------- */
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused {
+  background: #ffffff !important;
+  border-color: #fde68a !important;
+  border-top-color: #f59e0b !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-romaneio {
+  color: #0f172a !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-loja {
+  color: #64748b !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-extra-info {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-location {
+  color: #1e293b !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-location svg {
+  color: #0284c7 !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .pause-reason-box {
+  background: #fffbeb !important;
+  border-color: #fcd34d !important;
+  color: #b45309 !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-timer {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .timer-display {
+  color: #d97706 !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-stats {
+  border-top-color: #e2e8f0 !important;
+  color: #64748b !important;
+}
+
+:root:not([data-theme="dark"]):not([data-theme="dark-blue"]) .live-tracker-card.paused .live-stats strong {
+  color: #0f172a !important;
 }
 
 /* --- ESTADO 3: OCIOSO (IDLE) --- */
@@ -411,22 +481,31 @@ body {
   color: #e0e7ff !important;
 }
 
-/* --- ESTADO 4: VAZIO --- */
+/* --- ESTADO 4: VAZIO ("TUDO LIMPO!") --- */
 .live-tracker-card.empty {
   background: var(--bg-card) !important;
   border: 2px dashed var(--border-color) !important;
   box-shadow: none !important;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
+  padding: 30px 20px;
 }
 
 .live-tracker-card.empty h3 {
   color: var(--text-main) !important;
+  margin: 0 0 6px 0;
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 .live-tracker-card.empty p {
   color: var(--text-muted) !important;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 /* --- COMPONENTES DO TRACKER --- */
@@ -587,18 +666,18 @@ body {
 .btn-live-pause {
   flex: 1;
   background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  color: #d97706;
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
 .btn-live-pause:hover { background: rgba(245, 158, 11, 0.25); transform: translateY(-2px); }
 
 .btn-live-caixas {
   flex: 1;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-input, rgba(255, 255, 255, 0.06));
   color: var(--text-main, #ffffff);
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
 }
-.btn-live-caixas:hover { background: rgba(255, 255, 255, 0.12); transform: translateY(-2px); }
+.btn-live-caixas:hover { background: var(--hover-bg, rgba(255, 255, 255, 0.12)); transform: translateY(-2px); }
 
 .btn-live-finish {
   flex: 1.2;
@@ -629,7 +708,18 @@ body {
 /* ==========================================
    7. LADO DIREITO: TABELA DE ROMANEIOS
    ========================================== */
-.op-history-section { background: var(--bg-card, #ffffff) !important; border: 1px solid var(--border-color, rgba(226, 232, 240, 0.8)) !important; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04); animation: slide-up 0.5s ease-out 0.2s backwards; display: flex; flex-direction: column; }
+.op-history-section {
+  background: var(--bg-card, #ffffff) !important;
+  border: 1px solid var(--border-color, rgba(226, 232, 240, 0.8)) !important;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+  animation: slide-up 0.5s ease-out 0.2s backwards;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
 .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 16px; flex-wrap: wrap; }
 .history-title-area { display: flex; align-items: center; gap: 14px; }
 .history-icon-badge {
@@ -654,8 +744,17 @@ body {
 .history-title-area h3 { margin: 0; font-size: 1.25rem; font-weight: 800; color: var(--text-main, #0f172a) !important; letter-spacing: -0.4px; }
 .history-subtitle { font-size: 0.82rem; color: var(--text-muted, #64748b) !important; font-weight: 500; }
 
-.op-table-wrapper { overflow-x: auto; flex: 1; }
-.scrollable-table-wrapper { max-height: 480px; overflow-y: auto; }
+.op-table-wrapper {
+  overflow-x: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.scrollable-table-wrapper {
+  min-height: 380px; /* Garante que o corpo da tabela nunca encolha */
+  max-height: 480px;
+  overflow-y: auto;
+}
 .scrollable-table-wrapper thead th { position: sticky; top: 0; z-index: 10; background: var(--bg-card, #ffffff); padding: 10px 14px; font-size: 0.74rem; text-transform: uppercase; color: var(--text-muted, #64748b) !important; font-weight: 700; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color, #e2e8f0) !important; }
 
 .op-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
@@ -676,7 +775,7 @@ body {
 
 .time-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; }
 .time-badge.running { background: rgba(148, 163, 184, 0.12); color: var(--text-muted, #94a3b8); border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25)); }
-.time-badge.paused { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.time-badge.paused { background: rgba(245, 158, 11, 0.12); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.3); }
 .time-badge.success { background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 
 .table-store-name { font-weight: 700; color: var(--text-main, #1e293b) !important; font-size: 0.92rem; line-height: 1.3; }
@@ -691,7 +790,13 @@ body {
 .volume-metrics-row strong { color: var(--text-main, #0f172a) !important; }
 .metric-dot { opacity: 0.4; }
 .action-buttons-wrap { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.empty-table-row { text-align: center; padding: 40px !important; color: var(--text-muted, #94a3b8) !important; font-size: 0.9rem; }
+.empty-table-row {
+  text-align: center;
+  padding: 80px 20px !important;
+  color: var(--text-muted, #94a3b8) !important;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
 
 .actions-cell { text-align: center; }
 .action-btn { width: 34px; height: 34px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; background: var(--btn-action-bg, rgba(0, 0, 0, 0.03)); color: var(--text-muted, #94a3b8); }
@@ -769,7 +874,7 @@ body {
   padding-bottom: 24px;
   grid-column: 1 / -1;
   width: 100%;
-  align-items: start; /* Impede a coluna direita de esticar quando o ranking expande */
+  align-items: start;
 }
 
 @media (max-width: 1024px) { 
@@ -780,7 +885,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: auto; /* Mantém a coluna no tamanho natural dos cards */
+  height: auto;
 }
 
 .indicator-card {
@@ -794,7 +899,7 @@ body {
   justify-content: center;
   text-align: center;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
-  flex: none; /* Trava a altura para não deformar nem criar espaço vazio */
+  flex: none;
   position: relative;
   overflow: hidden;
 }
@@ -883,7 +988,6 @@ body {
 .ranking-item { display: flex; align-items: center; padding: 12px 16px; background: var(--row-bg, rgba(0, 0, 0, 0.02)) !important; border-radius: 12px; border: 1px solid var(--border-color, #e2e8f0) !important; transition: all 0.2s ease; position: relative; }
 .ranking-item:hover { transform: translateX(3px); background: var(--row-hover, rgba(0, 0, 0, 0.04)) !important; }
 
-/* Destaques do Ranking */
 .ranking-item.first-place, .ranking-item.pos-1 { background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.08) 100%) !important; border-color: rgba(245, 158, 11, 0.35) !important; }
 .ranking-item.pos-2 { background: linear-gradient(135deg, rgba(148, 163, 184, 0.12) 0%, rgba(100, 116, 139, 0.06) 100%) !important; border-color: rgba(148, 163, 184, 0.25) !important; }
 .ranking-item.pos-3 { background: linear-gradient(135deg, rgba(217, 119, 6, 0.12) 0%, rgba(180, 83, 9, 0.05) 100%) !important; border-color: rgba(217, 119, 6, 0.25) !important; }
@@ -920,13 +1024,11 @@ body {
    13. TRANSIÇÃO CINEMATOGRÁFICA EM CASCATA
    ========================================= */
 
-/* Estado inicial invisível enquanto o HUD processa */
 .op-wrapper.op-oculta {
   opacity: 0;
   pointer-events: none;
 }
 
-/* Ativação suave da página inteira */
 .op-wrapper.op-cascata-ativa {
   animation: opWrapperFade 0.5s ease-out forwards;
 }
@@ -952,7 +1054,6 @@ body {
   }
 }
 
-/* Sequência de Revelação dos Módulos */
 .op-cascata-ativa .op-live-section {
   animation: opCascadeEntry 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.05s backwards !important;
 }
@@ -972,7 +1073,6 @@ body {
 .op-cascata-ativa .op-bottom-zone .op-side-indicators {
   animation: opCascadeEntry 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.54s backwards !important;
 }
-
 
 /* ==========================================
    ESTILIZAÇÃO GLOBAL DE SELECTS E OPTIONS (DARK THEME)

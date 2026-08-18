@@ -294,7 +294,6 @@ export default function AdmControlesManuais({ dados, dataFiltro }) {
           </label>
           <input 
             type="text" 
-            placeholder="Ex: OP pesada, abono ociosidade..."
             value={motivoAjuste}
             onChange={(e) => setMotivoAjuste(e.target.value)}
             style={inputStyle}

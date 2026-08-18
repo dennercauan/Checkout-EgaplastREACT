@@ -2,6 +2,7 @@
 import { useMotorRanking } from '../hooks/useMotorRanking';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { 
   collection, addDoc, serverTimestamp, getDocs, doc,
   query, where, onSnapshot, collectionGroup, Timestamp, deleteField 
@@ -13,7 +14,7 @@ import { auth, db } from '../firebase';
 import { 
   ArrowLeft, Plus, FileText, CheckCircle2, 
   Clock, MoreVertical, Search, Boxes, X, User, Trash2, PackagePlus, Loader2, Edit, Check, Pause, Play, AlertCircle, MapPin, UploadCloud,
-  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, AlertTriangle, Gift, SearchX
+  Trophy, Medal, Factory, Package, Copy, Info, AlignLeft, ListTree, ChevronDown, Layers, ArrowUpDown, RefreshCcw, PieChart, ArrowRightLeft, ArrowRight, Tag, AlertTriangle, Gift, SearchX, CalendarDays
 } from 'lucide-react';
 import '../css/Operacao.css';
 import ModalCaixasEfetivadas from '../components/ModalCaixasEfetivadas';
@@ -31,6 +32,7 @@ import ModalFluxoImportacaoWMS from '../components/ModalFluxoImportacaoWMS';
 import ModalSucesso from '../components/ModalSucesso';
 import ModalConfirmarExclusao from '../components/ModalConfirmarExclusao';
 import TransicaoOperacaoOverlay from '../components/TransicaoOperacaoOverlay';
+import ModalImprimirEtiqueta from '../components/ModalImprimirEtiqueta';
 
 export default function Operacao({ isAdmin }) {
   const navigate = useNavigate();
@@ -43,6 +45,7 @@ export default function Operacao({ isAdmin }) {
   const [overlayAtivo, setOverlayAtivo] = useState(veioDeTransicao);
   const [overlaySaindo, setOverlaySaindo] = useState(false);
   const [revelarCascata, setRevelarCascata] = useState(!veioDeTransicao);
+  const [pedidoParaEtiqueta, setPedidoParaEtiqueta] = useState(null);
 
   useEffect(() => {
     if (veioDeTransicao) {
@@ -641,6 +644,96 @@ export default function Operacao({ isAdmin }) {
     } catch (error) {
       console.error("Erro ao excluir caixa:", error);
       alert("Erro ao excluir: " + error.message);
+    }
+  };
+
+  // ESTADOS DE TRANSFERÊNCIA DE ROMANEIO
+  const [pedidoParaTransferir, setPedidoParaTransferir] = useState(null);
+  const [novaDataTransferencia, setNovaDataTransferencia] = useState('');
+  const [isTransferindo, setIsTransferindo] = useState(false);
+  const [transferenciaSucesso, setTransferenciaSucesso] = useState(false);
+
+  const handleAbrirTransferencia = (pedido) => {
+    setPedidoParaTransferir(pedido);
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+    const amanhaStr = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}`;
+    setNovaDataTransferencia(amanhaStr);
+    setDropdownOpen(null);
+  };
+
+  const handleConfirmarTransferencia = async () => {
+    if (!pedidoParaTransferir || !novaDataTransferencia) return;
+    setIsTransferindo(true);
+    try {
+      const agora = Date.now();
+      
+      const dataOrig = pedidoParaTransferir.dataOperacao || dataOperacaoAtiva;
+      const [anoO, mesO, diaO] = dataOrig.split('-');
+      const corteExpedienteOrig = new Date(Number(anoO), Number(mesO) - 1, Number(diaO), 17, 30, 0).getTime();
+
+      const startOriginal = pedidoParaTransferir.createdAt?.toMillis 
+        ? pedidoParaTransferir.createdAt.toMillis() 
+        : (typeof pedidoParaTransferir.createdAt === 'number' ? pedidoParaTransferir.createdAt : agora);
+      
+      const totalPausedOriginal = pedidoParaTransferir.totalPausedTime || 0;
+      
+      let momentoFinalOriginal = agora;
+      if (pedidoParaTransferir.isPaused && pedidoParaTransferir.lastPauseStart) {
+        momentoFinalOriginal = pedidoParaTransferir.lastPauseStart;
+      } else {
+        momentoFinalOriginal = Math.min(agora, corteExpedienteOrig);
+      }
+
+      const tempoTrabalhadoAcumulado = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
+
+      const [anoD, mesD, diaD] = novaDataTransferencia.split('-');
+      const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 8, 0, 0).getTime();
+
+      const novoCreatedAtMs = dataAlvoBase - tempoTrabalhadoAcumulado;
+      const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(novoCreatedAtMs));
+
+      let ref;
+      if (pedidoParaTransferir._isLegacy || (pedidoParaTransferir.criadorUid && pedidoParaTransferir.elementoIdOriginal)) {
+        ref = doc(
+          db, 
+          'usuarios', 
+          pedidoParaTransferir.criadorUid, 
+          'elementos', 
+          pedidoParaTransferir.elementoIdOriginal, 
+          'pedidosMultiDocumento', 
+          pedidoParaTransferir.id
+        );
+      } else {
+        ref = doc(db, 'pedidos', pedidoParaTransferir.id);
+      }
+
+      await updateDoc(ref, {
+        dataOperacao: novaDataTransferencia,
+        createdAt: novoCreatedAtTimestamp,
+        isPaused: true,
+        lastPauseStart: dataAlvoBase,
+        totalPausedTime: 0,
+        motivoPausa: "Transferido do dia anterior",
+        efetivado: false,
+        completedAt: deleteField(),
+        updatedAt: serverTimestamp()
+      });
+
+      setPedidosNovos(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
+      setPedidosLegados(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
+      
+      setTransferenciaSucesso(true);
+      setTimeout(() => {
+        setTransferenciaSucesso(false);
+        setPedidoParaTransferir(null);
+      }, 1800);
+
+    } catch (error) {
+      console.error("Erro ao transferir:", error);
+      alert("Erro ao transferir romaneio: " + error.message);
+    } finally {
+      setIsTransferindo(false);
     }
   };
 
@@ -1964,7 +2057,7 @@ export default function Operacao({ isAdmin }) {
                   Tudo Limpo!
                 </h3>
                 <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.4 }}>
-                  Nenhum romaneio em andamento.<br />Inicie um novo pedido para cronometrar.
+                  Nenhum romaneio em andamento.<br />
                 </p>
               </div>
             )}
@@ -1996,8 +2089,8 @@ export default function Operacao({ isAdmin }) {
     <Layers size={22} />
   </div>
   <div>
-    <h3>Romaneios Processados</h3>
-    <span className="history-subtitle">Lista de pedidos finalizados</span>
+    <h3>Romaneios Conferidos</h3>
+    <span className="history-subtitle">Lista de pedidos</span>
   </div>
 </div>
 
@@ -2124,7 +2217,7 @@ export default function Operacao({ isAdmin }) {
                     <th style={{ width: '18%' }}>Romaneio & Status</th>
                     <th style={{ width: '27%' }}>Destino / Local</th>
                     <th style={{ width: '22%' }}>Observações</th>
-                    <th style={{ width: '23%' }}>Documentos & Carga</th>
+                    <th style={{ width: '23%' }}>Documentos & Caixas</th>
                     <th style={{ width: '10%', textAlign: 'center' }}>Ações</th>
                   </tr>
                 </thead>
@@ -2265,6 +2358,25 @@ export default function Operacao({ isAdmin }) {
                                         <div className="dropdown-divider"></div>
                                       </>
                                     )}
+
+                                    {/* OPÇÃO DE TRANSFERÊNCIA DE DIA */}
+                                    <button className="dropdown-item" onClick={() => handleAbrirTransferencia(pedido)} style={{ color: 'var(--text-highlight, #38bdf8)' }}>
+                                      <CalendarDays size={14}/> Transferir para outro dia
+                                    </button>
+                                    <div className="dropdown-divider"></div>
+
+                                    <button 
+  className="dropdown-item" 
+  onClick={() => {
+    setPedidoParaEtiqueta(pedido);
+    setDropdownOpen(null);
+  }}
+  style={{ color: '#f59e0b' }}
+>
+  <Tag size={14}/> Imprimir Etiqueta (90x40)
+</button>
+
+
                                     <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
                                       {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
                                     </button>
@@ -2499,6 +2611,139 @@ export default function Operacao({ isAdmin }) {
         onCancelar={() => setPedidoParaExcluir(null)}
         isExcluindo={isExcluindoPedido}
       />
+
+      <ModalImprimirEtiqueta 
+  pedido={pedidoParaEtiqueta} 
+  isOpen={Boolean(pedidoParaEtiqueta)} 
+  onClose={() => setPedidoParaEtiqueta(null)} 
+/>
+
+      {/* MODAL DE TRANSFERÊNCIA DE DIA COM CREATE PORTAL */}
+      {pedidoParaTransferir && typeof document !== 'undefined' && createPortal(
+        <div 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            backgroundColor: 'rgba(5, 5, 10, 0.78)', 
+            zIndex: 999999, 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backdropFilter: 'blur(8px)', 
+            padding: '20px',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          }} 
+          onClick={() => !isTransferindo && !transferenciaSucesso && setPedidoParaTransferir(null)}
+        >
+          <div 
+            style={{ 
+              background: 'var(--bg-card, #1e293b)', 
+              width: '100%', 
+              maxWidth: '440px', 
+              borderRadius: '16px', 
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+              padding: '24px', 
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)',
+              position: 'relative',
+              fontFamily: 'inherit'
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            {transferenciaSucesso ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 0', textAlign: 'center', fontFamily: 'inherit' }}>
+                <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+                  <CheckCircle2 size={32} color="#10b981" />
+                </div>
+                <h3 style={{ margin: '0 0 6px 0', color: 'var(--text-main, #f8fafc)', fontSize: '1.2rem', fontWeight: 800 }}>
+                  Transferência Concluída!
+                </h3>
+                <p style={{ margin: 0, color: 'var(--text-muted, #94a3b8)', fontSize: '0.88rem' }}>
+                  Romaneio <strong>{pedidoParaTransferir.romaneio}</strong> transferido para o dia <strong>{novaDataTransferencia}</strong> preservando o tempo decorrido.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ background: 'rgba(59, 130, 246, 0.15)', padding: '8px', borderRadius: '10px', color: '#3b82f6' }}>
+                      <CalendarDays size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontSize: '1.15rem', fontWeight: 800 }}>Transferir Romaneio</h3>
+                      <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.82rem' }}>Mover separação para outro dia mantendo o progresso</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setPedidoParaTransferir(null)}
+                    disabled={isTransferindo}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={{ background: 'var(--bg-input, rgba(255, 255, 255, 0.03))', border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Romaneio Selecionado:</div>
+                  <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '1.05rem' }}>{pedidoParaTransferir.romaneio || 'Sem número'}</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: 600 }}>
+                    {
+                      pedidoParaTransferir.cliente || 
+                      pedidoParaTransferir.loja || 
+                      pedidoParaTransferir.destinatario || 
+                      pedidoParaTransferir.razaoSocial || 
+                      (pedidoParaTransferir.documentos && pedidoParaTransferir.documentos[0]?.cliente) ||
+                      (pedidoParaTransferir.documentos && pedidoParaTransferir.documentos[0]?.destinatario) ||
+                      'Cliente não informado'
+                    }
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
+                    Nova Data da Operação:
+                  </label>
+                  <input 
+                    type="date"
+                    value={novaDataTransferencia}
+                    onChange={(e) => setNovaDataTransferencia(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '10px 12px', 
+                      borderRadius: '8px', 
+                      background: 'var(--bg-input, #0f172a)', 
+                      border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))', 
+                      color: 'var(--text-main, #fff)', 
+                      fontFamily: 'inherit',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button 
+                    onClick={() => setPedidoParaTransferir(null)}
+                    disabled={isTransferindo}
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleConfirmarTransferencia}
+                    disabled={isTransferindo || !novaDataTransferencia}
+                    style={{ flex: 1.4, padding: '10px', borderRadius: '8px', background: '#3b82f6', border: 'none', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}
+                  >
+                    {isTransferindo ? <Loader2 size={16} className="fa-spin" /> : <ArrowRight size={16} />}
+                    Confirmar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }

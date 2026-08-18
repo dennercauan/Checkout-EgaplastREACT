@@ -465,7 +465,9 @@ export default function RankingDiario({
             }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ margin: '0 0 16px 0', color: 'var(--text-main, #f8fafc)', borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', paddingBottom: '12px', fontWeight: 800, fontSize: '1.2rem' }}>Detalhes do Lançamento</h3>
+            <h3 style={{ margin: '0 0 16px 0', color: 'var(--text-main, #f8fafc)', borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', paddingBottom: '12px', fontWeight: 800, fontSize: '1.2rem' }}>
+              Detalhes do Lançamento
+            </h3>
             
             <div style={{ marginBottom: '22px', color: 'var(--text-main, #f8fafc)', fontSize: '0.92rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between' }}>
@@ -479,7 +481,7 @@ export default function RankingDiario({
               </p>
               <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Impacto:</span> 
-                <span style={{ color: eventoSelecionado.delta > 0 ? '#10b981' : '#ef4444', fontWeight: '900', background: eventoSelecionado.delta > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: '6px' }}>
+                <span style={{ color: eventoSelecionado.delta > 0 ? '#10b981' : (eventoSelecionado.delta < 0 ? '#ef4444' : 'var(--text-muted)'), fontWeight: '900', background: eventoSelecionado.delta > 0 ? 'rgba(16, 185, 129, 0.15)' : (eventoSelecionado.delta < 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.05)'), padding: '2px 8px', borderRadius: '6px' }}>
                   {eventoSelecionado.delta > 0 ? `+${eventoSelecionado.delta}` : eventoSelecionado.delta} pts
                 </span>
               </p>
@@ -490,21 +492,21 @@ export default function RankingDiario({
                 onClick={() => setEventoSelecionado(null)} 
                 style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-input)', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit' }}
               >
-                Voltar
+                {eventoSelecionado.sourceId ? 'Voltar' : 'Fechar'}
               </button>
-              <button 
-                onClick={() => {
-                  if (!eventoSelecionado.sourceId || !eventoSelecionado.sourceType) {
-                     alert("ERRO DE DADOS: O script que gerou o ranking esqueceu de salvar o 'sourceId' e 'sourceType' dentro desta bolinha. Sem eles, o botão não sabe qual documento apagar no Firebase!");
-                  } else {
-                     onDeleteEvent(eventoSelecionado);
-                     setEventoSelecionado(null);
-                  }
-                }} 
-                style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.25)' }}
-              >
-                Excluir Registro
-              </button>
+
+              {/* Só exibe exclusão se for um documento real (OP, Bônus, etc.) */}
+              {isAdminMode && eventoSelecionado.sourceId && (
+                <button 
+                  onClick={() => {
+                    onDeleteEvent(eventoSelecionado);
+                    setEventoSelecionado(null);
+                  }} 
+                  style={{ padding: '9px 16px', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 700, fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.25)' }}
+                >
+                  Excluir Registro
+                </button>
+              )}
             </div>
           </div>
         </div>,

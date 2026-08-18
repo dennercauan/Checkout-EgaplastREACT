@@ -44,7 +44,7 @@ export default function TransicaoOperacaoOverlay({ isVisible, isExiting }) {
         color: 'var(--text-main, #ffffff)',
         letterSpacing: '-0.3px'
       }}>
-        Sintonizando Estação de Operação...
+        Carregando Estação de Conferência...
       </h3>
       <p style={{
         margin: 0,
@@ -52,7 +52,7 @@ export default function TransicaoOperacaoOverlay({ isVisible, isExiting }) {
         color: 'var(--text-muted, #94a3b8)',
         fontWeight: 500
       }}>
-        Carregando romaneios, métricas de conferência e status ao vivo.
+        Carregando romaneios, rankings de desempenho e status ao vivo.
       </p>
 
       <div style={{ width: '220px', height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden', marginTop: '24px' }}>

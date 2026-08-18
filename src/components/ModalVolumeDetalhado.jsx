@@ -191,7 +191,7 @@ export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesRes
                     <Legend wrapperStyle={{ paddingTop: '20px' }} />
                     <Bar 
                       dataKey="caixas" 
-                      name="Caixas Movimentadas" 
+                      name="Total de Caixas" 
                       fill="#c4709d" 
                       barSize={30} 
                       radius={[0, 4, 4, 0]} 
@@ -204,7 +204,7 @@ export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesRes
                     />
                     <Bar 
                       dataKey="pedidos" 
-                      name="Pedidos Processados" 
+                      name="Pedidos Conferidos" 
                       fill="#0273a3" 
                       barSize={30} 
                       radius={[0, 4, 4, 0]} 
