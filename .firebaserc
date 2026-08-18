@@ -1,0 +1,13 @@
+{
+  "projects": {},
+  "targets": {
+    "checkout-egaplast": {
+      "hosting": {
+        "beta": [
+          "checkoutegaplast-beta"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

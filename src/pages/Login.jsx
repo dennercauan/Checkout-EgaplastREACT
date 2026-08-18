@@ -8,6 +8,10 @@ import { Mail, Lock, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import '../css/Login.css';
 
+// IMPORTAÇÃO DOS ASSETS PARA O BUNDLE DE PRODUÇÃO
+import logoEgaplast from '../img/egaplast.png';
+import logoCheckout from '../img/checkout-logo.png';
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +38,7 @@ export default function Login() {
       root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.12)');
       root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
       root.style.setProperty('--checkout-logo-filter', 'invert(1)');
-      root.style.setProperty('--checkout-logo-blend', 'screen'); // Faz o fundo preto da imagem sumir
+      root.style.setProperty('--checkout-logo-blend', 'screen');
       root.style.setProperty('color-scheme', 'dark');
       root.style.setProperty('--text-highlight', '#ffffff'); 
       root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #27272a 0%, #09090b 100%)'); 
@@ -48,7 +52,7 @@ export default function Login() {
       root.style.setProperty('--border-color', 'rgba(56, 189, 248, 0.2)');
       root.style.setProperty('--logo-filter', 'brightness(0) invert(1)'); 
       root.style.setProperty('--checkout-logo-filter', 'invert(1)');
-      root.style.setProperty('--checkout-logo-blend', 'screen'); // Faz o fundo preto da imagem sumir
+      root.style.setProperty('--checkout-logo-blend', 'screen');
       root.style.setProperty('color-scheme', 'dark');
       root.style.setProperty('--text-highlight', '#38bdf8'); 
       root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)'); 
@@ -62,7 +66,7 @@ export default function Login() {
       root.style.setProperty('--border-color', '#cbd5e1');
       root.style.setProperty('--logo-filter', 'none'); 
       root.style.setProperty('--checkout-logo-filter', 'none'); 
-      root.style.setProperty('--checkout-logo-blend', 'multiply'); // Faz o fundo branco original da imagem sumir
+      root.style.setProperty('--checkout-logo-blend', 'multiply');
       root.style.setProperty('color-scheme', 'light');
       root.style.setProperty('--text-highlight', 'var(--primary)'); 
       root.style.setProperty('--bg-hero', 'linear-gradient(135deg, #0d3269 0%, #1d4ed8 100%)'); 
@@ -71,7 +75,6 @@ export default function Login() {
   };
 
   useEffect(() => {
-    // Carrega o último tema salvo no dispositivo
     const temaSalvo = localStorage.getItem('egaplast_user_theme') || 'light';
     aplicarTemaGlobal(temaSalvo);
   }, []);
@@ -107,7 +110,6 @@ export default function Login() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      // Busca tema no Firestore para sincronizar com localStorage
       try {
         const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
         if (userDoc.exists() && userDoc.data().theme) {
@@ -158,7 +160,7 @@ export default function Login() {
   if (splashActive) {
     return (
       <div className={`splash-container ${splashFading ? 'splash-fade-out' : ''}`}>
-        <img src="/src/img/egaplast.png" alt="Logo Sistema" className="splash-logo-center" />
+        <img src={logoEgaplast} alt="Logo Sistema" className="splash-logo-center" />
       </div>
     );
   }
@@ -182,7 +184,7 @@ export default function Login() {
 
       <div className="brand-side">
         <div className="brand-content">
-          <img src="/src/img/egaplast.png" alt="Logo Sistema Checkout" className="brand-logo" />
+          <img src={logoEgaplast} alt="Logo Sistema Checkout" className="brand-logo" />
           <p>Gestão ágil e inteligente de pedidos.</p>
           <div className="brand-decoration"></div>
         </div>
@@ -192,7 +194,7 @@ export default function Login() {
         <div className="form-content">
           <div className="logo-container">
             <img 
-              src="/src/img/checkout-logo.png" 
+              src={logoCheckout} 
               alt="Egaplast Logo" 
               className="checkout-logo-theme"
             />

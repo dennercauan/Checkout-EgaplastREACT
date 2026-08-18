@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Operacao from './pages/Operacao';
 import OperacaoAdm from './pages/OperacaoAdm';
+import DownloadApp from './pages/DownloadApp'; // <-- Importe aqui
 
 function App() {
   return (
@@ -26,6 +27,10 @@ function App() {
 
         {/* Rota Administrativa */}
         <Route path="/operacao-adm" element={<OperacaoAdm />} />
+
+        {/* Rota para Download do Executável */}
+        <Route path="/download" element={<DownloadApp />} />
+        
       </Routes>
     </BrowserRouter>
   );
