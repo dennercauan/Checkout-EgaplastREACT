@@ -1,5 +1,6 @@
 // src/components/RankingDiario.jsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Trophy, Medal, CheckCircle2, Factory, TrendingUp, Clock, Maximize2, X } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -157,23 +158,6 @@ export default function RankingDiario({
         </div>
         <div className="ranking-list">
           {rankingCalculado?.filter(user => user && (user.uid || user.email || user.nome)).map((user, idx) => {
-            // Cruzamento inteligente e sanitizado com a lista de usuários
-            const userEmailLimpo = String(user.email || '').toLowerCase().trim();
-            const userNomeLimpo = String(user.nome || '').toLowerCase().trim();
-            
-            const userRef = (usuarios || []).find(u => {
-              const uEmail = String(u.email || '').toLowerCase().trim();
-              const uNome = String(u.nickname || u.email?.split('@')[0] || '').toLowerCase().trim();
-              return (
-                (u.uid && user.uid && u.uid === user.uid) ||
-                (uEmail && userEmailLimpo && uEmail === userEmailLimpo) ||
-                (uNome && userNomeLimpo && uNome === userNomeLimpo)
-              );
-            });
-
-            // Recupera a foto em qualquer formato armazenado
-            const userPhoto = user.photoURL || user.foto || user.avatar || userRef?.photoURL || userRef?.foto || null;
-
             return (
               <div key={`${user.uid || user.email || idx}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 
@@ -186,14 +170,12 @@ export default function RankingDiario({
                     {idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}
                   </div>
                   
-  
                   {/* AVATAR COM FOTO / FALLBACK DE INICIAIS */}
                   <div className="ranking-avatar" style={{ width: '38px', height: '38px', position: 'relative', flexShrink: 0 }}>
                     {(() => {
                       const emailLimpo = String(user.email || '').toLowerCase().trim();
                       const nomeLimpo = String(user.nome || '').toLowerCase().trim();
                       
-                      // Cruzamento agressivo para achar a foto independente se está logado como nickname ou email
                       const userRef = (usuarios || []).find(u => {
                         const uEmail = String(u.email || '').toLowerCase().trim();
                         const uPrefix = uEmail.split('@')[0];
@@ -217,7 +199,6 @@ export default function RankingDiario({
                               src={fotoFinal} 
                               alt={user.nome || 'Avatar'} 
                               onError={(e) => {
-                                // Se o Base64/link falhar, esconde a imagem e revela a inicial
                                 e.currentTarget.style.display = 'none';
                                 if (e.currentTarget.nextSibling) {
                                   e.currentTarget.nextSibling.style.display = 'flex';
@@ -233,19 +214,19 @@ export default function RankingDiario({
                             />
                           )}
                           <div 
-  className="avatar-circle" 
-  style={{ 
-    display: fotoFinal ? 'none' : 'flex',
-    width: '100%', 
-    height: '100%', 
-    borderRadius: '50%', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    fontWeight: 800 
-  }}
->
-  {user.nome ? user.nome.charAt(0).toUpperCase() : 'U'}
-</div>
+                            className="avatar-circle" 
+                            style={{ 
+                              display: fotoFinal ? 'none' : 'flex',
+                              width: '100%', 
+                              height: '100%', 
+                              borderRadius: '50%', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              fontWeight: 800 
+                            }}
+                          >
+                            {user.nome ? user.nome.charAt(0).toUpperCase() : 'U'}
+                          </div>
                         </>
                       );
                     })()}
@@ -350,24 +331,74 @@ export default function RankingDiario({
         </div>
       </div>
 
-      {/* MODAL DE GRÁFICO EXPANDIDO */}
-      {modalUser && (
+      {/* MODAL DE GRÁFICO EXPANDIDO COM PORTAL (MONTA FORA DO FLUXO DOM) */}
+      {modalUser && typeof document !== 'undefined' && createPortal(
         <div 
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(5, 5, 10, 0.78)', zIndex: 9998, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }} 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            width: '100vw', 
+            height: '100vh', 
+            backgroundColor: 'rgba(5, 10, 20, 0.82)', 
+            zIndex: 999999, 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            padding: '20px',
+            boxSizing: 'border-box',
+            backdropFilter: 'blur(8px)', 
+            WebkitBackdropFilter: 'blur(8px)',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          }} 
           onClick={() => setModalUser(null)}
         >
           <div 
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '95%', maxWidth: '1200px', borderRadius: '16px', padding: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }} 
+            style={{ 
+              background: 'var(--bg-card, #1e293b)', 
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+              color: 'var(--text-main, #f8fafc)', 
+              width: '100%', 
+              maxWidth: '1100px', 
+              borderRadius: '20px', 
+              padding: '26px', 
+              boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              flexDirection: 'column',
+              boxSizing: 'border-box'
+            }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: 'var(--text-main)', fontWeight: 800, fontSize: '1.25rem' }}>Evolução de {modalUser.nome}</h3>
-              <button onClick={() => setModalUser(null)} style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', paddingBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <TrendingUp size={22} color="var(--text-highlight, #38bdf8)" />
+                <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.3px' }}>
+                  Evolução de {modalUser.nome}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setModalUser(null)} 
+                style={{ 
+                  background: 'var(--bg-input, rgba(255, 255, 255, 0.05))', 
+                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+                  width: '34px', 
+                  height: '34px', 
+                  borderRadius: '10px', 
+                  cursor: 'pointer', 
+                  color: 'var(--text-muted, #94a3b8)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'}
+              >
                 <X size={18} />
               </button>
             </div>
             
-            <div style={{ width: '100%', height: '400px' }}>
+            <div style={{ width: '100%', height: '420px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={dadosGraficoEspacados} margin={{ top: 30, right: 30, left: 10, bottom: 20 }}>
                   <defs>
@@ -394,22 +425,49 @@ export default function RankingDiario({
               </ResponsiveContainer>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* MODAL DE INFORMAÇÕES DO EVENTO (Clique na Bolinha) */}
-      {eventoSelecionado && (
+      {/* MODAL DE INFORMAÇÕES DO EVENTO COM PORTAL */}
+      {eventoSelecionado && typeof document !== 'undefined' && createPortal(
         <div 
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(5, 5, 10, 0.78)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }} 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            width: '100vw', 
+            height: '100vh', 
+            backgroundColor: 'rgba(5, 10, 20, 0.82)', 
+            zIndex: 9999999, 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            padding: '20px',
+            boxSizing: 'border-box',
+            backdropFilter: 'blur(8px)', 
+            WebkitBackdropFilter: 'blur(8px)',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          }} 
           onClick={() => setEventoSelecionado(null)}
         >
           <div 
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '90%', maxWidth: '420px', borderRadius: '16px', padding: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }} 
+            style={{ 
+              background: 'var(--bg-card, #1e293b)', 
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+              color: 'var(--text-main, #f8fafc)', 
+              width: '100%', 
+              maxWidth: '430px', 
+              borderRadius: '16px', 
+              padding: '24px', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+              boxSizing: 'border-box'
+            }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ margin: '0 0 16px 0', color: 'var(--text-main)', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', fontWeight: 800, fontSize: '1.2rem' }}>Detalhes do Lançamento</h3>
+            <h3 style={{ margin: '0 0 16px 0', color: 'var(--text-main, #f8fafc)', borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', paddingBottom: '12px', fontWeight: 800, fontSize: '1.2rem' }}>Detalhes do Lançamento</h3>
             
-            <div style={{ marginBottom: '22px', color: 'var(--text-main)', fontSize: '0.92rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ marginBottom: '22px', color: 'var(--text-main, #f8fafc)', fontSize: '0.92rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Horário:</span> <strong>{eventoSelecionado.timeStr}</strong>
               </p>
@@ -449,7 +507,8 @@ export default function RankingDiario({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

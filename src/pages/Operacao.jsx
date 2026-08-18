@@ -178,7 +178,19 @@ export default function Operacao({ isAdmin }) {
     }
   };
 
+ // 1. Mantenha o estado original do currentTime rodando o relógio
   const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // 2. Calcule a trava de expediente às 17h30
+  const limiteExpediente = useMemo(() => {
+    const [ano, mes, dia] = dataOperacaoAtiva.split('-');
+    return new Date(Number(ano), Number(mes) - 1, Number(dia), 17, 30, 0).getTime();
+  }, [dataOperacaoAtiva]);
+
+  const isExpedienteEncerrado = currentTime >= limiteExpediente;
+  
+  // 3. Crie a constante que useMotorRanking e o cronômetro vão usar
+  const horaReferenciaAtual = isExpedienteEncerrado ? limiteExpediente : currentTime;
   const [pedidosNovos, setPedidosNovos] = useState([]);
   const [pedidosLegados, setPedidosLegados] = useState([]);
 
@@ -2286,7 +2298,7 @@ export default function Operacao({ isAdmin }) {
   rankingCalculado={rankingCalculado}
   rankingExpandido={rankingExpandido}
   setRankingExpandido={setRankingExpandido}
-  currentTime={currentTime}
+  currentTime={horaReferenciaAtual}
   dataOperacaoAtiva={dataOperacaoAtiva}
   onDeleteEvent={handleDeleteEvent}
   isAdminMode={isAdmin}

@@ -1,3 +1,4 @@
+// src/hooks/useMotorRanking.js
 import { useMemo } from 'react';
 
 export function useMotorRanking(
@@ -7,7 +8,7 @@ export function useMotorRanking(
   controlePausas, 
   ajustesDoDia, 
   dataOperacaoAtiva, 
-  currentTime
+  horaReferenciaAtual
 ) {
   return useMemo(() => {
     if (!usuarios || usuarios.length === 0) return [];
@@ -17,9 +18,12 @@ export function useMotorRanking(
     const isHoje = dataOperacaoAtiva === dataHojeStr;
 
     const [anoR, mesR, diaR] = dataOperacaoAtiva.split('-');
-    const limiteExpediente = new Date(anoR, mesR - 1, diaR, 17, 30, 0).getTime();
-    const tempoReferencia = currentTime > limiteExpediente ? limiteExpediente : currentTime;
-    const inicioDoDiaAtivo = new Date(anoR, mesR - 1, diaR, 0, 0, 0).getTime();
+    const limiteExpediente = new Date(Number(anoR), Number(mesR) - 1, Number(diaR), 17, 30, 0).getTime();
+    
+    // Se foi passado horaReferenciaAtual, usa diretamente; caso contrário, faz o corte das 17h30
+    const relogioBase = horaReferenciaAtual || Date.now();
+    const tempoReferencia = relogioBase > limiteExpediente ? limiteExpediente : relogioBase;
+    const inicioDoDiaAtivo = new Date(Number(anoR), Number(mesR) - 1, Number(diaR), 0, 0, 0).getTime();
 
     const userStats = {};
     
@@ -149,15 +153,15 @@ export function useMotorRanking(
        
        if (merged.length > 0 && isHoje) {
           const ultimaTarefa = merged[merged.length - 1];
-          if (ultimaTarefa.end < currentTime) {
-             const ociosidadeAtualMs = currentTime - ultimaTarefa.end;
+          if (ultimaTarefa.end < tempoReferencia) {
+             const ociosidadeAtualMs = tempoReferencia - ultimaTarefa.end;
              if (ociosidadeAtualMs > LIMITE_OCIOSIDADE_MS) {
                 const excessoMs = ociosidadeAtualMs - LIMITE_OCIOSIDADE_MS;
                 const penalidade = Math.floor(excessoMs / 60000) * 10;
                 user.decrescimo += penalidade;
                 user.pontos -= penalidade;
                 user.pointEvents.push({ time: ultimaTarefa.end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância', detalhe: 'A pausa permitida acabou. Iniciando sangramento.' });
-                user.pointEvents.push({ time: currentTime, delta: -penalidade, label: '⚠️ Sangramento Atual', detalhe: `Parado há ${Math.floor(ociosidadeAtualMs / 60000)} min.` });
+                user.pointEvents.push({ time: tempoReferencia, delta: -penalidade, label: '⚠️ Sangramento Atual', detalhe: `Parado há ${Math.floor(ociosidadeAtualMs / 60000)} min.` });
              }
           }
        }
@@ -197,12 +201,12 @@ export function useMotorRanking(
          user.chartData.push({ timeStr: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`, timestamp: ev.time, score: pontuacaoCorrente, label: ev.label, detalhe: ev.detalhe, delta: ev.delta, isEvent: true, sourceId: ev.sourceId, sourceType: ev.sourceType });
        });
        if (isHoje && user.chartData.length > 0) {
-         const agora = new Date(currentTime);
-         user.chartData.push({ timeStr: `${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`, timestamp: currentTime, score: pontuacaoCorrente, label: 'Tempo Real', detalhe: 'Momento exato', delta: 0, isEvent: false });
+         const agora = new Date(tempoReferencia);
+         user.chartData.push({ timeStr: `${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`, timestamp: tempoReferencia, score: pontuacaoCorrente, label: 'Tempo Real', detalhe: 'Momento exato', delta: 0, isEvent: false });
        }
     });
 
     return Object.values(userStats).filter(u => u.pontos > 0 || u.pedidos > 0 || u.op > 0).sort((a, b) => b.pontos - a.pontos).map((u, idx) => ({ ...u, posicao: idx + 1 }));
 
-  }, [usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, currentTime]);
+  }, [usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, horaReferenciaAtual]);
 }

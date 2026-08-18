@@ -6,7 +6,7 @@ import {
   Users, FileText, Settings, Play, Pause, CheckCircle2, Search, 
   MoreVertical, X, Check, Trash2, Info, Activity, Coffee, 
   Briefcase, AlertTriangle, Moon, PackagePlus, Edit, Factory,
-  Layers, SearchX, Plus
+  Layers, SearchX, Plus, PlayCircle, PauseCircle, CalendarDays, ArrowRight, Loader2, UserCheck, CheckSquare, Square
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
@@ -59,6 +59,129 @@ export default function OperacaoAdm() {
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
 const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
 const [fluxoImportacao, setFluxoImportacao] = useState(null);
+
+// ---> ADICIONE ESTAS LINHAS AQUI <---
+  const [pedidoParaTransferir, setPedidoParaTransferir] = useState(null);
+  const [novaDataTransferencia, setNovaDataTransferencia] = useState('');
+  const [isTransferindo, setIsTransferindo] = useState(false);
+
+  const handleAbrirTransferencia = (pedido) => {
+    setPedidoParaTransferir(pedido);
+    // Sugere automaticamente o dia de amanhã no calendário
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+    const amanhaStr = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}`;
+    setNovaDataTransferencia(amanhaStr);
+    setDropdownOpen(null);
+  };
+
+  // ESTADOS DA EQUIPE FIXA
+  const [equipeFixaUids, setEquipeFixaUids] = useState([]);
+  const [showModalEquipe, setShowModalEquipe] = useState(false);
+  const [tempEquipeUids, setTempEquipeUids] = useState([]);
+  const [isSalvandoEquipe, setIsSalvandoEquipe] = useState(false);
+
+  // Carrega a equipe fixa configurada no Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'configuracoes', 'equipeCheckout'), (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().uids)) {
+        setEquipeFixaUids(snap.data().uids);
+      } else {
+        setEquipeFixaUids([]);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const abrirModalEquipe = () => {
+    setTempEquipeUids(equipeFixaUids);
+    setShowModalEquipe(true);
+  };
+
+  const toggleUserNaEquipe = (uid) => {
+    setTempEquipeUids(prev => 
+      prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]
+    );
+  };
+
+  const handleSalvarEquipeFixa = async () => {
+    setIsSalvandoEquipe(true);
+    try {
+      await setDoc(doc(db, 'configuracoes', 'equipeCheckout'), {
+        uids: tempEquipeUids,
+        updatedAt: serverTimestamp()
+      });
+      setShowModalEquipe(false);
+    } catch (e) {
+      alert("Erro ao salvar equipe: " + e.message);
+    } finally {
+      setIsSalvandoEquipe(false);
+    }
+  };
+
+const handleConfirmarTransferencia = async () => {
+    if (!pedidoParaTransferir || !novaDataTransferencia) return alert("Selecione uma data válida.");
+    setIsTransferindo(true);
+    try {
+      const agora = Date.now();
+      
+      // 1. Converte o dia escolhido para o início da manhã (08:00) do dia alvo
+      const [ano, mes, dia] = novaDataTransferencia.split('-');
+      const dataAlvoAlinhada = new Date(Number(ano), Number(mes) - 1, Number(dia), 8, 0, 0);
+      const novaDataTimestamp = Timestamp.fromDate(dataAlvoAlinhada);
+
+      // 2. MATEMÁTICA DO CRONÔMETRO: Preservar o tempo ativo acumulado
+      const startOriginal = pedidoParaTransferir.createdAt?.toMillis 
+        ? pedidoParaTransferir.createdAt.toMillis() 
+        : (pedidoParaTransferir.createdAt || agora);
+      
+      const totalPausedOriginal = pedidoParaTransferir.totalPausedTime || 0;
+      
+      // Define até quando o tempo correu hoje (respeitando a trava das 17h30 se já passou dela)
+      const fimDeExpedienteHoje = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 17, 30, 0).getTime();
+      const momentoCorte = agora > fimDeExpedienteHoje ? fimDeExpedienteHoje : agora;
+      
+      // Tempo que o conferente efetivamente trabalhou nesse pedido até agora
+      const tempoTrabalhadoAcumulado = Math.max(0, momentoCorte - startOriginal - totalPausedOriginal);
+
+      // Nova matemática: O novo tempo pausado deve ser a diferença entre o novo Start (amanhã 8h) 
+      // e o momento em que ele vai abrir amanhã, descontando o tempo já trabalhado.
+      // Como ele vai amanhecer pausado (isPaused: true), o tempo parado vai contar a partir de "novaDataTimestamp".
+      const novoTotalPausedTime = dataAlvoAlinhada.getTime() - tempoTrabalhadoAcumulado;
+
+      // 3. Determina o caminho exato do documento (Legado ou Novo)
+      let ref;
+      if (pedidoParaTransferir._isLegacy || (pedidoParaTransferir.criadorUid && pedidoParaTransferir.elementoIdOriginal)) {
+        ref = doc(db, 'usuarios', pedidoParaTransferir.criadorUid, 'elementos', pedidoParaTransferir.elementoIdOriginal, 'pedidosMultiDocumento', pedidoParaTransferir.id);
+      } else {
+        ref = doc(db, 'pedidos', pedidoParaTransferir.id);
+      }
+
+      // 4. Salva no banco mantendo o histórico de tempo intacto e congelado na nova data
+      await updateDoc(ref, {
+        dataOperacao: novaDataTransferencia,
+        createdAt: novaDataTimestamp,           // Alinha com o filtro de data da query do Firestore
+        isPaused: true,                         // Começa o dia pausado para não sangrar tempo de madrugada
+        lastPauseStart: dataAlvoAlinhada.getTime(), // A pausa conta a partir das 08:00 do dia seguinte
+        totalPausedTime: novoTotalPausedTime,   // Modificador matemático que salva o tempo trabalhado anterior
+        motivoPausa: "Transferido do dia anterior",
+        updatedAt: serverTimestamp()
+      });
+
+      // 5. Remove localmente da lista de visualização do dia atual imediatamente
+      setPedidosNovos(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
+      setPedidosLegados(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
+
+      setPedidoParaTransferir(null);
+      alert(`Romaneio transferido! O tempo acumulado foi preservado e o pedido estará disponível em ${novaDataTransferencia}.`);
+    } catch (error) {
+      console.error("Erro ao transferir:", error);
+      alert("Erro ao transferir romaneio: " + error.message);
+    } finally {
+      setIsTransferindo(false);
+    }
+  };
+  // ------------------------------------
 
   const [controlePausas, setControlePausas] = useState({});
   const [showModalIntervencao, setShowModalIntervencao] = useState(false);
@@ -406,8 +529,19 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
   }, [pedidosProcessados, rankingCalculado]);
 
   const equipeAtivaHoje = useMemo(() => {
+    // Se há equipe fixa configurada, prioriza exibir exatamente ela
+    if (equipeFixaUids.length > 0) {
+      return usuarios
+        .filter(u => equipeFixaUids.includes(u.uid))
+        .sort((a, b) => {
+          const nomeA = a.nickname || a.email.split('@')[0];
+          const nomeB = b.nickname || b.email.split('@')[0];
+          return nomeA.localeCompare(nomeB);
+        });
+    }
+
+    // Fallback: caso nenhuma equipe fixa tenha sido marcada ainda
     const nomesAtivos = new Set();
-    
     if (rankingCalculado) rankingCalculado.forEach(r => nomesAtivos.add(r.nome));
     if (controlePausas) Object.keys(controlePausas).forEach(n => nomesAtivos.add(n));
     
@@ -420,7 +554,7 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
     });
 
     return usuarios.filter(u => nomesAtivos.has(u.nickname || u.email.split('@')[0]));
-  }, [rankingCalculado, controlePausas, pedidosEmAndamento, usuarios]);
+  }, [equipeFixaUids, usuarios, rankingCalculado, controlePausas, pedidosEmAndamento]);
 
   const abrirModalDetalhes = (pedido) => {
     setPedidoModal(pedido);
@@ -1039,6 +1173,40 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
     } catch (error) { alert(`Falha ao sincronizar pausa: ${error.message}`); }
   };
 
+  // FUNÇÃO DE CONTROLE DE PAUSA DO ROMANEIO DIRETAMENTE PELA ADM
+  const handleTogglePausaRomaneio = async (pedido) => {
+    if (pedido.efetivado) return;
+    try {
+      const ref = obterReferenciaDocumento(pedido);
+      const agora = Date.now();
+
+      if (pedido.isPaused) {
+        // Retomar Romaneio
+        const lastStart = pedido.lastPauseStart || agora;
+        const totalP = pedido.totalPausedTime || 0;
+        const diffPausa = Math.max(0, agora - lastStart);
+
+        await updateDoc(ref, {
+          isPaused: false,
+          lastPauseStart: deleteField(),
+          motivoPausa: deleteField(),
+          totalPausedTime: totalP + diffPausa,
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        // Pausar Romaneio
+        await updateDoc(ref, {
+          isPaused: true,
+          lastPauseStart: agora,
+          motivoPausa: "Contratempo / Intervalo (ADM)",
+          updatedAt: serverTimestamp()
+        });
+      }
+    } catch (e) {
+      alert("Erro ao alterar o estado de pausa do romaneio.");
+    }
+  };
+
   const formatMsToTime = (ms) => {
     if (ms <= 0) return "00:00:00";
     const hh = String(Math.floor(ms / 3600000)).padStart(2, '0');
@@ -1220,25 +1388,60 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
 
           {/* PAINEL DE COMANDO: EQUIPE AO VIVO */}
           <section style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
-                <Activity size={20} color="var(--primary)" /> Painel de Comando: Equipe ao Vivo
-              </h3>
-              {pedidosEmAndamento.length > 0 && (
-                <span style={{ background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <div className="pulse-dot" style={{ background: '#fff' }}></div> {pedidosEmAndamento.length} Romaneios sendo separados
-                </span>
-              )}
-              {isExpedienteEncerrado && (
-                <span style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
-                  <Moon size={14} /> Expediente Encerrado (17h30)
-                </span>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
+                  <Activity size={20} color="var(--primary)" /> Painel de Comando: Equipe ao Vivo
+                </h3>
+                {pedidosEmAndamento.length > 0 && (
+                  <span style={{ background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div className="pulse-dot" style={{ background: '#fff' }}></div> {pedidosEmAndamento.length} Romaneios sendo separados
+                  </span>
+                )}
+                {isExpedienteEncerrado && (
+                  <span style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Moon size={14} /> Expediente Encerrado (17h30)
+                  </span>
+                )}
+              </div>
+
+              {/* BOTÃO PARA CONFIGURAR EQUIPE */}
+              <button 
+                onClick={abrirModalEquipe}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px', 
+                  background: 'var(--bg-input, rgba(255, 255, 255, 0.05))', 
+                  color: 'var(--text-main, #f8fafc)', 
+                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))', 
+                  padding: '6px 12px', 
+                  borderRadius: '8px', 
+                  fontSize: '0.82rem', 
+                  fontWeight: 700, 
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <UserCheck size={15} color="var(--primary, #3b82f6)" />
+                <span>Definir Equipe ({equipeFixaUids.length > 0 ? `${equipeFixaUids.length} fixos` : 'Auto'})</span>
+              </button>
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '15px', width: '100%' }}>
+            {/* GRID SIMÉTRICO: 3 COLUNAS EM TELAS NORMAIS / 6 EM TELAS ULTRA-LARGAS */}
+<div 
+  style={{ 
+    display: 'grid', 
+    gridTemplateColumns: 'repeat(auto-fit, minmax(max(31%, 280px), 1fr))', 
+    gap: '15px', 
+    width: '100%' 
+  }}
+>
               {equipeAtivaHoje.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '16px', width: '100%', background: 'var(--bg-card)', borderRadius: '12px', textAlign: 'center', border: '1px dashed var(--border-color)' }}>Nenhum conferente registrou atividade.</div>
+                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '24px', width: '100%', background: 'var(--bg-card)', borderRadius: '12px', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
+                  Nenhum conferente selecionado na equipe fixa. Clique em <strong>Definir Equipe</strong> acima.
+                </div>
               ) : (
                 equipeAtivaHoje.map(user => {
                   const nomeUser = user.nickname || user.email.split('@')[0];
@@ -1256,18 +1459,29 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
                      statusColor = '#f59e0b'; statusText = 'Em Pausa (Protegido)'; statusIcon = <Coffee size={14} />;
                      conteudoCentral = (<div style={{ padding: '15px 0', color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center' }}><ShieldCheck size={32} color="#f59e0b" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '700', color: 'var(--text-main)' }}>Ociosidade congelada.</div><div style={{ fontSize: '0.8rem' }}>Nenhum ponto será descontado.</div></div>);
                   } else if (pedidoAtivo) {
-                     statusColor = '#3b82f6'; statusText = 'Separando Pedido'; statusIcon = <Briefcase size={14} />;
-                     const tiposDosDocs = pedidoAtivo.documentos?.map(d => d.tipo).filter(Boolean).join(', ') || 'Nenhum listado';
-                     conteudoCentral = (
-                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1 }}>
-                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                           <strong style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}><Package size={18} color="#3b82f6" /> {pedidoAtivo.romaneio || 'S/N'}</strong>
-                           <span style={{ fontWeight: '900', color: '#3b82f6', fontFamily: 'monospace', fontSize: '1.1rem', background: 'var(--bg-input)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>{formatarCronometroPedido(pedidoAtivo)}</span>
+                     // CASO O PEDIDO ESTEJA PAUSADO NA TABELA
+                     if (pedidoAtivo.isPaused) {
+                       statusColor = '#6366f1'; statusText = 'Romaneio Pausado'; statusIcon = <Pause size={14} />;
+                       conteudoCentral = (
+                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                           <strong style={{ fontSize: '1.1rem', color: '#6366f1', display: 'flex', alignItems: 'center', gap: '6px' }}><PauseCircle size={22} /> ROMANEIO {pedidoAtivo.romaneio || 'S/N'}</strong>
+                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', background: 'var(--bg-input)', padding: '4px 8px', borderRadius: '6px' }}>Aguardando Retomada Técnica...</span>
                          </div>
-                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} color="var(--text-muted)" /> {pedidoAtivo.loja || 'Destino Padrão'}</div>
-                         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }} title={tiposDosDocs}><FileText size={14} color="var(--text-muted)" /> {tiposDosDocs.length > 25 ? tiposDosDocs.substring(0, 25) + '...' : tiposDosDocs}</div>
-                       </div>
-                     );
+                       );
+                     } else {
+                       statusColor = '#3b82f6'; statusText = 'Separando Pedido'; statusIcon = <Briefcase size={14} />;
+                       const tiposDosDocs = pedidoAtivo.documentos?.map(d => d.tipo).filter(Boolean).join(', ') || 'Nenhum listado';
+                       conteudoCentral = (
+                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1 }}>
+                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                             <strong style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}><Package size={18} color="#3b82f6" /> {pedidoAtivo.romaneio || 'S/N'}</strong>
+                             <span style={{ fontWeight: '900', color: '#3b82f6', fontFamily: 'monospace', fontSize: '1.1rem', background: 'var(--bg-input)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>{formatarCronometroPedido(pedidoAtivo)}</span>
+                           </div>
+                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} color="var(--text-muted)" /> {pedidoAtivo.loja || 'Destino Padrão'}</div>
+                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }} title={tiposDosDocs}><FileText size={14} color="var(--text-muted)" /> {tiposDosDocs.length > 25 ? tiposDosDocs.substring(0, 25) + '...' : tiposDosDocs}</div>
+                         </div>
+                       );
+                     }
                   } else {
                      const limiteOciosidadeMs = 20 * 60 * 1000; const tolerenciaExcedida = tempoOciosoMs > limiteOciosidadeMs;
                      statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; statusText = tolerenciaExcedida ? 'Ocioso (Sangrando)' : 'Livre (Na tolerância)'; statusIcon = tolerenciaExcedida ? <AlertTriangle size={14} /> : <Clock size={14} />;
@@ -1513,9 +1727,12 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
               </div>
             </div>
             
-            {/* CONTAINER DA TABELA */}
-            <div className="op-table-wrapper scrollable-table-wrapper">
-              <table className="op-table">
+            {/* CONTAINER DA TABELA COM ALTURA MÍNIMA E RESPIRO */}
+<div 
+  className="op-table-wrapper scrollable-table-wrapper" 
+  style={{ minHeight: '380px', paddingBottom: '90px' }}
+>
+  <table className="op-table">
                 <thead>
                   <tr>
                     <th style={{ width: '18%' }}>Romaneio & Status</th>
@@ -1527,13 +1744,13 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
                 </thead>
                 <tbody>
                   {pedidosFiltrados.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="empty-table-row">
-                        <SearchX size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
-                        <p>{buscaRomaneio ? `Nenhum romaneio correspondente a "${buscaRomaneio}"` : 'Nenhum pedido processado nesta data.'}</p>
-                      </td>
-                    </tr>
-                  ) : (
+  <tr>
+    <td colSpan="5" className="empty-table-row" style={{ height: '280px', verticalAlign: 'middle' }}>
+      <SearchX size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
+      <p>{buscaRomaneio ? `Nenhum romaneio correspondente a "${buscaRomaneio}"` : 'Nenhum pedido processado nesta data.'}</p>
+    </td>
+  </tr>
+) : (
                     pedidosFiltrados.map(pedido => {
                       let caixasCount = 0; 
                       let skusCount = 0;
@@ -1652,6 +1869,21 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
                                     <button className="dropdown-item" onClick={() => abrirModalEditarPedido(pedido)}>
                                       <Edit size={14}/> Editar Dados
                                     </button>
+                                    
+                                    {/* OPÇÃO DE PAUSAR/RETOMAR O CRONÔMETRO DIRETAMENTE */}
+                                    {!pedido.efetivado && (
+                                      <button className="dropdown-item" onClick={() => handleTogglePausaRomaneio(pedido)}>
+                                        {pedido.isPaused ? <><PlayCircle size={14}/> Retomar Separação</> : <><PauseCircle size={14}/> Pausar Separação</>}
+                                      </button>
+                                    )}
+                                    
+{/* ---> ADICIONE A OPÇÃO DE TRANSFERÊNCIA AQUI <--- */}
+                                    <div className="dropdown-divider"></div>
+                                    <button className="dropdown-item" onClick={() => handleAbrirTransferencia(pedido)} style={{ color: 'var(--text-highlight, #38bdf8)' }}>
+                                      <CalendarDays size={14}/> Transferir para outro dia
+                                    </button>
+                                    {/* ----------------------------------------------- */}
+
                                     <div className="dropdown-divider"></div>
                                     <button className="dropdown-item" onClick={() => handleToggleEfetivado(pedido)}>
                                       {pedido.efetivado ? <><X size={14}/> Desfazer Efetivação</> : <><Check size={14}/> Forçar Efetivação</>}
@@ -1885,6 +2117,248 @@ const [fluxoImportacao, setFluxoImportacao] = useState(null);
         onCancelar={() => setPedidoParaExcluir(null)}
         isExcluindo={isExcluindoPedido}
       />
+
+   <ModalConfirmarExclusao 
+        pedidoParaExcluir={pedidoParaExcluir}
+        onConfirmar={handleConfirmarExclusaoDefinitiva}
+        onCancelar={() => setPedidoParaExcluir(null)}
+        isExcluindo={isExcluindoPedido}
+      />
+
+      {/* MODAL DE SELEÇÃO DA EQUIPE FIXA */}
+      {showModalEquipe && (
+        <div 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            backgroundColor: 'rgba(5, 5, 10, 0.75)', 
+            zIndex: 99999, 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backdropFilter: 'blur(8px)',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          }} 
+          onClick={() => setShowModalEquipe(false)}
+        >
+          <div 
+            style={{ 
+              background: 'var(--bg-card, #1e293b)', 
+              width: '95%', 
+              maxWidth: '460px', 
+              borderRadius: '16px', 
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+              padding: '24px', 
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)' 
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'rgba(59, 130, 246, 0.15)', padding: '8px', borderRadius: '10px', color: '#3b82f6' }}>
+                  <UserCheck size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontSize: '1.15rem', fontWeight: 800 }}>Equipe Fixa do Checkout</h3>
+                  <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.82rem' }}>Selecione os conferentes fixos no monitoramento</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowModalEquipe(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', margin: '16px 0', paddingRight: '4px' }}>
+              {usuarios.map(u => {
+                const nomeUser = u.nickname || u.email.split('@')[0];
+                const isSelected = tempEquipeUids.includes(u.uid);
+
+                return (
+                  <div 
+                    key={u.uid}
+                    onClick={() => toggleUserNaEquipe(u.uid)}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'space-between',
+                      padding: '10px 14px', 
+                      borderRadius: '10px', 
+                      cursor: 'pointer',
+                      background: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg-input, rgba(255, 255, 255, 0.03))',
+                      border: `1px solid ${isSelected ? '#3b82f6' : 'var(--border-color, rgba(255, 255, 255, 0.08))'}`,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {u.photoURL ? (
+                        <img src={u.photoURL} alt={nomeUser} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        <Users size={18} color="var(--text-muted)" />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isSelected ? 'var(--text-main, #fff)' : 'var(--text-muted)' }}>{nomeUser}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                      </div>
+                    </div>
+                    {isSelected ? <CheckSquare size={18} color="#3b82f6" /> : <Square size={18} color="var(--text-muted)" />}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+              <button 
+                onClick={() => setShowModalEquipe(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleSalvarEquipeFixa}
+                disabled={isSalvandoEquipe}
+                style={{ flex: 1.4, padding: '10px', borderRadius: '8px', background: '#3b82f6', border: 'none', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+              >
+                {isSalvandoEquipe ? <Loader2 size={16} className="fa-spin"/> : <Check size={16}/>}
+                Salvar Equipe ({tempEquipeUids.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---> ADICIONE O MODAL DE TRANSFERÊNCIA AQUI <--- */}
+      {/* MODAL DE TRANSFERÊNCIA DE ROMANEIO COM TIPOGRAFIA CORRIGIDA */}
+      {pedidoParaTransferir && (
+        <div 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            backgroundColor: 'rgba(5, 5, 10, 0.75)', 
+            zIndex: 99999, 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          }} 
+          onClick={() => !isTransferindo && setPedidoParaTransferir(null)}
+        >
+          <div 
+            style={{ 
+              background: 'var(--bg-card, #1e293b)', 
+              width: '95%', 
+              maxWidth: '420px', 
+              borderRadius: '16px', 
+              overflow: 'hidden', 
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+              padding: '26px', 
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)',
+              fontFamily: 'inherit'
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '18px' }}>
+              <div style={{ 
+                background: 'rgba(56, 189, 248, 0.12)', 
+                width: '46px',
+                height: '46px',
+                borderRadius: '12px', 
+                color: 'var(--text-highlight, #38bdf8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <CalendarDays size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontSize: '1.2rem', fontWeight: 800, letterSpacing: '-0.3px' }}>
+                  Transferir Romaneio
+                </h3>
+                <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.84rem', fontWeight: 500 }}>
+                  Mover para outra data de operação
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '22px' }}>
+              <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted, #94a3b8)', fontSize: '0.88rem', lineHeight: 1.5 }}>
+                O romaneio <strong style={{ color: 'var(--text-main, #f8fafc)', fontWeight: 700 }}>{pedidoParaTransferir.romaneio}</strong> será movido. Selecione a nova data de execução:
+              </p>
+              <input 
+                type="date" 
+                value={novaDataTransferencia}
+                onChange={(e) => setNovaDataTransferencia(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 14px', 
+                  borderRadius: '10px', 
+                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))', 
+                  background: 'var(--bg-input, rgba(0, 0, 0, 0.25))', 
+                  color: 'var(--text-main, #f8fafc)', 
+                  fontSize: '0.95rem', 
+                  outline: 'none', 
+                  colorScheme: 'dark', 
+                  fontFamily: 'inherit',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => setPedidoParaTransferir(null)} 
+                disabled={isTransferindo}
+                style={{ 
+                  flex: 1, 
+                  padding: '11px 16px', 
+                  background: 'var(--bg-input, rgba(255, 255, 255, 0.05))', 
+                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', 
+                  color: 'var(--text-muted, #94a3b8)', 
+                  borderRadius: '10px', 
+                  fontWeight: 700, 
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleConfirmarTransferencia} 
+                disabled={isTransferindo}
+                style={{ 
+                  flex: 1.4, 
+                  padding: '11px 18px', 
+                  background: 'var(--primary, #3b82f6)', 
+                  color: '#fff', 
+                  border: 'none', 
+                  borderRadius: '10px', 
+                  fontWeight: 700, 
+                  fontSize: '0.88rem',
+                  cursor: isTransferindo ? 'not-allowed' : 'pointer', 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  alignItems: 'center', 
+                  gap: '8px',
+                  fontFamily: 'inherit',
+                  boxShadow: '0 4px 14px rgba(59, 130, 246, 0.3)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {isTransferindo ? <Loader2 size={16} className="fa-spin"/> : <ArrowRight size={16}/>}
+                <span>Transferir</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ------------------------------------------------ */}
 
     </>
   );
