@@ -90,7 +90,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
   // ==========================================
   // MARCO ZERO DO RANKING OFICIAL
   // ==========================================
-  const DATA_INICIO_NOVO_SISTEMA = '2026-08-14';
+  const DATA_INICIO_NOVO_SISTEMA = '2026-08-19';
 
   // ==========================================
   // FILTROS DE DATA
@@ -1089,3 +1089,4 @@ export default function PersonalDashboard({ user, isAdmin }) {
     </>
   );
 }
+
