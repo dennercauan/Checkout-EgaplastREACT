@@ -843,14 +843,47 @@ export default function Operacao({ isAdmin }) {
     return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); unsubPausas(); };
   }, [localUser, dataOperacaoAtiva]);
 
-  const pedidosProcessados = useMemo(() => {
-    return [...pedidosNovos, ...pedidosLegados].sort((a, b) => {
-      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-      return timeB - timeA;
-    });
-  }, [pedidosNovos, pedidosLegados]);
+const pedidosProcessados = useMemo(() => {
+    return [...pedidosNovos, ...pedidosLegados]
+      .map(pedido => {
+        // Se já tiver UIDs válidos na raiz, mantém a estrutura original e encerra a varredura
+        if (Array.isArray(pedido.uidsVinculados) && pedido.uidsVinculados.length > 0) {
+          return pedido;
+        }
 
+        // Reconstrói a lista de UIDs varrendo os documentos internos
+        const uidsSet = new Set();
+        if (pedido.criadorUid) uidsSet.add(pedido.criadorUid);
+
+        (pedido.documentos || []).forEach(d => {
+          // Extrai responsáveis definidos a nível de documento
+          const lista = d.responsaveis || (d.responsavel ? [d.responsavel] : []);
+          lista.forEach(identificador => {
+            if (!identificador) return;
+            const identificadorLimpo = String(identificador).toLowerCase().trim();
+            
+            // Busca o usuário correspondente no array global de usuários
+            const user = (usuarios || []).find(u => 
+              u.uid === identificadorLimpo ||
+              (u.email && String(u.email).toLowerCase().trim() === identificadorLimpo) ||
+              (u.nickname && String(u.nickname).toLowerCase().trim() === identificadorLimpo) ||
+              (u.email && String(u.email).split('@')[0].toLowerCase().trim() === identificadorLimpo)
+            );
+            if (user) uidsSet.add(user.uid);
+          });
+        });
+
+        return {
+          ...pedido,
+          uidsVinculados: Array.from(uidsSet)
+        };
+      })
+      .sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return timeB - timeA;
+      });
+  }, [pedidosNovos, pedidosLegados, usuarios]);
   // ==========================================
   // AUTO-ABERTURA DO MODAL VIA URL (SINCRONIZADO COM O LOADING FAKE)
   // ==========================================

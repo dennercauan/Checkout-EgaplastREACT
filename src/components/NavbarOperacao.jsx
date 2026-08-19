@@ -25,6 +25,7 @@ export default function NavbarOperacao({
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isHoveringAvatar, setIsHoveringAvatar] = useState(false);
   const dropdownRef = useRef(null);
 
   const temaPersistido = localStorage.getItem('egaplast_theme') || 'light';
@@ -290,7 +291,7 @@ export default function NavbarOperacao({
             </div>
           </div>
 
-          {/* ... restante dos controles de Data, Conta e Settings permanecem inalterados no Lado Direito ... */}
+          {/* LADO DIREITO */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             
             <div 
@@ -383,28 +384,86 @@ export default function NavbarOperacao({
                   </span>
                 </div>
 
-                {userProfile.photoURL ? (
-                  <img 
-                    src={userProfile.photoURL} 
-                    alt="Perfil" 
-                    style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} 
-                  />
-                ) : (
-                  <div style={{ 
-                    width: '38px', 
-                    height: '38px', 
-                    borderRadius: '50%', 
-                    background: 'var(--primary)', 
-                    color: '#fff', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    fontWeight: 700, 
-                    fontSize: '0.95rem' 
-                  }}>
-                    {displayName.charAt(0).toUpperCase()}
-                  </div>
-                )}
+                {/* CONTAINER DO AVATAR COM ZOOM HOVER */}
+                <div 
+                  style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+                  onMouseEnter={() => setIsHoveringAvatar(true)}
+                  onMouseLeave={() => setIsHoveringAvatar(false)}
+                >
+                  {userProfile.photoURL ? (
+                    <img 
+                      src={userProfile.photoURL} 
+                      alt="Perfil" 
+                      style={{ 
+                        width: '38px', 
+                        height: '38px', 
+                        borderRadius: '50%', 
+                        objectFit: 'cover', 
+                        border: '2px solid var(--primary)',
+                        flexShrink: 0
+                      }} 
+                    />
+                  ) : (
+                    <div style={{ 
+                      width: '38px', 
+                      height: '38px', 
+                      borderRadius: '50%', 
+                      background: 'var(--primary)', 
+                      color: '#fff', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      fontWeight: 700, 
+                      fontSize: '0.95rem',
+                      flexShrink: 0
+                    }}>
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+
+                  {/* CARD DE PRÉVIA FLUTUANTE */}
+                  {isHoveringAvatar && userProfile.photoURL && !isProfileMenuOpen && (
+                    <div 
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 10px)',
+                        right: 0,
+                        zIndex: 99999,
+                        background: 'var(--bg-card, #0f172a)',
+                        padding: '8px',
+                        borderRadius: '16px',
+                        border: '2px solid var(--border-color, #334155)',
+                        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                        animation: 'popInAvatar 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <img 
+                        src={userProfile.photoURL} 
+                        alt="Perfil Expandido" 
+                        style={{ 
+                          width: '180px', 
+                          height: '180px', 
+                          borderRadius: '12px', 
+                          objectFit: 'cover',
+                          display: 'block'
+                        }} 
+                      />
+                      <span style={{ 
+                        fontSize: '0.8rem', 
+                        fontWeight: 800, 
+                        color: 'var(--text-main, #fff)', 
+                        letterSpacing: '-0.2px' 
+                      }}>
+                        {displayName}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {isProfileMenuOpen && (
@@ -484,6 +543,7 @@ export default function NavbarOperacao({
         </div>
       </nav>
 
+      {/* MODAL DE CONFIGURAÇÃO DE PERFIL / TEMA */}
       {showSettingsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)', fontFamily: "'Inter', sans-serif" }}>
           <div style={{ background: '#fff', borderRadius: '16px', width: '480px', maxWidth: '95%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
@@ -548,6 +608,7 @@ export default function NavbarOperacao({
         </div>
       )}
 
+      {/* MODAL CONFIRMAÇÃO DE SAÍDA */}
       {showLogoutConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)', fontFamily: "'Inter', sans-serif" }} onClick={() => setShowLogoutConfirm(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '16px', maxWidth: '380px', width: '90%', padding: '36px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -563,6 +624,16 @@ export default function NavbarOperacao({
           </div>
         </div>
       )}
+
+      <style>
+        {`
+          @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes popInAvatar { 
+            0% { opacity: 0; transform: scale(0.85) translateY(-8px); } 
+            100% { opacity: 1; transform: scale(1) translateY(0); } 
+          }
+        `}
+      </style>
     </>
   );
 }

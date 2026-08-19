@@ -34,6 +34,7 @@ export default function Navbar({ user, isAdmin }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isHoveringAvatar, setIsHoveringAvatar] = useState(false);
   
   const [userProfile, setUserProfile] = useState({ nickname: '', photoURL: '', theme: temaPersistido });
   const [formProfile, setFormProfile] = useState({ nickname: '', photoURL: '', theme: temaPersistido });
@@ -98,7 +99,6 @@ export default function Navbar({ user, isAdmin }) {
   };
 
   useEffect(() => {
-    // Aplicação imediata no ciclo de montagem
     aplicarTemaGlobal(temaPersistido);
 
     if (!user) return;
@@ -156,7 +156,6 @@ export default function Navbar({ user, isAdmin }) {
   const handleSaveProfile = async () => {
     setIsSavingProfile(true);
     try {
-      // Salva imediatamente no localStorage antes do banco para resposta instantânea
       aplicarTemaGlobal(formProfile.theme);
 
       await updateDoc(doc(db, 'usuarios', user.uid), {
@@ -189,9 +188,6 @@ export default function Navbar({ user, isAdmin }) {
     setShowLogoutConfirm(false);
   };
 
-  // ==========================================
-  // EXTRAÇÃO PRECISA DA DATA DA OPERAÇÃO
-  // ==========================================
   const extrairDataIso = (docData) => {
     if (docData.dataOperacao && typeof docData.dataOperacao === 'string' && docData.dataOperacao.length >= 10) {
       return docData.dataOperacao.substring(0, 10);
@@ -228,7 +224,6 @@ export default function Navbar({ user, isAdmin }) {
     const termoNumero = Number(termoExato);
 
     try {
-      // 1. Busca na coleção principal 'pedidos'
       const qPedidos = query(collection(db, 'pedidos'), where('romaneio', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapPedidos = await getDocs(qPedidos);
 
@@ -249,7 +244,6 @@ export default function Navbar({ user, isAdmin }) {
         return;
       }
 
-      // 2. Busca nas Ordens de Produção 'ordensProducao'
       const qOps = query(collection(db, 'ordensProducao'), where('numero', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapOps = await getDocs(qOps);
 
@@ -274,7 +268,6 @@ export default function Navbar({ user, isAdmin }) {
         return;
       }
 
-      // 3. Busca nas Pastas Legadas (pedidosMultiDocumento)
       const qPedidosMulti = query(collectionGroup(db, 'pedidosMultiDocumento'), where('romaneio', 'in', isNaN(termoNumero) ? [termoExato] : [termoExato, termoNumero]));
       const snapMulti = await getDocs(qPedidosMulti);
 
@@ -387,40 +380,91 @@ export default function Navbar({ user, isAdmin }) {
                 <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{isAdmin ? 'Administrador' : 'Conferente'}</span>
               </div>
 
-              {userProfile.photoURL ? (
-                <img 
-                  src={userProfile.photoURL} 
-                  alt="Perfil" 
-                  style={{ 
-                    width: '60px', 
-                    height: '60px', 
-                    borderRadius: '50%', 
-                    objectFit: 'cover', 
-                    border: '2px solid var(--primary)',
-                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
-                    flexShrink: 0
-                  }} 
-                />
-              ) : (
-                <div 
-                  style={{ 
-                    width: '60px', 
-                    height: '60px', 
-                    borderRadius: '50%', 
-                    background: 'var(--primary)', 
-                    color: '#fff', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    fontWeight: 'bold', 
-                    fontSize: '1.25rem',
-                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
-                    flexShrink: 0
-                  }}
-                >
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
-              )}
+              {/* CONTAINER DO AVATAR COM ZOOM HOVER */}
+              <div 
+                style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+                onMouseEnter={() => setIsHoveringAvatar(true)}
+                onMouseLeave={() => setIsHoveringAvatar(false)}
+              >
+                {userProfile.photoURL ? (
+                  <img 
+                    src={userProfile.photoURL} 
+                    alt="Perfil" 
+                    style={{ 
+                      width: '60px', 
+                      height: '60px', 
+                      borderRadius: '50%', 
+                      objectFit: 'cover', 
+                      border: '2px solid var(--primary)',
+                      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+                      flexShrink: 0,
+                      transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+                    }} 
+                  />
+                ) : (
+                  <div 
+                    style={{ 
+                      width: '60px', 
+                      height: '60px', 
+                      borderRadius: '50%', 
+                      background: 'var(--primary)', 
+                      color: '#fff', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      fontWeight: 'bold', 
+                      fontSize: '1.25rem',
+                      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+                      flexShrink: 0
+                    }}
+                  >
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+
+                {/* CARD DE PRÉVIA EXPANDIDA */}
+                {isHoveringAvatar && userProfile.photoURL && !isProfileMenuOpen && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 12px)',
+                      right: 0,
+                      zIndex: 9999,
+                      background: 'var(--bg-card, #0f172a)',
+                      padding: '8px',
+                      borderRadius: '16px',
+                      border: '2px solid var(--border-color, #334155)',
+                      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                      animation: 'popInAvatar 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                      pointerEvents: 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <img 
+                      src={userProfile.photoURL} 
+                      alt="Perfil Expandido" 
+                      style={{ 
+                        width: '180px', 
+                        height: '180px', 
+                        borderRadius: '12px', 
+                        objectFit: 'cover',
+                        display: 'block'
+                      }} 
+                    />
+                    <span style={{ 
+                      fontSize: '0.8rem', 
+                      fontWeight: 800, 
+                      color: 'var(--text-main, #fff)', 
+                      letterSpacing: '-0.2px' 
+                    }}>
+                      {displayName}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {isProfileMenuOpen && (
@@ -717,7 +761,6 @@ export default function Navbar({ user, isAdmin }) {
                         return;
                       }
 
-                      // Bloqueios de Segurança para Conferentes
                       const isOwner = searchResult.criadorUid === user.uid;
                       const isLinked = searchResult.uidsVinculados && searchResult.uidsVinculados.includes(user.uid);
                       
@@ -742,6 +785,10 @@ export default function Navbar({ user, isAdmin }) {
       <style>
         {`
           @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes popInAvatar { 
+            0% { opacity: 0; transform: scale(0.85) translateY(-8px); } 
+            100% { opacity: 1; transform: scale(1) translateY(0); } 
+          }
         `}
       </style>
     </>

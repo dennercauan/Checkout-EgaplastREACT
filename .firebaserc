@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "beta": "checkout-egaplast"
+  },
   "targets": {
     "checkout-egaplast": {
       "hosting": {

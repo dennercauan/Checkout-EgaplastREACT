@@ -1,22 +1,35 @@
 // src/components/AdmEstatisticasGerais.jsx
-import React, { useMemo } from 'react';
-import { Package, FileText, TrendingDown, Award, ShoppingCart, Boxes } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+  Package, FileText, TrendingDown, Award, ShoppingCart, 
+  Boxes, ChevronDown, Sparkles, Activity, X
+} from 'lucide-react';
 
-export default function AdmEstatisticasGerais({ dados, dataFiltro, pedidos = [] }) {
-  // Garantimos a leitura quer os dados venham direto do objeto ou de dentro de 'ranking'
+export default function AdmEstatisticasGerais({ dados, pedidos = [] }) {
+  const [expandido, setExpandido] = useState(false);
+  const popoverRef = useRef(null);
   const arrayUsuarios = Object.values(dados?.ranking || dados || {});
 
-  // O reduce passa por todos os funcionários somando as métricas gerais da operação
-  const totais = arrayUsuarios.reduce((acc, user) => {
-    return {
-      skus: acc.skus + (user.skus || 0),
-      op: acc.op + (user.op || 0),
-      pontos: acc.pontos + (user.pontos || 0),
-      decrescimo: acc.decrescimo + (user.decrescimo || 0),
+  // Fecha o menu flutuante automaticamente ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target)) {
+        setExpandido(false);
+      }
     };
-  }, { skus: 0, op: 0, pontos: 0, decrescimo: 0 });
+    if (expandido) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [expandido]);
 
-  // Contagem em tempo real priorizando a lista ativa de pedidos (abertos e finalizados)
+  const totais = arrayUsuarios.reduce((acc, user) => ({
+    skus: acc.skus + (user.skus || 0),
+    op: acc.op + (user.op || 0),
+    pontos: acc.pontos + (user.pontos || 0),
+    decrescimo: acc.decrescimo + (user.decrescimo || 0),
+  }), { skus: 0, op: 0, pontos: 0, decrescimo: 0 });
+
   const { totalPedidosValidos, totalCaixasGerais } = useMemo(() => {
     if (pedidos && pedidos.length > 0) {
       let nfsMinutas = 0;
@@ -25,10 +38,7 @@ export default function AdmEstatisticasGerais({ dados, dataFiltro, pedidos = [] 
       pedidos.forEach(p => {
         (p.documentos || []).forEach(docItem => {
           const tipo = String(docItem.tipo || '').trim();
-          // Bonificações e outros tipos são ignorados na contagem de pedidos
-          if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
-            nfsMinutas++;
-          }
+          if (tipo === 'Nota Fiscal' || tipo === 'Minuta') nfsMinutas++;
           caixas += (docItem.caixas || []).length;
         });
       });
@@ -36,111 +46,197 @@ export default function AdmEstatisticasGerais({ dados, dataFiltro, pedidos = [] 
       return { totalPedidosValidos: nfsMinutas, totalCaixasGerais: caixas };
     }
 
-    // Fallback: se não receber o array de pedidos, lê do consolidado gravado
     return {
       totalPedidosValidos: dados?.totalNfMinuta ?? dados?.totalPedidos ?? 0,
       totalCaixasGerais: dados?.totalCaixas ?? 0
     };
   }, [pedidos, dados]);
 
-  const cardStyle = {
-    background: 'var(--bg-card, #ffffff)',
-    border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
-    padding: '14px 16px',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-    transition: 'all 0.25s ease'
-  };
-
   return (
-    <div style={{ marginBottom: '15px' }}>
-      
-      {/* GRID COMPACTO REATIVO */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', 
-        gap: '12px' 
-      }}>
+    <aside style={{
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '14px',
+      padding: '16px',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      boxSizing: 'border-box',
+      gap: '10px',
+      position: 'relative' // Base para o elemento flutuante
+    }}>
+      {/* CABEÇALHO */}
+      <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h4 style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          Métricas do Dia
+        </h4>
+        <Activity size={15} color="var(--primary)" />
+      </div>
+
+      {/* BLOCO DOS 3 CARDS FIXOS */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
         
-        {/* CARD 1: TOTAL PEDIDOS */}
-        <div style={{ ...cardStyle, borderLeft: '4px solid #8b5cf6' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>PEDIDOS (NF/MIN)</p>
-              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totalPedidosValidos}</h2>
+        {/* KPI 1: PEDIDOS */}
+        <div style={{
+          flex: 1,
+          minHeight: '68px',
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(0,0,0,0.02) 100%)',
+          borderLeft: '4px solid #8b5cf6',
+          borderRadius: '10px',
+          padding: '10px 14px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              NFs / Minutas
+            </span>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#a78bfa', lineHeight: 1.1, marginTop: '2px' }}>
+              {totalPedidosValidos}
             </div>
-            <div style={{ background: 'rgba(139, 92, 246, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ShoppingCart size={18} color="#8b5cf6" />
-            </div>
+          </div>
+          <div style={{ background: 'rgba(139, 92, 246, 0.15)', padding: '9px', borderRadius: '8px', color: '#a78bfa' }}>
+            <ShoppingCart size={20} />
           </div>
         </div>
 
-        {/* CARD 2: TOTAL DE CAIXAS */}
-        <div style={{ ...cardStyle, borderLeft: '4px solid #06b6d4' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>TOTAL DE CAIXAS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totalCaixasGerais}</h2>
+        {/* KPI 2: TOTAL CAIXAS */}
+        <div style={{
+          flex: 1,
+          minHeight: '68px',
+          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(0,0,0,0.02) 100%)',
+          borderLeft: '4px solid #06b6d4',
+          borderRadius: '10px',
+          padding: '10px 14px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Total de Caixas
+            </span>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#22d3ee', lineHeight: 1.1, marginTop: '2px' }}>
+              {totalCaixasGerais}
             </div>
-            <div style={{ background: 'rgba(6, 182, 212, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Boxes size={18} color="#06b6d4" />
-            </div>
+          </div>
+          <div style={{ background: 'rgba(6, 182, 212, 0.15)', padding: '9px', borderRadius: '8px', color: '#22d3ee' }}>
+            <Boxes size={20} />
           </div>
         </div>
 
-        {/* CARD 3: TOTAL DE SKUs BIPADOS */}
-        <div style={{ ...cardStyle, borderLeft: '4px solid #3b82f6' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>SKUs BIPADOS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totais.skus}</h2>
-            </div>
-            <div style={{ background: 'rgba(59, 130, 246, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Package size={18} color="#3b82f6" />
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 4: ORDENS DE PRODUÇÃO */}
-        <div style={{ ...cardStyle, borderLeft: '4px solid #10b981' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>ORDENS DE PRODUÇÃO</p>
-              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totais.op}</h2>
-            </div>
-            <div style={{ background: 'rgba(16, 185, 129, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileText size={18} color="#10b981" />
+        {/* KPI 3: ORDENS DE PRODUÇÃO */}
+        <div style={{
+          flex: 1,
+          minHeight: '68px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(0,0,0,0.02) 100%)',
+          borderLeft: '4px solid #10b981',
+          borderRadius: '10px',
+          padding: '10px 14px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Ordens de Produção
+            </span>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#34d399', lineHeight: 1.1, marginTop: '2px' }}>
+              {totais.op}
             </div>
           </div>
-        </div>
-
-        {/* CARD 5: PONTUAÇÃO DA EQUIPE */}
-        <div style={{ ...cardStyle, borderLeft: '4px solid #f59e0b' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>PONTUAÇÃO EQUIPE</p>
-              <h2 style={{ margin: '4px 0 0 0', color: 'var(--text-main, #0f172a)', fontSize: '1.45rem', fontWeight: 800 }}>{totais.pontos.toFixed(0)}</h2>
-            </div>
-            <div style={{ background: 'rgba(245, 158, 11, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Award size={18} color="#f59e0b" />
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 6: PONTOS PERDIDOS (OCIOSIDADE) */}
-        <div style={{ ...cardStyle, borderLeft: '4px solid #ef4444' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ margin: 0, color: 'var(--text-muted, #64748b)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.4px' }}>PONTOS PERDIDOS</p>
-              <h2 style={{ margin: '4px 0 0 0', color: '#ef4444', fontSize: '1.45rem', fontWeight: 800 }}>{totais.decrescimo.toFixed(0)}</h2>
-            </div>
-            <div style={{ background: 'rgba(239, 68, 68, 0.12)', padding: '7px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <TrendingDown size={18} color="#ef4444" />
-            </div>
+          <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '9px', borderRadius: '8px', color: '#34d399' }}>
+            <FileText size={20} />
           </div>
         </div>
 
       </div>
-    </div>
+
+      {/* ÂNCORA DO BOTÃO E POPOVER FLUTUANTE */}
+      <div ref={popoverRef} style={{ position: 'relative', width: '100%', marginTop: 'auto' }}>
+        
+        <button
+          onClick={() => setExpandido(!expandido)}
+          style={{
+            width: '100%',
+            background: expandido ? 'rgba(56, 189, 248, 0.12)' : 'var(--bg-input)',
+            border: `1px solid ${expandido ? 'var(--primary)' : 'var(--border-color)'}`,
+            color: expandido ? 'var(--text-highlight, #38bdf8)' : 'var(--text-muted)',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '0.74rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Sparkles size={12} color="var(--primary)" />
+          <span>{expandido ? 'Ocultar Detalhes' : 'Outros Indicadores'}</span>
+          <ChevronDown size={13} style={{ transform: expandido ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+        </button>
+
+        {/* CARD FLUTUANTE QUE SOBREPÕE SEM EMPURRAR O LAYOUT */}
+        {expandido && (
+          <div style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            left: 0,
+            right: 0,
+            zIndex: 99999,
+            background: 'var(--bg-card, #0f172a)',
+            border: '2px solid var(--border-color, #334155)',
+            borderRadius: '14px',
+            padding: '12px',
+            boxShadow: '0 20px 45px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            animation: 'popInStats 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+          }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '4px', borderBottom: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Indicadores Extras
+              </span>
+              <button 
+                onClick={() => setExpandido(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>SKUs Bipados</span>
+              <strong style={{ fontSize: '0.95rem', color: '#38bdf8' }}>{totais.skus.toLocaleString('pt-BR')}</strong>
+            </div>
+
+            <div style={{ background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>Pontos Equipe</span>
+              <strong style={{ fontSize: '0.95rem', color: '#f59e0b' }}>{totais.pontos.toFixed(0)}</strong>
+            </div>
+
+            <div style={{ background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: '#ef4444', fontWeight: 600 }}>Penalidades</span>
+              <strong style={{ fontSize: '0.95rem', color: '#ef4444' }}>-{totais.decrescimo.toFixed(0)}</strong>
+            </div>
+
+          </div>
+        )}
+
+      </div>
+
+      <style>{`
+        @keyframes popInStats {
+          from { opacity: 0; transform: scale(0.95) translateY(-6px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
+    </aside>
   );
 }

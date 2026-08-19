@@ -1,7 +1,7 @@
 // src/components/RankingDiario.jsx
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Trophy, Medal, CheckCircle2, Factory, TrendingUp, Clock, Maximize2, X } from 'lucide-react';
+import { Trophy, Medal, CheckCircle2, Factory, TrendingUp, Clock, Maximize2, X, User } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function RankingDiario({
@@ -16,6 +16,7 @@ export default function RankingDiario({
 }) {
   const [modalUser, setModalUser] = useState(null);
   const [eventoSelecionado, setEventoSelecionado] = useState(null);
+  const [hoveredAvatarKey, setHoveredAvatarKey] = useState(null);
 
   const formatTime = (ms) => {
     if (!ms) return '';
@@ -26,7 +27,7 @@ export default function RankingDiario({
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div style={{ background: 'var(--bg-card, #1e293b)', color: 'var(--text-main, #fff)', padding: '12px 15px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.45)', border: '1px solid var(--border-color, #334155)', minWidth: '260px', zIndex: 1000 }}>
+        <div style={{ background: '#0f172a', color: 'var(--text-main, #fff)', padding: '12px 15px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.45)', border: '1px solid var(--border-color, #334155)', minWidth: '260px', zIndex: 1000 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 'bold' }}><Clock size={12} style={{display: 'inline', marginRight: '4px'}}/>{data.timeStr}</span>
             <span style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-highlight, #38bdf8)' }}>{data.score} pts</span>
@@ -158,78 +159,149 @@ export default function RankingDiario({
         </div>
         <div className="ranking-list">
           {rankingCalculado?.filter(user => user && (user.uid || user.email || user.nome)).map((user, idx) => {
+            const userKey = `${user.uid || user.email || idx}-${idx}`;
+            const abreParaCima = idx >= 3;
+            const isHovered = hoveredAvatarKey === userKey;
+
+            const emailLimpo = String(user.email || '').toLowerCase().trim();
+            const nomeLimpo = String(user.nome || '').toLowerCase().trim();
+            
+            const userRef = (usuarios || []).find(u => {
+              const uEmail = String(u.email || '').toLowerCase().trim();
+              const uPrefix = uEmail.split('@')[0];
+              const uNome = String(u.nickname || '').toLowerCase().trim();
+
+              return (
+                (user.uid && u.uid === user.uid) ||
+                (emailLimpo && uEmail === emailLimpo) ||
+                (nomeLimpo && uEmail === nomeLimpo) ||
+                (nomeLimpo && uPrefix === nomeLimpo) ||
+                (nomeLimpo && uNome === nomeLimpo)
+              );
+            });
+
+            const fotoFinal = user.photoURL || userRef?.photoURL || userRef?.foto;
+
             return (
-              <div key={`${user.uid || user.email || idx}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                
+              <div 
+                key={userKey} 
+                style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '8px',
+                  position: 'relative',
+                  zIndex: isHovered ? 9999 : (rankingCalculado.length - idx) // Eleva a linha inteira acima de todas as outras
+                }}
+              >
                 <div 
                   className={`ranking-item ${idx === 0 ? 'first-place' : ''}`}
                   onClick={() => setRankingExpandido(rankingExpandido === user.uid ? null : user.uid)}
-                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                  style={{ cursor: 'pointer', transition: 'all 0.2s', position: 'relative' }}
                 >
                   <div className="ranking-pos">
                     {idx === 0 ? <Medal size={24} color="#eab308" /> : idx === 1 ? <Medal size={20} color="#94a3b8" /> : idx === 2 ? <Medal size={20} color="#b45309" /> : <span className="pos-number">{user.posicao}º</span>}
                   </div>
                   
-                  {/* AVATAR COM FOTO / FALLBACK DE INICIAIS */}
-                  <div className="ranking-avatar" style={{ width: '38px', height: '38px', position: 'relative', flexShrink: 0 }}>
-                    {(() => {
-                      const emailLimpo = String(user.email || '').toLowerCase().trim();
-                      const nomeLimpo = String(user.nome || '').toLowerCase().trim();
-                      
-                      const userRef = (usuarios || []).find(u => {
-                        const uEmail = String(u.email || '').toLowerCase().trim();
-                        const uPrefix = uEmail.split('@')[0];
-                        const uNome = String(u.nickname || '').toLowerCase().trim();
+                  {/* AVATAR COM FOTO / FALLBACK E PREVIEW EXPANDIDO */}
+                  <div 
+                    className="ranking-avatar" 
+                    style={{ width: '38px', height: '38px', position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center' }}
+                    onMouseEnter={(e) => {
+                      e.stopPropagation();
+                      setHoveredAvatarKey(userKey);
+                    }}
+                    onMouseLeave={(e) => {
+                      e.stopPropagation();
+                      setHoveredAvatarKey(null);
+                    }}
+                  >
+                    {fotoFinal ? (
+                      <img 
+                        src={fotoFinal} 
+                        alt={user.nome || 'Avatar'} 
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          if (e.currentTarget.nextSibling) {
+                            e.currentTarget.nextSibling.style.display = 'flex';
+                          }
+                        }}
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          borderRadius: '50%', 
+                          objectFit: 'cover', 
+                          border: `2px solid ${idx === 0 ? '#eab308' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : 'var(--border-color, rgba(255,255,255,0.15))'}`,
+                          display: 'block'
+                        }} 
+                      />
+                    ) : (
+                      <div 
+                        className="avatar-circle" 
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          borderRadius: '50%', 
+                          display: 'flex',
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          fontWeight: 800 
+                        }}
+                      >
+                        {user.nome ? user.nome.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                    )}
 
-                        return (
-                          (user.uid && u.uid === user.uid) ||
-                          (emailLimpo && uEmail === emailLimpo) ||
-                          (nomeLimpo && uEmail === nomeLimpo) ||
-                          (nomeLimpo && uPrefix === nomeLimpo) ||
-                          (nomeLimpo && uNome === nomeLimpo)
-                        );
-                      });
-
-                      const fotoFinal = user.photoURL || userRef?.photoURL || userRef?.foto;
-
-                      return (
-                        <>
-                          {fotoFinal && (
-                            <img 
-                              src={fotoFinal} 
-                              alt={user.nome || 'Avatar'} 
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                                if (e.currentTarget.nextSibling) {
-                                  e.currentTarget.nextSibling.style.display = 'flex';
-                                }
-                              }}
-                              style={{ 
-                                width: '100%', 
-                                height: '100%', 
-                                borderRadius: '50%', 
-                                objectFit: 'cover', 
-                                border: `2px solid ${idx === 0 ? '#eab308' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : 'var(--border-color, rgba(255,255,255,0.15))'}` 
-                              }} 
-                            />
-                          )}
-                          <div 
-                            className="avatar-circle" 
-                            style={{ 
-                              display: fotoFinal ? 'none' : 'flex',
-                              width: '100%', 
-                              height: '100%', 
-                              borderRadius: '50%', 
-                              alignItems: 'center', 
-                              justifyContent: 'center', 
-                              fontWeight: 800 
-                            }}
-                          >
-                            {user.nome ? user.nome.charAt(0).toUpperCase() : 'U'}
-                          </div>
-                        </>
-                      );
-                    })()}
+                    {/* CARD FLUTUANTE 100% OPACO E SOBREPOSTO */}
+                    {isHovered && fotoFinal && (
+                      <div 
+                        style={{
+                          position: 'absolute',
+                          top: abreParaCima ? 'auto' : 'calc(100% + 10px)',
+                          bottom: abreParaCima ? 'calc(100% + 10px)' : 'auto',
+                          left: 0,
+                          zIndex: 999999,
+                          backgroundColor: '#0f172a', // Fundo 100% sólido sem transparência
+                          padding: '8px',
+                          borderRadius: '16px',
+                          border: '2px solid #334155',
+                          boxShadow: '0 25px 50px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.15)',
+                          animation: abreParaCima 
+                            ? 'popInAvatarUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards' 
+                            : 'popInAvatar 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                          pointerEvents: 'none',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <img 
+                          src={fotoFinal} 
+                          alt="Perfil Expandido" 
+                          style={{ 
+                            width: '180px', 
+                            height: '180px', 
+                            borderRadius: '12px', 
+                            objectFit: 'cover',
+                            display: 'block',
+                            backgroundColor: '#020617'
+                          }} 
+                        />
+                        <span style={{ 
+                          fontSize: '0.82rem', 
+                          fontWeight: 800, 
+                          color: '#ffffff', 
+                          letterSpacing: '-0.2px',
+                          textAlign: 'center',
+                          maxWidth: '170px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {user.nome}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="ranking-info">
@@ -331,7 +403,7 @@ export default function RankingDiario({
         </div>
       </div>
 
-      {/* MODAL DE GRÁFICO EXPANDIDO COM PORTAL (MONTA FORA DO FLUXO DOM) */}
+      {/* MODAL DE GRÁFICO EXPANDIDO COM PORTAL */}
       {modalUser && typeof document !== 'undefined' && createPortal(
         <div 
           style={{ 
@@ -512,6 +584,19 @@ export default function RankingDiario({
         </div>,
         document.body
       )}
+
+      <style>
+        {`
+          @keyframes popInAvatar { 
+            0% { opacity: 0; transform: scale(0.85) translateY(-8px); } 
+            100% { opacity: 1; transform: scale(1) translateY(0); } 
+          }
+          @keyframes popInAvatarUp { 
+            0% { opacity: 0; transform: scale(0.85) translateY(8px); } 
+            100% { opacity: 1; transform: scale(1) translateY(0); } 
+          }
+        `}
+      </style>
     </>
   );
 }

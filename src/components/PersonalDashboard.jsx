@@ -103,7 +103,8 @@ export default function PersonalDashboard({ user, isAdmin }) {
   const dataHojeLocal = `${ano}-${mes}-${dia}`;
   const dataPrimeiroDia = `${ano}-${mes}-01`;
 
-  const [startDate, setStartDate] = useState(dataPrimeiroDia);
+  // ✅ Retorna para o dia 01. A Dashboard inteira puxará o mês completo.
+  const [startDate, setStartDate] = useState(dataPrimeiroDia); 
   const [endDate, setEndDate] = useState(dataHojeLocal);
   
   const [viewMonth, setViewMonth] = useState(new Date(ano, today.getMonth(), 1));
@@ -1081,7 +1082,7 @@ export default function PersonalDashboard({ user, isAdmin }) {
           showModal={modalRankingAberto}
           setShowModal={setModalRankingAberto}
           rankingData={rankingDataCompleto}
-          periodoInicio={startDate}
+          periodoInicio={startDate < DATA_INICIO_NOVO_SISTEMA ? DATA_INICIO_NOVO_SISTEMA : startDate}
           periodoFim={endDate}
         />
 

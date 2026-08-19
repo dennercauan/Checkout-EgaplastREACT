@@ -59,16 +59,25 @@ export default function ModalVolumeDetalhado({ showModal, setShowModal, mesesRes
       
       snap.forEach(docSnap => {
         const data = docSnap.data();
-        const temNfOuMinuta = (data.documentos || []).some(d => d.tipo === 'Nota Fiscal' || d.tipo === 'Minuta');
-        if (!temNfOuMinuta) return;
-
         const dataDoc = String(data.dataOperacao).substring(0, 10);
 
         if (mapaDias[dataDoc]) {
-          mapaDias[dataDoc].pedidos += 1;
-          let totalCaixas = 0;
-          (data.documentos || []).forEach(d => { totalCaixas += (d.caixas || []).length; });
-          mapaDias[dataDoc].caixas += totalCaixas;
+          let docsValidosNoRomaneio = 0;
+          let totalCaixasNoRomaneio = 0;
+
+          // ✅ Conta cada NF ou Minuta individualmente, alinhado à Operação
+          (data.documentos || []).forEach(docItem => {
+            const tipo = String(docItem.tipo || '').trim();
+            if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
+              docsValidosNoRomaneio++;
+            }
+            totalCaixasNoRomaneio += (docItem.caixas || []).length;
+          });
+
+          if (docsValidosNoRomaneio > 0) {
+            mapaDias[dataDoc].pedidos += docsValidosNoRomaneio;
+            mapaDias[dataDoc].caixas += totalCaixasNoRomaneio;
+          }
         }
       });
 

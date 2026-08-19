@@ -153,8 +153,45 @@ export default function OperacaoAdm() {
 
       const tempoTrabalhadoAcumulado = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
 
+      // =========================================================
+      // CORREÇÃO: PROTEGER O TEMPO TRABALHADO NO DIA DE HOJE
+      // =========================================================
+      const refPausasOrigem = doc(db, 'controlePausas', dataOrig);
+      const snapPausas = await getDoc(refPausasOrigem);
+      const dadosPausas = snapPausas.exists() ? snapPausas.data() : {};
+      
+      const uidsEnvolvidos = (pedidoParaTransferir.uidsVinculados && pedidoParaTransferir.uidsVinculados.length > 0) 
+        ? pedidoParaTransferir.uidsVinculados 
+        : (pedidoParaTransferir.criadorUid ? [pedidoParaTransferir.criadorUid] : []);
+
+      uidsEnvolvidos.forEach(uid => {
+        const user = usuarios.find(u => u.uid === uid);
+        if (user) {
+          const nomeUser = user.nickname || (user.email ? user.email.split('@')[0] : '');
+          const emailPrefix = user.email ? user.email.split('@')[0] : '';
+          
+          let userStatus = dadosPausas[uid] || dadosPausas[nomeUser] || dadosPausas[emailPrefix] || { isPaused: false, history: [] };
+          if (!Array.isArray(userStatus.history)) userStatus.history = [];
+          
+          // Injeta o tempo que o conferente trabalhou hoje como "Pausa Protegida" para anular a ociosidade
+          userStatus.history.push({ 
+            start: startOriginal, 
+            end: momentoFinalOriginal 
+          });
+
+          dadosPausas[uid] = userStatus;
+          dadosPausas[nomeUser] = userStatus;
+          if (emailPrefix) dadosPausas[emailPrefix] = userStatus;
+        }
+      });
+      
+      // Salva a proteção no banco de hoje antes de transferir o romaneio
+      await setDoc(refPausasOrigem, dadosPausas, { merge: true });
+      // =========================================================
+
+
       const [anoD, mesD, diaD] = novaDataTransferencia.split('-');
-      const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 8, 0, 0).getTime();
+      const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 7, 30, 0).getTime();
 
       const novoCreatedAtMs = dataAlvoBase - tempoTrabalhadoAcumulado;
       const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(novoCreatedAtMs));
@@ -370,8 +407,9 @@ export default function OperacaoAdm() {
     return new Date(Number(ano), Number(mes) - 1, Number(dia), 17, 30, 0).getTime();
   }, [dataOperacaoAtiva]);
 
+  // ✅ O relógio do motor passa a ser SEMPRE o horário real ao vivo
+  const horaReferenciaAtual = currentTime;
   const isExpedienteEncerrado = currentTime >= limiteExpediente;
-  const horaReferenciaAtual = isExpedienteEncerrado ? limiteExpediente : currentTime;
 
   useEffect(() => {
     const closeMenu = () => setDropdownOpen(null);
@@ -480,14 +518,43 @@ export default function OperacaoAdm() {
     return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); };
   }, [dataOperacaoAtiva]);
 
-  // Carrega e processa TODOS os pedidos (Visão Global da ADM)
   const pedidosProcessados = useMemo(() => {
-    return [...pedidosNovos, ...pedidosLegados].sort((a, b) => {
-      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-      return timeB - timeA;
-    });
-  }, [pedidosNovos, pedidosLegados]);
+    return [...pedidosNovos, ...pedidosLegados]
+      .map(pedido => {
+        // Se já tiver UIDs válidos, mantém
+        if (Array.isArray(pedido.uidsVinculados) && pedido.uidsVinculados.length > 0) {
+          return pedido;
+        }
+
+        // Reconstrói a lista de UIDs varrendo os documentos e o criador
+        const uidsSet = new Set();
+        if (pedido.criadorUid) uidsSet.add(pedido.criadorUid);
+
+        (pedido.documentos || []).forEach(d => {
+          const lista = d.responsaveis || (d.responsavel ? [d.responsavel] : []);
+          lista.forEach(identificador => {
+            if (!identificador) return;
+            const user = (usuarios || []).find(u => 
+              u.uid === identificador ||
+              u.email === identificador ||
+              u.nickname === identificador ||
+              (u.email && u.email.split('@')[0] === identificador)
+            );
+            if (user) uidsSet.add(user.uid);
+          });
+        });
+
+        return {
+          ...pedido,
+          uidsVinculados: Array.from(uidsSet)
+        };
+      })
+      .sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return timeB - timeA;
+      });
+  }, [pedidosNovos, pedidosLegados, usuarios]);
 
   const pedidosEmAndamento = useMemo(() => pedidosProcessados.filter(p => !p.efetivado), [pedidosProcessados]);
 
@@ -962,6 +1029,31 @@ export default function OperacaoAdm() {
     }
   };
 
+  // Sincroniza os dados recalculados com o Firebase apagando registros fantasmas
+  useEffect(() => {
+    if (!dataOperacaoAtiva || !rankingCalculado || rankingCalculado.length === 0) return;
+
+    const rankingMap = {};
+    rankingCalculado.forEach((user) => {
+      const userSanitizado = JSON.parse(JSON.stringify(user));
+      rankingMap[user.nome] = userSanitizado;
+    });
+
+    const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
+    
+    // Usamos updateDoc para sobrescrever o mapa inteiro, eliminando as chaves antigas/duplicadas
+    updateDoc(refDia, {
+      ranking: rankingMap,
+      updatedAt: serverTimestamp()
+    }).catch((err) => {
+      // Fallback: se o documento não existir no primeiro acesso do dia, ele cria do zero
+      setDoc(refDia, {
+        ranking: rankingMap,
+        updatedAt: serverTimestamp()
+      });
+    });
+  }, [rankingCalculado, dataOperacaoAtiva]);
+
   const handleConcluirFluxoWMS = () => {
     const { tipo, dIdx } = fluxoImportacao || {};
     setFluxoImportacao(null);
@@ -1248,11 +1340,19 @@ export default function OperacaoAdm() {
     return `${hh}:${mm}:${ss}`;
   };
 
+  // ✅ A trava de 17h30 atua APENAS para limitar o tempo ocioso sem tarefas
   const getTempoOcioso = (nomeUser) => {
     const userStats = rankingCalculado.find(u => u.nome === nomeUser); 
     if (!userStats || !userStats.eventosMesclados || userStats.eventosMesclados.length === 0) return 0;
+    
     const ultimoEvento = userStats.eventosMesclados[userStats.eventosMesclados.length - 1];
-    if (horaReferenciaAtual > ultimoEvento.end) return horaReferenciaAtual - ultimoEvento.end;
+    
+    // Teto de ociosidade: se passou das 17h30, a contagem de ociosidade congela em 17h30
+    const momentoCorteOciosidade = isExpedienteEncerrado ? limiteExpediente : currentTime;
+    
+    if (momentoCorteOciosidade > ultimoEvento.end) {
+      return momentoCorteOciosidade - ultimoEvento.end;
+    }
     return 0; 
   };
 
@@ -1260,18 +1360,75 @@ export default function OperacaoAdm() {
     if (!pedido.createdAt) return "00:00:00";
     const start = pedido.createdAt.toMillis ? pedido.createdAt.toMillis() : pedido.createdAt;
     const totalPaused = pedido.totalPausedTime || 0;
-    let end = (pedido.efetivado && pedido.completedAt) ? (pedido.completedAt.toMillis ? pedido.completedAt.toMillis() : pedido.completedAt) : (pedido.isPaused && pedido.lastPauseStart ? pedido.lastPauseStart : horaReferenciaAtual);
+    
+    // Cronômetro do romaneio continua correndo normalmente mesmo após as 17h30 em hora extra
+    let end = (pedido.efetivado && pedido.completedAt) 
+      ? (pedido.completedAt.toMillis ? pedido.completedAt.toMillis() : pedido.completedAt) 
+      : (pedido.isPaused && pedido.lastPauseStart ? pedido.lastPauseStart : currentTime);
+      
     const diff = Math.max(0, end - start - totalPaused);
     return formatMsToTime(diff);
   };
 
   const getNomesResponsaveis = (pedido) => {
-    const uids = pedido.uidsVinculados || [pedido.criadorUid];
-    if (!uids || uids.length === 0) return 'Não atribuído';
-    return uids.map(uid => {
-      const user = usuarios.find(u => u.uid === uid);
-      return user ? (user.nickname || user.email.split('@')[0]) : 'Desconhecido';
-    }).join(', ');
+    const identificadoresSet = new Set();
+
+    // 1. Coleta UIDs da raiz
+    if (Array.isArray(pedido.uidsVinculados) && pedido.uidsVinculados.length > 0) {
+      pedido.uidsVinculados.forEach(id => id && identificadoresSet.add(String(id).trim()));
+    } else if (pedido.criadorUid) {
+      identificadoresSet.add(String(pedido.criadorUid).trim());
+    }
+
+    if (pedido.criadorEmail) {
+      identificadoresSet.add(String(pedido.criadorEmail).trim().toLowerCase());
+    }
+
+    // 2. Coleta responsáveis definidos dentro de cada documento do romaneio
+    (pedido.documentos || []).forEach(docItem => {
+      if (Array.isArray(docItem.responsaveis)) {
+        docItem.responsaveis.forEach(r => r && identificadoresSet.add(String(r).trim().toLowerCase()));
+      }
+      if (docItem.responsavel) {
+        identificadoresSet.add(String(docItem.responsavel).trim().toLowerCase());
+      }
+    });
+
+    if (identificadoresSet.size === 0) return 'Não atribuído';
+
+    // 3. Resolve os identificadores contra a lista de usuários cadastrados
+    const nomesEncontrados = new Set();
+
+    identificadoresSet.forEach(identificador => {
+      const user = (usuarios || []).find(u => {
+        const uUid = String(u.uid || '').trim();
+        const uEmail = String(u.email || '').toLowerCase().trim();
+        const uPrefix = uEmail.split('@')[0];
+        const uNickname = String(u.nickname || '').toLowerCase().trim();
+
+        return (
+          uUid === identificador ||
+          uEmail === identificador ||
+          uPrefix === identificador ||
+          uNickname === identificador
+        );
+      });
+
+      if (user) {
+        nomesEncontrados.add(user.nickname || user.email.split('@')[0]);
+      } else {
+        // Se for um e-mail direto não associado, usa o prefixo
+        if (identificador.includes('@')) {
+          nomesEncontrados.add(identificador.split('@')[0]);
+        } else if (identificador.length < 20) {
+          nomesEncontrados.add(identificador);
+        }
+      }
+    });
+
+    return nomesEncontrados.size > 0 
+      ? Array.from(nomesEncontrados).join(', ') 
+      : 'Não atribuído';
   };
 
   const obterReferenciaDocumento = (pedido) => {
@@ -1416,232 +1573,230 @@ export default function OperacaoAdm() {
         <div className="op-wrapper" style={{ width: '100%', maxWidth: '1500px', margin: '0 auto', padding: '0 15px', boxSizing: 'border-box' }}>
           <main style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '25px', width: '100%', boxSizing: 'border-box' }}>
           
+          {/* TOPO: TÍTULO E AJUSTES */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
             <div>
-              <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.4rem', fontWeight: 800 }}>Painel de Gestão da Liderança</h2>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Monitoramento de produtividade e controle da equipe.</span>
+              <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.35rem', fontWeight: 800 }}>Painel de Gestão da Liderança</h2>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>Monitoramento de produtividade e fluxo da equipe em tempo real.</span>
             </div>
 
             <button 
               onClick={() => setShowModalIntervencao(true)} 
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '10px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}
             >
-              <Settings size={18} /> Ajustes
+              <Settings size={16} /> Lançar Ajustes
             </button>
           </div>
 
-          <section>
-            <AdmEstatisticasGerais 
-              dados={estatisticasTempoReal} 
-              dataFiltro={dataOperacaoAtiva} 
-              pedidos={pedidosProcessados} 
-            />
-          </section>
+          {/* ESTRUTURA DIVIDIDA: 80% ATIVIDADES EM FAIXAS / 20% MÉTRICAS VERTICAIS */}
+          <div style={{ display: 'flex', gap: '20px', alignItems: 'stretch', width: '100%' }}>
+            
+            {/* LADO ESQUERDO: 80% DA TELA */}
+            <section style={{ flex: '0 0 78%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '1.1rem' }}>
+                    <Activity size={18} color="var(--primary)" /> Atividades em Execução
+                  </h3>
+                  {pedidosEmAndamento.length > 0 && (
+                    <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#38bdf8', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div className="radar-spinner"></div> {pedidosEmAndamento.length} em separação
+                    </span>
+                  )}
+                  {isExpedienteEncerrado && (
+                    <span style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Moon size={12} /> Encerrado (17h30)
+                    </span>
+                  )}
+                </div>
 
-          {/* PAINEL DE COMANDO: EQUIPE AO VIVO */}
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h3 style={{ margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
-                  <Activity size={20} color="var(--primary)" /> Atividades em Andamento
-                </h3>
-                {pedidosEmAndamento.length > 0 && (
-                  <span style={{ background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <div className="pulse-dot" style={{ background: '#fff' }}></div> {pedidosEmAndamento.length} Romaneios sendo separados
-                  </span>
-                )}
-                {isExpedienteEncerrado && (
-                  <span style={{ background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Moon size={14} /> Expediente Encerrado (17h30)
-                  </span>
-                )}
+                <button 
+                  onClick={abrirModalEquipe}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px', 
+                    background: 'var(--bg-input)', 
+                    color: 'var(--text-main)', 
+                    border: '1px solid var(--border-color)', 
+                    padding: '6px 12px', 
+                    borderRadius: '8px', 
+                    fontSize: '0.78rem', 
+                    fontWeight: 700, 
+                    cursor: 'pointer',
+                    fontFamily: 'inherit'
+                  }}
+                >
+                  <UserCheck size={14} color="var(--primary, #3b82f6)" />
+                  <span>Equipe Fixa ({equipeFixaUids.length > 0 ? `${equipeFixaUids.length}` : 'Auto'})</span>
+                </button>
               </div>
 
-              <button 
-                onClick={abrirModalEquipe}
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '6px', 
-                  background: 'var(--bg-input, rgba(255, 255, 255, 0.05))', 
-                  color: 'var(--text-main, #f8fafc)', 
-                  border: '1px solid var(--border-color, rgba(255, 255, 255, 0.15))', 
-                  padding: '6px 12px', 
-                  borderRadius: '8px', 
-                  fontSize: '0.82rem', 
-                  fontWeight: 700, 
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <UserCheck size={15} color="var(--primary, #3b82f6)" />
-                <span>Definir Equipe ({equipeFixaUids.length > 0 ? `${equipeFixaUids.length} fixos` : 'Auto'})</span>
-              </button>
-            </div>
-            
-            <div 
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(max(31%, 280px), 1fr))', 
-                gap: '15px', 
-                width: '100%' 
-              }}
-            >
-              {equipeAtivaHoje.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '24px', width: '100%', background: 'var(--bg-card)', borderRadius: '12px', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
-                  Nenhum conferente selecionado na equipe fixa. Clique em <strong>Definir Equipe</strong> acima.
-                </div>
-              ) : (
-                equipeAtivaHoje.map(user => {
-                  const nomeUser = user.nickname || user.email.split('@')[0];
-                  const isPaused = controlePausas[nomeUser]?.isPaused || false;
-                  const pedidoAtivo = pedidosEmAndamento.find(p => { const uids = p.uidsVinculados || [p.criadorUid]; return uids.includes(user.uid); });
-                  const tempoOciosoMs = getTempoOcioso(nomeUser);
+              {/* LISTAGEM EM FAIXAS LINEARES (SUBSTITUTO DOS CARDS) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                {equipeAtivaHoje.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '24px', width: '100%', background: 'var(--bg-card)', borderRadius: '12px', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
+                    Nenhum conferente na equipe. Clique em <strong>Equipe Fixa</strong> acima.
+                  </div>
+                ) : (
+                  equipeAtivaHoje.map((user, idx) => {
+                    const nomeUser = user.nickname || user.email.split('@')[0];
+                    const emailPrefix = user.email ? user.email.split('@')[0] : '';
+                    const statusPausa = controlePausas[user.uid] || controlePausas[nomeUser] || controlePausas[emailPrefix];
+                    const isPaused = statusPausa?.isPaused || false;
 
-                  let statusColor, statusText, statusIcon, conteudoCentral;
-                  const isDiaConcluido = isExpedienteEncerrado && !pedidoAtivo;
+                    const pedidoAtivo = pedidosEmAndamento.find(p => { 
+                      const uids = (p.uidsVinculados && p.uidsVinculados.length > 0) 
+                        ? p.uidsVinculados 
+                        : (p.criadorUid ? [p.criadorUid] : []);
+                      return uids.includes(user.uid) || (p.criadorEmail && user.email && p.criadorEmail === user.email); 
+                    });
 
-                  if (isDiaConcluido) {
-                     statusColor = '#10b981'; statusText = 'Dia Concluído'; statusIcon = <CheckCircle2 size={14} />;
-                     conteudoCentral = (<div style={{ padding: '15px 0', color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}><Moon size={32} color="#10b981" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '700', color: 'var(--text-main)' }}>Expediente Finalizado</div><div style={{ fontSize: '0.8rem' }}>Ociosidade travada às 17h30.</div></div>);
-                  } else if (isPaused) {
-                     statusColor = '#f59e0b'; statusText = 'Em Pausa (Protegido)'; statusIcon = <Coffee size={14} />;
-                     conteudoCentral = (<div style={{ padding: '15px 0', color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center' }}><ShieldCheck size={32} color="#f59e0b" style={{ margin: '0 auto 8px auto', opacity: 0.5 }} /><div style={{ fontWeight: '700', color: 'var(--text-main)' }}>Ociosidade congelada.</div><div style={{ fontSize: '0.8rem' }}>Nenhum ponto será descontado.</div></div>);
-                  } else if (pedidoAtivo) {
-                     if (pedidoAtivo.isPaused) {
-                       statusColor = '#6366f1'; statusText = 'Romaneio Pausado'; statusIcon = <Pause size={14} />;
-                       conteudoCentral = (
-                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                           <strong style={{ fontSize: '1.1rem', color: '#6366f1', display: 'flex', alignItems: 'center', gap: '6px' }}><PauseCircle size={22} /> ROMANEIO {pedidoAtivo.romaneio || 'S/N'}</strong>
-                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', background: 'var(--bg-input)', padding: '4px 8px', borderRadius: '6px' }}>Aguardando Retomada Técnica...</span>
-                         </div>
-                       );
-                     } else {
-                       statusColor = '#3b82f6'; statusText = 'Separando Pedido'; statusIcon = <Briefcase size={14} />;
-                       const tiposDosDocs = pedidoAtivo.documentos?.map(d => d.tipo).filter(Boolean).join(', ') || 'Nenhum listado';
-                       conteudoCentral = (
-                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 0', flex: 1 }}>
-                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                             <strong style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}><Package size={18} color="#3b82f6" /> {pedidoAtivo.romaneio || 'S/N'}</strong>
-                             <span style={{ fontWeight: '900', color: '#3b82f6', fontFamily: 'monospace', fontSize: '1.1rem', background: 'var(--bg-input)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>{formatarCronometroPedido(pedidoAtivo)}</span>
-                           </div>
-                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={14} color="var(--text-muted)" /> {pedidoAtivo.loja || 'Destino Padrão'}</div>
-                           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }} title={tiposDosDocs}><FileText size={14} color="var(--text-muted)" /> {tiposDosDocs.length > 25 ? tiposDosDocs.substring(0, 25) + '...' : tiposDosDocs}</div>
-                         </div>
-                       );
-                     }
-                  } else {
-                     const limiteOciosidadeMs = 20 * 60 * 1000; const tolerenciaExcedida = tempoOciosoMs > limiteOciosidadeMs;
-                     statusColor = tolerenciaExcedida ? '#ef4444' : '#64748b'; statusText = tolerenciaExcedida ? 'Ocioso' : 'Livre'; statusIcon = tolerenciaExcedida ? <AlertTriangle size={14} /> : <Clock size={14} />;
-                     conteudoCentral = (
-                       <div style={{ padding: '15px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', flex: 1, justifyContent: 'center' }}>
-                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Tempo inativo após última tarefa:</span>
-                          <span style={{ fontSize: '2.2rem', fontWeight: '900', color: statusColor, fontFamily: 'monospace', lineHeight: '1', letterSpacing: '-1px' }}>{formatMsToTime(tempoOciosoMs)}</span>
-                          {tolerenciaExcedida && (<div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold', marginTop: '5px', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '12px' }}>Perdendo pontos agora</div>)}
-                       </div>
-                     );
-                  }
+                    const tempoOciosoMs = getTempoOcioso(nomeUser);
+                    const isDiaConcluido = isExpedienteEncerrado && !pedidoAtivo;
+                    const limiteOciosidadeMs = 20 * 60 * 1000;
+                    const estaMultando = tempoOciosoMs > limiteOciosidadeMs;
 
-                  return (
-                    <div key={user.uid} style={{ background: 'var(--bg-card)', border: `1px solid var(--border-color)`, borderRadius: '12px', padding: '15px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', gap: '8px', flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '1.05rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {user.photoURL ? (
-                            <img src={user.photoURL} alt={nomeUser} style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' }} />
-                          ) : (
-                            <Users size={18} color="var(--text-muted)" />
-                          )}
-                          {nomeUser}
-                        </strong>
-                        <div style={{ background: `${statusColor}15`, color: statusColor, padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>{statusIcon} {statusText}</div>
-                      </div>
-                      {conteudoCentral}
-                      {isDiaConcluido ? (
+                    let borderLeftColor = '#64748b';
+                    let statusBadge = null;
+                    let detalhesTarefa = null;
+
+                    if (isDiaConcluido) {
+                      borderLeftColor = '#10b981';
+                      statusBadge = <span className="badge-status-concluido"><Moon size={11}/> Encerrado</span>;
+                      detalhesTarefa = <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Expediente concluído às 17h30</span>;
+
+                    } else if (pedidoAtivo) {
+                      if (pedidoAtivo.isPaused) {
+                        borderLeftColor = '#818cf8';
+                        statusBadge = <span className="badge-status-pausado"><Pause size={11}/> Pausado</span>;
+                        detalhesTarefa = (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <strong style={{ color: '#818cf8', fontSize: '0.85rem' }}>ROM {pedidoAtivo.romaneio || 'S/N'}</strong>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{pedidoAtivo.loja || 'Destino'}</span>
+                          </div>
+                        );
+                      } else {
+                        borderLeftColor = '#0ea5e9';
+                        statusBadge = (
+                          <span className="badge-status-separando">
+                            <div className="radar-spinner"></div> Separando
+                          </span>
+                        );
+                        detalhesTarefa = (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1 }}>
+                            <strong style={{ color: 'var(--text-highlight, #38bdf8)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Package size={14} /> {pedidoAtivo.romaneio || 'S/N'}
+                            </strong>
+                            <span style={{ color: 'var(--text-main)', fontSize: '0.82rem', fontWeight: 600 }}>{pedidoAtivo.loja || 'Destino'}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({(pedidoAtivo.documentos || []).map(d => d.tipo).filter(Boolean).join(', ')})</span>
+                            <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontWeight: 900, color: '#38bdf8', background: 'var(--bg-input)', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
+                              {formatarCronometroPedido(pedidoAtivo)}
+                            </span>
+                          </div>
+                        );
+                      }
+
+                    } else if (isPaused) {
+                      borderLeftColor = '#f59e0b';
+                      statusBadge = <span className="badge-status-pausa-protegida"><Coffee size={12}/> Em Pausa</span>;
+                      detalhesTarefa = <span style={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 600 }}>Pausa autorizada (Ociosidade travada)</span>;
+
+                    } else {
+                      borderLeftColor = estaMultando ? '#ef4444' : '#475569';
+                      statusBadge = estaMultando 
+                        ? <span className="badge-status-multa"><AlertTriangle size={11}/> Multando</span>
+                        : <span className="badge-status-livre"><Clock size={11}/> Disponível</span>;
+                      detalhesTarefa = (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Sem tarefas há:</span>
+                          <strong style={{ fontFamily: 'monospace', fontSize: '0.95rem', color: estaMultando ? '#ef4444' : 'var(--text-muted)' }}>
+                            {formatMsToTime(tempoOciosoMs)}
+                          </strong>
+                        </div>
+                      );
+                    }
+
+                    return (
                       <div 
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px', 
-                          background: 'var(--bg-input, rgba(255,255,255,0.03))', 
-                          color: 'var(--text-muted, #94a3b8)', 
-                          textAlign: 'center', 
-                          borderRadius: '10px', 
-                          fontWeight: 700, 
-                          fontSize: '0.85rem', 
-                          border: '1px dashed var(--border-color, rgba(255,255,255,0.15))', 
-                          marginTop: '6px' 
+                        key={user.uid}
+                        style={{
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border-color)',
+                          borderLeft: `5px solid ${borderLeftColor}`,
+                          borderRadius: '10px',
+                          padding: '10px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '16px',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                          transition: 'all 0.2s ease'
                         }}
                       >
-                        Operação Fechada
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => handleTogglePausaUsuario(nomeUser, isPaused)} 
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 14px', 
-                          borderRadius: '10px', 
-                          fontWeight: 700, 
-                          fontSize: '0.88rem',
-                          cursor: 'pointer', 
-                          display: 'flex', 
-                          justifyContent: 'center', 
-                          alignItems: 'center', 
-                          gap: '8px', 
-                          transition: 'all 0.2s ease', 
-                          marginTop: '6px',
-                          fontFamily: 'inherit',
-                          background: isPaused 
-                            ? 'var(--bg-input, rgba(255, 255, 255, 0.08))' 
-                            : 'var(--primary, #3b82f6)',
-                          color: isPaused 
-                            ? 'var(--text-main, #f8fafc)' 
-                            : '#ffffff',
-                          border: isPaused 
-                            ? '1px solid var(--border-color, rgba(255, 255, 255, 0.15))' 
-                            : '1px solid var(--primary, #3b82f6)',
-                          boxShadow: isPaused 
-                            ? 'none' 
-                            : '0 4px 12px var(--shadow-color, rgba(59, 130, 246, 0.25))'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (isPaused) {
-                            e.currentTarget.style.background = 'var(--hover-bg, rgba(255, 255, 255, 0.14))';
-                            e.currentTarget.style.borderColor = 'var(--border-color-hover, rgba(255, 255, 255, 0.3))';
-                          } else {
-                            e.currentTarget.style.filter = 'brightness(1.1)';
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (isPaused) {
-                            e.currentTarget.style.background = 'var(--bg-input, rgba(255, 255, 255, 0.08))';
-                            e.currentTarget.style.borderColor = 'var(--border-color, rgba(255, 255, 255, 0.15))';
-                          } else {
-                            e.currentTarget.style.filter = 'none';
-                            e.currentTarget.style.transform = 'translateY(0)';
-                          }
-                        }}
-                      >
-                        {isPaused ? (
-                          <>
-                            <Play size={16} color="var(--primary, #3b82f6)" /> 
-                            <span>Retomar Operação</span>
-                          </>
-                        ) : (
-                          <>
-                            <Pause size={16} /> 
-                            <span>Pausar Ociosidade</span>
-                          </>
+                        {/* COLUNA 1: IDENTIFICAÇÃO DO CONFERENTE */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '150px' }}>
+                          {user.photoURL ? (
+                            <img src={user.photoURL} alt={nomeUser} style={{ width: '30px', height: '30px', borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.75rem' }}>
+                              {nomeUser.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-main)' }}>{nomeUser}</span>
+                        </div>
+
+                        {/* COLUNA 2: STATUS BADGE */}
+                        <div style={{ minWidth: '110px' }}>
+                          {statusBadge}
+                        </div>
+
+                        {/* COLUNA 3: DETALHES OPERACIONAIS */}
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                          {detalhesTarefa}
+                        </div>
+
+                        {/* COLUNA 4: AÇÃO DE CONTROLE */}
+                        {!isDiaConcluido && (
+                          <button 
+                            onClick={() => handleTogglePausaUsuario(user, isPaused)}
+                            style={{
+                              background: isPaused ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-input)',
+                              color: isPaused ? '#fbbf24' : 'var(--text-muted)',
+                              border: `1px solid ${isPaused ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontFamily: 'inherit',
+                              flexShrink: 0
+                            }}
+                          >
+                            {isPaused ? <Play size={12} color="#fbbf24" /> : <Pause size={12} />}
+                            <span>{isPaused ? 'Retomar' : 'Pausar'}</span>
+                          </button>
                         )}
-                      </button>
-                    )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </section>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+
+            {/* LADO DIREITO: 22% (SEMPRE ACOMPANHANDO 100% DA ALTURA) */}
+            <section style={{ flex: '0 0 22%', width: '22%', display: 'flex', flexDirection: 'column' }}>
+              <AdmEstatisticasGerais 
+                dados={estatisticasTempoReal} 
+                pedidos={pedidosProcessados} 
+              />
+            </section>
+
+          </div>
 
           {/* TABELA DE ROMANEIOS */}
           <section className="op-history-section">
