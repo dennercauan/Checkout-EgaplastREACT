@@ -67,6 +67,8 @@ export default function Operacao({ isAdmin }) {
     }
   }, [veioDeTransicao]);
 
+
+  const [dadosExpediente, setDadosExpediente] = useState({ inicio: '', fim: '', status: 'aguardando' });
   const queryParams = new URLSearchParams(location.search);
   const dataUrl = queryParams.get('date'); 
   const today = new Date();
@@ -183,19 +185,10 @@ export default function Operacao({ isAdmin }) {
 
  // 1. Mantenha o estado original do currentTime rodando o relógio
   const [currentTime, setCurrentTime] = useState(Date.now());
-
-  // 2. Calcule a trava de expediente às 17h30
-  const limiteExpediente = useMemo(() => {
-    const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-    return new Date(Number(ano), Number(mes) - 1, Number(dia), 17, 30, 0).getTime();
-  }, [dataOperacaoAtiva]);
-
-  const isExpedienteEncerrado = currentTime >= limiteExpediente;
   
-  // 3. Crie a constante que useMotorRanking e o cronômetro vão usar
-  const horaReferenciaAtual = isExpedienteEncerrado ? limiteExpediente : currentTime;
+  // 2. O relógio do motor passa a ser SEMPRE o horário real ao vivo
+  const horaReferenciaAtual = currentTime;
   const [pedidosNovos, setPedidosNovos] = useState([]);
-  const [pedidosLegados, setPedidosLegados] = useState([]);
 
   const [editingId, setEditingId] = useState(null);
   const [romaneio, setRomaneio] = useState('');
@@ -676,31 +669,21 @@ export default function Operacao({ isAdmin }) {
       const agora = Date.now();
       const dataOrig = pedidoParaTransferir.dataOperacao || dataOperacaoAtiva;
 
-      // Start real do romaneio original
       const startOriginal = pedidoParaTransferir.createdAt?.toMillis 
         ? pedidoParaTransferir.createdAt.toMillis() 
         : (typeof pedidoParaTransferir.createdAt === 'number' ? pedidoParaTransferir.createdAt : agora);
       
       const totalPausedOriginal = pedidoParaTransferir.totalPausedTime || 0;
-      
-      // Resgata o tempo já acumulado em transferências prévias (se houver)
       const tempoAnteriorJaAcumulado = pedidoParaTransferir.tempoTrabalhadoAnterior || 0;
       
-      // Fim real no momento da transferência (sem trava de 17h30 para respeitar hora extra)
       let momentoFinalOriginal = agora;
       if (pedidoParaTransferir.isPaused && pedidoParaTransferir.lastPauseStart) {
         momentoFinalOriginal = pedidoParaTransferir.lastPauseStart;
       }
 
-      // Calcula o tempo líquido trabalhado hoje
       const tempoTrabalhadoNesteDia = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
-      
-      // Soma com o tempo de dias passados
       const novoTempoTrabalhadoAnterior = tempoAnteriorJaAcumulado + tempoTrabalhadoNesteDia;
 
-      // =========================================================
-      // 1. PROTEGER O TEMPO TRABALHADO NO DIA DE ORIGEM (RANKING)
-      // =========================================================
       const refPausasOrigem = doc(db, 'controlePausas', dataOrig);
       const snapPausas = await getDoc(refPausasOrigem);
       const dadosPausas = snapPausas.exists() ? snapPausas.data() : {};
@@ -715,7 +698,6 @@ export default function Operacao({ isAdmin }) {
           let userStatus = dadosPausas[uid] || { isPaused: false, history: [] };
           if (!Array.isArray(userStatus.history)) userStatus.history = [];
           
-          // Anexa a atividade na timeline de ontem para anular ociosidade
           userStatus.history.push({ 
             start: startOriginal, 
             end: momentoFinalOriginal 
@@ -727,9 +709,6 @@ export default function Operacao({ isAdmin }) {
       
       await setDoc(refPausasOrigem, dadosPausas, { merge: true });
 
-      // =========================================================
-      // 2. TRANSFERÊNCIA LIMPA PARA O NOVO DIA
-      // =========================================================
       const [anoD, mesD, diaD] = novaDataTransferencia.split('-');
       const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 7, 30, 0).getTime();
       const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(dataAlvoBase));
@@ -739,7 +718,7 @@ export default function Operacao({ isAdmin }) {
       await updateDoc(ref, {
         dataOperacao: novaDataTransferencia,
         createdAt: novoCreatedAtTimestamp,
-        tempoTrabalhadoAnterior: novoTempoTrabalhadoAnterior, // <- SALVA O BANCO DE TEMPO HERDADO
+        tempoTrabalhadoAnterior: novoTempoTrabalhadoAnterior, 
         isPaused: true,
         lastPauseStart: dataAlvoBase,
         totalPausedTime: 0,
@@ -750,7 +729,6 @@ export default function Operacao({ isAdmin }) {
       });
 
       setPedidosNovos(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
-      setPedidosLegados(prev => prev.filter(p => p.id !== pedidoParaTransferir.id));
       
       setTransferenciaSucesso(true);
       setTimeout(() => {
@@ -829,24 +807,8 @@ export default function Operacao({ isAdmin }) {
   useEffect(() => {
     if (!localUser?.uid) return;
 
-    const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-    const startOfDay = new Date(ano, mes - 1, dia, 0, 0, 0);
-    const endOfDay = new Date(ano, mes - 1, dia, 23, 59, 59);
-
     const qNovo = query(collection(db, 'pedidos'), where('dataOperacao', '==', dataOperacaoAtiva));
-    const unsubNovo = onSnapshot(qNovo, (snap) => setPedidosNovos(snap.docs.map(doc => ({ id: doc.id, _isLegacy: false, ...doc.data() }))));
-
-    const qLegado = query(collectionGroup(db, 'pedidosMultiDocumento'), where('createdAt', '>=', Timestamp.fromDate(startOfDay)), where('createdAt', '<=', Timestamp.fromDate(endOfDay)));
-    const unsubLegado = onSnapshot(qLegado, (snap) => {
-      const legados = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        const pathSegments = doc.ref.path.split('/');
-        const elemIdOriginal = pathSegments.length > 3 ? pathSegments[3] : null;
-        legados.push({ id: doc.id, _isLegacy: true, elementoIdOriginal: elemIdOriginal, ...data });
-      });
-      setPedidosLegados(legados);
-    });
+    const unsubNovo = onSnapshot(qNovo, (snap) => setPedidosNovos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
     const qOp = query(collection(db, 'ordensProducao'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubOp = onSnapshot(qOp, (snap) => {
@@ -869,29 +831,25 @@ export default function Operacao({ isAdmin }) {
       }
     });
 
-    return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); unsubPausas(); };
+    return () => { unsubNovo(); unsubOp(); unsubAjustes(); unsubPausas(); };
   }, [localUser, dataOperacaoAtiva]);
 
 const pedidosProcessados = useMemo(() => {
-    return [...pedidosNovos, ...pedidosLegados]
+    return pedidosNovos
       .map(pedido => {
-        // Se já tiver UIDs válidos na raiz, mantém a estrutura original e encerra a varredura
         if (Array.isArray(pedido.uidsVinculados) && pedido.uidsVinculados.length > 0) {
           return pedido;
         }
 
-        // Reconstrói a lista de UIDs varrendo os documentos internos
         const uidsSet = new Set();
         if (pedido.criadorUid) uidsSet.add(pedido.criadorUid);
 
         (pedido.documentos || []).forEach(d => {
-          // Extrai responsáveis definidos a nível de documento
           const lista = d.responsaveis || (d.responsavel ? [d.responsavel] : []);
           lista.forEach(identificador => {
             if (!identificador) return;
             const identificadorLimpo = String(identificador).toLowerCase().trim();
             
-            // Busca o usuário correspondente no array global de usuários
             const user = (usuarios || []).find(u => 
               u.uid === identificadorLimpo ||
               (u.email && String(u.email).toLowerCase().trim() === identificadorLimpo) ||
@@ -912,7 +870,9 @@ const pedidosProcessados = useMemo(() => {
         const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
         return timeB - timeA;
       });
-  }, [pedidosNovos, pedidosLegados, usuarios]);
+  }, [pedidosNovos, usuarios]);
+
+
   // ==========================================
   // AUTO-ABERTURA DO MODAL VIA URL (SINCRONIZADO COM O LOADING FAKE)
   // ==========================================
@@ -1032,9 +992,7 @@ const pedidosProcessados = useMemo(() => {
   };
 
   const obterReferenciaDocumento = (pedido) => {
-    return pedido._isLegacy
-      ? doc(db, 'usuarios', pedido.criadorUid, 'elementos', pedido.elementoIdOriginal, 'pedidosMultiDocumento', pedido.id)
-      : doc(db, 'pedidos', pedido.id);
+    return doc(db, 'pedidos', pedido.id);
   };
 
   const handleToggleEfetivado = async (pedido) => {
@@ -1807,7 +1765,8 @@ const pedidosProcessados = useMemo(() => {
     controlePausas, 
     ajustesDoDia, 
     dataOperacaoAtiva, 
-    currentTime
+    horaReferenciaAtual,
+    dadosExpediente // <-- Conecta o expediente definido pela ADM
   );
 
   // 2. Enriquece em memória local com Nickname/Nome formatado, photoURL e UIDs
@@ -2019,6 +1978,18 @@ const pedidosProcessados = useMemo(() => {
       alert("Erro ao excluir o evento.");
     }
   };
+
+  useEffect(() => {
+    const refExpediente = doc(db, 'expedienteDiario', dataOperacaoAtiva);
+    const unsub = onSnapshot(refExpediente, (snap) => {
+      if (snap.exists()) {
+        setDadosExpediente(snap.data());
+      } else {
+        setDadosExpediente({ inicio: '', fim: '', status: 'aguardando' });
+      }
+    });
+    return () => unsub();
+  }, [dataOperacaoAtiva]);
 
   return (
     <>
@@ -2356,7 +2327,6 @@ const pedidosProcessados = useMemo(() => {
                             <div className="table-romaneio-cell">
                               <div className="romaneio-title-wrap">
                                 <strong className="romaneio-number">{pedido.romaneio || 'S/N'}</strong>
-                                {pedido._isLegacy && <span className="legacy-tag">Legado</span>}
                               </div>
                               {statusBadge}
                             </div>

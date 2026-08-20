@@ -35,6 +35,7 @@ import ModalFluxoImportacaoWMS from '../components/ModalFluxoImportacaoWMS';
 import ModalImprimirEtiqueta from '../components/ModalImprimirEtiqueta';
 import { Tag } from 'lucide-react';
 import TransicaoAdmOverlay from '../components/TransicaoAdmOverlay';
+import ModalGerenciarRanking from '../components/ModalGerenciarRanking';
 import '../css/Operacao.css'; 
 
 export default function OperacaoAdm() {
@@ -70,6 +71,7 @@ export default function OperacaoAdm() {
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
   const [isExcluindoPedido, setIsExcluindoPedido] = useState(false);
   const [fluxoImportacao, setFluxoImportacao] = useState(null);
+  const [showModalGerenciarRanking, setShowModalGerenciarRanking] = useState(false);
 
   const [pedidoParaTransferir, setPedidoParaTransferir] = useState(null);
   const [novaDataTransferencia, setNovaDataTransferencia] = useState('');
@@ -83,6 +85,11 @@ export default function OperacaoAdm() {
     setNovaDataTransferencia(amanhaStr);
     setDropdownOpen(null);
   };
+
+  // ESTADOS DO EXPEDIENTE
+  const [showModalExpediente, setShowModalExpediente] = useState(false);
+  const [dadosExpediente, setDadosExpediente] = useState({ inicio: '', fim: '', status: 'aguardando' });
+  const [formExpediente, setFormExpediente] = useState({ horaInicio: '07:30', horaFim: '17:30' });
 
   // ESTADOS DA EQUIPE FIXA
   const [equipeFixaUids, setEquipeFixaUids] = useState([]);
@@ -390,14 +397,7 @@ export default function OperacaoAdm() {
     }
   }, [veioDeTransicao]);
 
-  const limiteExpediente = useMemo(() => {
-    const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-    return new Date(Number(ano), Number(mes) - 1, Number(dia), 17, 30, 0).getTime();
-  }, [dataOperacaoAtiva]);
-
-  // ✅ O relógio do motor passa a ser SEMPRE o horário real ao vivo
-  const horaReferenciaAtual = currentTime;
-  const isExpedienteEncerrado = currentTime >= limiteExpediente;
+ const horaReferenciaAtual = currentTime;
 
   useEffect(() => {
     const closeMenu = () => setDropdownOpen(null);
@@ -471,30 +471,10 @@ export default function OperacaoAdm() {
 
   useEffect(() => {
     setPedidosNovos([]);
-    setPedidosLegados([]);
-
-    const [ano, mes, dia] = dataOperacaoAtiva.split('-');
-    const startOfDay = new Date(Number(ano), Number(mes) - 1, Number(dia), 0, 0, 0);
-    const endOfDay = new Date(Number(ano), Number(mes) - 1, Number(dia), 23, 59, 59);
 
     const qNovo = query(collection(db, 'pedidos'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubNovo = onSnapshot(qNovo, (snap) => {
-      setPedidosNovos(snap.docs.map(d => ({ id: d.id, _isLegacy: false, ...d.data() })));
-    });
-
-    const qLegado = query(
-      collectionGroup(db, 'pedidosMultiDocumento'), 
-      where('createdAt', '>=', Timestamp.fromDate(startOfDay)), 
-      where('createdAt', '<=', Timestamp.fromDate(endOfDay))
-    );
-    const unsubLegado = onSnapshot(qLegado, (snap) => {
-      const legados = [];
-      snap.forEach(docSnap => {
-        const pathSegments = docSnap.ref.path.split('/');
-        const elemIdOriginal = pathSegments.length > 3 ? pathSegments[3] : null;
-        legados.push({ id: docSnap.id, _isLegacy: true, elementoIdOriginal: elemIdOriginal, ...docSnap.data() });
-      });
-      setPedidosLegados(legados);
+      setPedidosNovos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
     const qOp = query(collection(db, 'ordensProducao'), where('dataOperacao', '==', dataOperacaoAtiva));
@@ -503,18 +483,16 @@ export default function OperacaoAdm() {
     const qAjustes = query(collection(db, 'ajustesDiarios'), where('dataOperacao', '==', dataOperacaoAtiva));
     const unsubAjustes = onSnapshot(qAjustes, (snap) => setAjustesDoDia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
-    return () => { unsubNovo(); unsubLegado(); unsubOp(); unsubAjustes(); };
+    return () => { unsubNovo(); unsubOp(); unsubAjustes(); };
   }, [dataOperacaoAtiva]);
 
   const pedidosProcessados = useMemo(() => {
-    return [...pedidosNovos, ...pedidosLegados]
+    return pedidosNovos
       .map(pedido => {
-        // Se já tiver UIDs válidos, mantém
         if (Array.isArray(pedido.uidsVinculados) && pedido.uidsVinculados.length > 0) {
           return pedido;
         }
 
-        // Reconstrói a lista de UIDs varrendo os documentos e o criador
         const uidsSet = new Set();
         if (pedido.criadorUid) uidsSet.add(pedido.criadorUid);
 
@@ -542,7 +520,7 @@ export default function OperacaoAdm() {
         const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
         return timeB - timeA;
       });
-  }, [pedidosNovos, pedidosLegados, usuarios]);
+  }, [pedidosNovos, usuarios]);
 
   const pedidosEmAndamento = useMemo(() => pedidosProcessados.filter(p => !p.efetivado), [pedidosProcessados]);
 
@@ -1017,30 +995,59 @@ export default function OperacaoAdm() {
     }
   };
 
-  // Sincroniza os dados recalculados com o Firebase apagando registros fantasmas
+  // Sincronização inteligente com o Firebase (Sem flood a cada segundo)
   useEffect(() => {
-    if (!dataOperacaoAtiva || !rankingCalculado || rankingCalculado.length === 0) return;
+    if (!dataOperacaoAtiva || !rankingCalculadoBruto || rankingCalculadoBruto.length === 0) return;
 
-    const rankingMap = {};
-    rankingCalculado.forEach((user) => {
-      const userSanitizado = JSON.parse(JSON.stringify(user));
-      rankingMap[user.nome] = userSanitizado;
-    });
+    // Aguarda 3 segundos de estabilidade antes de enviar para o banco
+    const timerSync = setTimeout(async () => {
+      try {
+        const rankingMap = {};
+        rankingCalculadoBruto.forEach((user) => {
+          rankingMap[user.nome] = JSON.parse(JSON.stringify(user));
+        });
 
-    const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-    
-    // Usamos updateDoc para sobrescrever o mapa inteiro, eliminando as chaves antigas/duplicadas
-    updateDoc(refDia, {
-      ranking: rankingMap,
-      updatedAt: serverTimestamp()
-    }).catch((err) => {
-      // Fallback: se o documento não existir no primeiro acesso do dia, ele cria do zero
-      setDoc(refDia, {
-        ranking: rankingMap,
-        updatedAt: serverTimestamp()
-      });
-    });
-  }, [rankingCalculado, dataOperacaoAtiva]);
+        let totalNfMinuta = 0;
+        let totalCaixas = 0;
+
+        pedidosProcessados.forEach(p => {
+          (p.documentos || []).forEach(docItem => {
+            const tipo = String(docItem.tipo || '').trim();
+            if (tipo === 'Nota Fiscal' || tipo === 'Minuta') {
+              totalNfMinuta++;
+            }
+            totalCaixas += (docItem.caixas || []).length;
+          });
+        });
+
+        const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
+        const payload = {
+          ranking: rankingMap,
+          totalNfMinuta,
+          totalCaixas,
+          updatedAt: serverTimestamp()
+        };
+
+        try {
+          await updateDoc(refDia, payload);
+        } catch (err) {
+          await setDoc(refDia, payload);
+        }
+      } catch (error) {
+        console.error("Erro na sincronização de estatísticas:", error);
+      }
+    }, 3000);
+
+    return () => clearTimeout(timerSync);
+  }, [
+    // ATENÇÃO ÀS DEPENDÊNCIAS: removemos currentTime e rankingCalculado!
+    pedidosProcessados,
+    opsDoDia,
+    ajustesDoDia,
+    controlePausas,
+    dadosExpediente,
+    dataOperacaoAtiva
+  ]);
 
   const handleConcluirFluxoWMS = () => {
     const { tipo, dIdx } = fluxoImportacao || {};
@@ -1337,21 +1344,6 @@ export default function OperacaoAdm() {
     return `${hh}:${mm}:${ss}`;
   };
 
-  // ✅ A trava de 17h30 atua APENAS para limitar o tempo ocioso sem tarefas
-  const getTempoOcioso = (nomeUser) => {
-    const userStats = rankingCalculado.find(u => u.nome === nomeUser); 
-    if (!userStats || !userStats.eventosMesclados || userStats.eventosMesclados.length === 0) return 0;
-    
-    const ultimoEvento = userStats.eventosMesclados[userStats.eventosMesclados.length - 1];
-    
-    // Teto de ociosidade: se passou das 17h30, a contagem de ociosidade congela em 17h30
-    const momentoCorteOciosidade = isExpedienteEncerrado ? limiteExpediente : currentTime;
-    
-    if (momentoCorteOciosidade > ultimoEvento.end) {
-      return momentoCorteOciosidade - ultimoEvento.end;
-    }
-    return 0; 
-  };
 
   const formatarCronometroPedido = (pedido) => {
     if (!pedido.createdAt) return "00:00:00";
@@ -1368,6 +1360,31 @@ export default function OperacaoAdm() {
     // Soma o tempo limpo atual com o histórico herdado
     const diff = Math.max(0, end - start - totalPaused) + tempoAnterior;
     return formatMsToTime(diff);
+  };
+
+  const getTempoOcioso = (nomeUser, uidUser) => {
+    // Só conta ociosidade se o expediente foi iniciado pela liderança
+    if (dadosExpediente?.status !== 'aberto') return 0;
+
+    const [ano, mes, dia] = dataOperacaoAtiva.split('-').map(Number);
+    const [hIni, mIni] = (dadosExpediente?.inicio || '07:30').split(':').map(Number);
+    const inicioExpedienteMs = new Date(ano, mes - 1, dia, hIni, mIni, 0).getTime();
+
+    const userStats = rankingCalculado.find(u => u.uid === uidUser || u.nome === nomeUser);
+    
+    // Se o usuário não fez nenhuma tarefa hoje, a ociosidade conta desde o início do expediente
+    if (!userStats || !userStats.eventosMesclados || userStats.eventosMesclados.length === 0) {
+      return Math.max(0, currentTime - inicioExpedienteMs);
+    }
+    
+    // Pega o término da última atividade/pausa registrada
+    const ultimoEvento = userStats.eventosMesclados[userStats.eventosMesclados.length - 1];
+    const momentoCorte = Math.max(inicioExpedienteMs, ultimoEvento.end);
+    
+    if (currentTime > momentoCorte) {
+      return currentTime - momentoCorte;
+    }
+    return 0;
   };
 
   const getNomesResponsaveis = (pedido) => {
@@ -1539,6 +1556,43 @@ export default function OperacaoAdm() {
     }).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [usuarios, rankingCalculado]);
 
+  // ESCUTA O EXPEDIENTE DO DIA
+  useEffect(() => {
+    const refExpediente = doc(db, 'expedienteDiario', dataOperacaoAtiva);
+    const unsub = onSnapshot(refExpediente, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setDadosExpediente(data);
+        setFormExpediente({ 
+          horaInicio: data.inicio || '07:30', 
+          horaFim: data.fim || '17:30' 
+        });
+      } else {
+        setDadosExpediente({ inicio: '', fim: '', status: 'aguardando' });
+        setFormExpediente({ horaInicio: '07:30', horaFim: '17:30' });
+      }
+    });
+    return () => unsub();
+  }, [dataOperacaoAtiva]);
+
+const handleSalvarExpediente = async (statusAcao) => {
+    setIsSaving(true);
+    try {
+      const refExpediente = doc(db, 'expedienteDiario', dataOperacaoAtiva);
+      await setDoc(refExpediente, {
+        inicio: formExpediente.horaInicio,
+        fim: formExpediente.horaFim,
+        status: statusAcao, // 'aberto' ou 'encerrado'
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setShowModalExpediente(false);
+    } catch (error) {
+      alert("Erro ao salvar expediente: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <>
       <TransicaoAdmOverlay isVisible={overlayAtivo} isExiting={overlaySaindo} />
@@ -1573,19 +1627,34 @@ export default function OperacaoAdm() {
         <div className="op-wrapper" style={{ width: '100%', maxWidth: '1500px', margin: '0 auto', padding: '0 15px', boxSizing: 'border-box' }}>
           <main style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '25px', width: '100%', boxSizing: 'border-box' }}>
           
-          {/* TOPO: TÍTULO E AJUSTES */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
             <div>
               <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.35rem', fontWeight: 800 }}>Painel de Gestão da Liderança</h2>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>Monitoramento de produtividade e fluxo da equipe em tempo real.</span>
             </div>
 
-            <button 
-              onClick={() => setShowModalIntervencao(true)} 
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '10px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}
-            >
-              <Settings size={16} /> Lançar Ajustes
-            </button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => setShowModalExpediente(true)} 
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: '8px', 
+                  background: dadosExpediente.status === 'aberto' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-input)', 
+                  color: dadosExpediente.status === 'aberto' ? '#10b981' : 'var(--text-main)', 
+                  border: `1px solid ${dadosExpediente.status === 'aberto' ? '#10b981' : 'var(--border-color)'}`, 
+                  padding: '9px 16px', borderRadius: '10px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' 
+                }}
+              >
+                <Clock size={16} /> 
+                {dadosExpediente.status === 'aberto' ? 'Dia em Andamento' : dadosExpediente.status === 'encerrado' ? 'Dia Encerrado' : 'Iniciar Dia'}
+              </button>
+
+              <button 
+  onClick={() => setShowModalGerenciarRanking(true)} 
+  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '10px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}
+>
+  <Settings size={16} /> Gerenciar Ranking
+</button>
+            </div>
           </div>
 
           {/* ESTRUTURA DIVIDIDA: 80% ATIVIDADES EM FAIXAS / 20% MÉTRICAS VERTICAIS */}
@@ -1602,11 +1671,6 @@ export default function OperacaoAdm() {
                   {pedidosEmAndamento.length > 0 && (
                     <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#38bdf8', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <div className="radar-spinner"></div> {pedidosEmAndamento.length} em separação
-                    </span>
-                  )}
-                  {isExpedienteEncerrado && (
-                    <span style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Moon size={12} /> Encerrado (17h30)
                     </span>
                   )}
                 </div>
@@ -1653,21 +1717,11 @@ export default function OperacaoAdm() {
                       return uids.includes(user.uid) || (p.criadorEmail && user.email && p.criadorEmail === user.email); 
                     });
 
-                    const tempoOciosoMs = getTempoOcioso(nomeUser);
-                    const isDiaConcluido = isExpedienteEncerrado && !pedidoAtivo;
-                    const limiteOciosidadeMs = 20 * 60 * 1000;
-                    const estaMultando = tempoOciosoMs > limiteOciosidadeMs;
-
                     let borderLeftColor = '#64748b';
                     let statusBadge = null;
                     let detalhesTarefa = null;
 
-                    if (isDiaConcluido) {
-                      borderLeftColor = '#10b981';
-                      statusBadge = <span className="badge-status-concluido"><Moon size={11}/> Encerrado</span>;
-                      detalhesTarefa = <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Expediente concluído às 17h30</span>;
-
-                    } else if (pedidoAtivo) {
+                    if (pedidoAtivo) {
                       if (pedidoAtivo.isPaused) {
                         borderLeftColor = '#818cf8';
                         statusBadge = <span className="badge-status-pausado"><Pause size={11}/> Pausado</span>;
@@ -1697,23 +1751,42 @@ export default function OperacaoAdm() {
                           </div>
                         );
                       }
-
                     } else if (isPaused) {
                       borderLeftColor = '#f59e0b';
                       statusBadge = <span className="badge-status-pausa-protegida"><Coffee size={12}/> Em Pausa</span>;
-                      detalhesTarefa = <span style={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 600 }}>Pausa autorizada (Ociosidade travada)</span>;
-
+                      detalhesTarefa = <span style={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 600 }}>Operação pausada</span>;
                     } else {
-                      borderLeftColor = estaMultando ? '#ef4444' : '#475569';
-                      statusBadge = estaMultando 
-                        ? <span className="badge-status-multa"><AlertTriangle size={11}/> Multando</span>
-                        : <span className="badge-status-livre"><Clock size={11}/> Disponível</span>;
+                      const tempoOciosoMs = getTempoOcioso(nomeUser, user.uid);
+                      const limiteToleranciaMs = 20 * 60 * 1000;
+                      const ultrapassouTolerancia = tempoOciosoMs > limiteToleranciaMs;
+
+                      borderLeftColor = ultrapassouTolerancia ? '#ef4444' : '#475569';
+                      statusBadge = ultrapassouTolerancia ? (
+                        <span className="badge-status-multa" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '3px 8px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertTriangle size={12}/> Ocioso (-10/min)
+                        </span>
+                      ) : (
+                        <span className="badge-status-livre">
+                          <Clock size={11}/> Disponível
+                        </span>
+                      );
+
                       detalhesTarefa = (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Sem tarefas há:</span>
-                          <strong style={{ fontFamily: 'monospace', fontSize: '0.95rem', color: estaMultando ? '#ef4444' : 'var(--text-muted)' }}>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Última demanda finalizada há:</span>
+                          <strong style={{ 
+                            fontFamily: 'monospace', 
+                            fontSize: '0.95rem', 
+                            color: ultrapassouTolerancia ? '#ef4444' : 'var(--text-main)',
+                            fontWeight: 800
+                          }}>
                             {formatMsToTime(tempoOciosoMs)}
                           </strong>
+                          {ultrapassouTolerancia && (
+                            <span style={{ color: '#ef4444', fontSize: '0.72rem', fontWeight: 700 }}>
+                              (Tolerância esgotada)
+                            </span>
+                          )}
                         </div>
                       );
                     }
@@ -1758,29 +1831,28 @@ export default function OperacaoAdm() {
                         </div>
 
                         {/* COLUNA 4: AÇÃO DE CONTROLE */}
-                        {!isDiaConcluido && (
-                          <button 
-  onClick={() => handleTogglePausaUsuario(user.uid, isPaused)} // <-- Correção aqui
-  style={{
-    background: isPaused ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-input)',
-    color: isPaused ? '#fbbf24' : 'var(--text-muted)',
-    border: `1px solid ${isPaused ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
-    padding: '6px 12px',
-    borderRadius: '8px',
-    fontSize: '0.75rem',
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontFamily: 'inherit',
-    flexShrink: 0
-  }}
->
-  {isPaused ? <Play size={12} color="#fbbf24" /> : <Pause size={12} />}
-  <span>{isPaused ? 'Retomar' : 'Pausar'}</span>
-</button>
-                        )}
+                        <button 
+                          onClick={() => handleTogglePausaUsuario(user.uid, isPaused)}
+                          style={{
+                            background: isPaused ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-input)',
+                            color: isPaused ? '#fbbf24' : 'var(--text-muted)',
+                            border: `1px solid ${isPaused ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontFamily: 'inherit',
+                            flexShrink: 0
+                          }}
+                        >
+                          {isPaused ? <Play size={12} color="#fbbf24" /> : <Pause size={12} />}
+                          <span>{isPaused ? 'Retomar' : 'Pausar'}</span>
+                        </button>
+                    
                       </div>
                     );
                   })
@@ -2296,6 +2368,16 @@ export default function OperacaoAdm() {
 
       <AnimacaoCriacaoPedido dadosPedido={pedidoRecemCriado} />
 
+      {/* FLUXO UNIFICADO DE IMPORTAÇÃO WMS */}
+      <ModalFluxoImportacaoWMS 
+        etapa={fluxoImportacao?.etapa}
+        dadosPrevia={fluxoImportacao}
+        resumoTexto={fluxoImportacao?.resumoTexto}
+        onConfirmarGravacao={handleConfirmarGravacaoWMS}
+        onConcluirFluxo={handleConcluirFluxoWMS}
+        onCancelar={() => setFluxoImportacao(null)}
+      />
+
       <ModalConfirmarExclusao 
         pedidoParaExcluir={pedidoParaExcluir}
         onConfirmar={handleConfirmarExclusaoDefinitiva}
@@ -2413,6 +2495,82 @@ export default function OperacaoAdm() {
           </div>
         </div>
       )}
+
+      {/* MODAL DE CONTROLE DE EXPEDIENTE */}
+      {showModalExpediente && (
+        <div 
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(5, 5, 10, 0.75)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(8px)', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }} 
+          onClick={() => setShowModalExpediente(false)}
+        >
+          <div 
+            style={{ background: 'var(--bg-card, #1e293b)', width: '95%', maxWidth: '420px', borderRadius: '16px', border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))', padding: '24px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)' }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: 'rgba(16, 185, 129, 0.15)', padding: '8px', borderRadius: '10px', color: '#10b981' }}>
+                  <Clock size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, color: 'var(--text-main, #f8fafc)', fontSize: '1.15rem', fontWeight: 800 }}>Controle de Expediente</h3>
+                  <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.82rem' }}>Defina o limite de tempo da operação</span>
+                </div>
+              </div>
+              <button onClick={() => setShowModalExpediente(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '24px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>Hora de Início</label>
+                <input 
+                  type="time" 
+                  value={formExpediente.horaInicio} 
+                  onChange={e => setFormExpediente({...formExpediente, horaInicio: e.target.value})}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontFamily: 'monospace', fontSize: '1.1rem', textAlign: 'center' }} 
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>Hora de Fim (Corte)</label>
+                <input 
+                  type="time" 
+                  value={formExpediente.horaFim} 
+                  onChange={e => setFormExpediente({...formExpediente, horaFim: e.target.value})}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontFamily: 'monospace', fontSize: '1.1rem', textAlign: 'center' }} 
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => handleSalvarExpediente('aberto')}
+                disabled={isSaving}
+                style={{ flex: 1, padding: '12px', borderRadius: '8px', background: '#10b981', border: 'none', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+              >
+                {isSaving ? <Loader2 size={16} className="fa-spin"/> : <Play size={16}/>} Iniciar Operação
+              </button>
+              
+              <button 
+                onClick={() => handleSalvarExpediente('encerrado')}
+                disabled={isSaving}
+                style={{ flex: 1, padding: '12px', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid #ef4444', color: '#ef4444', fontWeight: 800, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+              >
+                {isSaving ? <Loader2 size={16} className="fa-spin"/> : <Check size={16}/>} Encerrar Dia
+              </button>
+            </div>
+            
+            <p style={{ marginTop: '16px', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+              Você pode alterar esses horários depois. O cálculo de ociosidade respeitará este intervalo de tempo.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <ModalGerenciarRanking 
+  show={showModalGerenciarRanking}
+  onClose={() => setShowModalGerenciarRanking(false)}
+  rankingData={rankingCalculado}
+  dataOperacaoAtiva={dataOperacaoAtiva}
+/>
 
       {/* MODAL DE TRANSFERÊNCIA DE DIA */}
       {pedidoParaTransferir && (

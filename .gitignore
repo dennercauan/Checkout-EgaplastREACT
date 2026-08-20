@@ -28,3 +28,12 @@ dist-ssr
 release
 *.local
 .env
+node_modules/
+dist/
+build/
+.firebase/
+.env.local
+.DS_Store
+dist-electron/
+release/
+out/

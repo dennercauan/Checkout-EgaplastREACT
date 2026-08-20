@@ -8,40 +8,52 @@ export function useMotorRanking(
   controlePausas, 
   ajustesDoDia, 
   dataOperacaoAtiva, 
-  horaReferenciaAtual
+  horaReferenciaAtual,
+  dadosExpediente
 ) {
   return useMemo(() => {
     if (!usuarios || usuarios.length === 0) return [];
     
-    const today = new Date();
-    const dataHojeStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const isHoje = dataOperacaoAtiva === dataHojeStr;
-
     const [anoR, mesR, diaR] = dataOperacaoAtiva.split('-');
-    const limiteExpediente = new Date(Number(anoR), Number(mesR) - 1, Number(diaR), 17, 30, 0).getTime();
+    
+    // 1. Extração do Horário de Início e Fim do Expediente
+    const horaInicioStr = dadosExpediente?.inicio || '07:30';
+    const horaFimStr = dadosExpediente?.fim || '17:30';
+    
+    const [hIni, mIni] = horaInicioStr.split(':').map(Number);
+    const [hFim, mFim] = horaFimStr.split(':').map(Number);
+    
+    const inicioExpedienteMs = new Date(Number(anoR), Number(mesR) - 1, Number(diaR), hIni, mIni, 0).getTime();
+    const fimExpedienteMs = new Date(Number(anoR), Number(mesR) - 1, Number(diaR), hFim, mFim, 0).getTime();
     
     const relogioBase = horaReferenciaAtual || Date.now();
-    const tempoReferencia = relogioBase > limiteExpediente ? limiteExpediente : relogioBase;
-    const inicioDoDiaAtivo = new Date(Number(anoR), Number(mesR) - 1, Number(diaR), 0, 0, 0).getTime();
+    
+    // Se o ADM encerrou o dia, o teto congela na hora do fim do expediente
+    const tempoReferencia = dadosExpediente?.status === 'encerrado' 
+      ? Math.min(relogioBase, fimExpedienteMs) 
+      : relogioBase;
 
     const userStats = {};
     
+    // 2. Inicialização dos Conferentes
     usuarios.forEach(u => {
       userStats[u.uid] = { 
         nome: u.nickname || (u.email ? u.email.split('@')[0] : 'usuario'), 
         email: u.email || '',
         skus: 0, pontosSku: 0, op: 0, pedidos: 0, 
-        bonusPedidos: 0, decrescimo: 0, pontos: 0, eventos: [], pointEvents: [], uid: u.uid
+        bonusPedidos: 0, decrescimo: 0, pontos: 0, 
+        eventos: [], pointEvents: [], eventosMesclados: [],
+        uid: u.uid
       };
     });
 
-    // 1. Ordens de Produção
+    // 3. Ordens de Produção (+50 pts)
     (opsDoDia || []).forEach(op => {
        if (op.responsavelUid && userStats[op.responsavelUid]) {
           userStats[op.responsavelUid].op += 1;
           userStats[op.responsavelUid].pontos += 50;
           let time = op.createdAt?.toMillis ? op.createdAt.toMillis() : tempoReferencia;
-          time = Math.max(inicioDoDiaAtivo, Math.min(tempoReferencia, time));
+          time = Math.max(inicioExpedienteMs, Math.min(tempoReferencia, time));
           
           userStats[op.responsavelUid].eventos.push({ start: time, end: time });
           userStats[op.responsavelUid].pointEvents.push({ 
@@ -50,7 +62,7 @@ export function useMotorRanking(
        }
     });
 
-    // 2. Pedidos
+    // 4. Pedidos Processados (SKUs e Bônus)
     (pedidosProcessados || []).forEach(pedido => {
       let skusReais = 0;
       let pontosSKU = 0;
@@ -88,29 +100,33 @@ export function useMotorRanking(
             
             if (pedido.efetivado && pedido.completedAt) {
                endRaw = pedido.completedAt?.toMillis ? pedido.completedAt.toMillis() : tempoReferencia;
-            } else if (pedido.primeiraEfetivacao) {
-               endRaw = pedido.primeiraEfetivacao?.toMillis ? pedido.primeiraEfetivacao.toMillis() : tempoReferencia;
             } else if (pedido.isPaused && pedido.lastPauseStart) {
                endRaw = pedido.lastPauseStart; 
             }
             
-            let startClamped = Math.max(inicioDoDiaAtivo, startRaw);
+            let startClamped = Math.max(inicioExpedienteMs, startRaw);
             let endClamped = Math.min(tempoReferencia, endRaw);
             if (endClamped < startClamped) endClamped = startClamped;
 
             userStats[uid].eventos.push({ start: startClamped, end: endClamped });
-            userStats[uid].pointEvents.push({ time: startClamped, delta: 0, label: `📦 Início: ${pedido.romaneio || 'S/N'}`, detalhe: 'Iniciou a separação' });
+            userStats[uid].pointEvents.push({ 
+              time: startClamped, delta: 0, label: `📦 Início: ${pedido.romaneio || 'S/N'}`, detalhe: 'Iniciou a separação', sourceId: pedido.id, sourceType: 'pedido' 
+            });
 
             if (pedido.efetivado) {
-               userStats[uid].pointEvents.push({ time: endClamped, delta: pontosSkuDivididos + bonusDividido, label: `✅ Fim: ${pedido.romaneio || 'S/N'}`, detalhe: `+${pontosSkuDivididos} pts (SKUs) e +${bonusDividido} pts (Bônus)` });
+               userStats[uid].pointEvents.push({ 
+                 time: endClamped, delta: pontosSkuDivididos + bonusDividido, label: `✅ Fim: ${pedido.romaneio || 'S/N'}`, detalhe: `+${pontosSkuDivididos} pts (SKUs) e +${bonusDividido} pts (Bônus)`, sourceId: pedido.id, sourceType: 'pedido' 
+               });
             } else if (pedido.isPaused) {
-               userStats[uid].pointEvents.push({ time: endClamped, delta: 0, label: `⏸️ Pausa: ${pedido.romaneio || 'S/N'}`, detalhe: pedido.motivoPausa || 'Cronômetro pausado' });
+               userStats[uid].pointEvents.push({ 
+                 time: endClamped, delta: 0, label: `⏸️ Pausa: ${pedido.romaneio || 'S/N'}`, detalhe: pedido.motivoPausa || 'Cronômetro pausado', sourceId: pedido.id, sourceType: 'pedido' 
+               });
             }
          }
       });
     });
 
-    // 3. Pausas da Liderança (Busca flexível por UID, Nickname ou E-mail)
+    // 5. Pausas da Liderança (Proteção manual de ociosidade)
     if (controlePausas) {
       Object.entries(controlePausas).forEach(([chaveIdentificadora, dadosPausa]) => {
         if (!dadosPausa) return;
@@ -125,7 +141,6 @@ export function useMotorRanking(
         if (u && userStats[u.uid]) {
           const pausas = Array.isArray(dadosPausa.history) ? [...dadosPausa.history] : [];
           
-          // Se o usuário está pausado no momento, garante o fechamento do evento até o tempo de referência atual
           if (dadosPausa.isPaused) {
             const ultimoRegistro = pausas[pausas.length - 1];
             if (!ultimoRegistro || ultimoRegistro.end) {
@@ -134,31 +149,18 @@ export function useMotorRanking(
           }
 
           pausas.forEach(p => {
-            let startRaw = p.start || tempoReferencia;
-            let endRaw = p.end || tempoReferencia;
-
-            // Clamping para manter os horários dentro do expediente válido
-            let start = Math.max(inicioDoDiaAtivo, Math.min(tempoReferencia, startRaw));
-            let end = Math.max(start, Math.min(tempoReferencia, endRaw));
+            let start = Math.max(inicioExpedienteMs, Math.min(tempoReferencia, p.start || tempoReferencia));
+            let end = Math.max(start, Math.min(tempoReferencia, p.end || tempoReferencia));
 
             const jaExiste = userStats[u.uid].eventos.some(e => e.start === start && e.end === end);
             if (!jaExiste) {
               userStats[u.uid].eventos.push({ start, end });
               userStats[u.uid].pointEvents.push({ 
-                time: start, 
-                delta: 0, 
-                label: '☕ Pausa de Ociosidade', 
-                detalhe: 'Cronômetro pausado pela liderança', 
-                sourceType: 'pausa_adm' 
+                time: start, delta: 0, label: '☕ Pausa Operacional', detalhe: 'Parada autorizada pela liderança', sourceType: 'pausa_adm' 
               });
-              
               if (p.end && end < tempoReferencia) {
                 userStats[u.uid].pointEvents.push({ 
-                  time: end, 
-                  delta: 0, 
-                  label: '▶️ Retorno à Operação', 
-                  detalhe: 'Contador de ociosidade reativado', 
-                  sourceType: 'pausa_adm' 
+                  time: end, delta: 0, label: '▶️ Retorno à Operação', detalhe: 'Retomada das atividades', sourceType: 'pausa_adm' 
                 });
               }
             }
@@ -167,29 +169,21 @@ export function useMotorRanking(
       });
     }
 
-    // 4. Decréscimo (Tolerância de 20 min)
-    const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000; 
+    // 6. Cálculo da Ociosidade Automática (Tolerância de 20 min e -10 pts/min)
+    const LIMITE_OCIOSIDADE_MS = 20 * 60 * 1000;
        
     Object.values(userStats).forEach(user => {
-       // Ordena todos os eventos combinados cronologicamente
        user.eventos.sort((a, b) => a.start - b.start);
        
-       // Mescla eventos sobrepostos (ex: pedidos paralelos + pausas)
        const merged = [];
        user.eventos.forEach(ev => {
-          if (merged.length === 0) { 
-            merged.push({ ...ev }); 
-            return; 
-          }
+          if (merged.length === 0) { merged.push({...ev}); return; }
           const last = merged[merged.length - 1];
-          if (ev.start <= last.end) {
-            last.end = Math.max(last.end, ev.end); 
-          } else {
-            merged.push({ ...ev });
-          }
+          if (ev.start <= last.end) last.end = Math.max(last.end, ev.end); 
+          else merged.push({...ev});
        });
 
-       // Penalidade nos intervalos entre tarefas concluídas
+       // Penalidade nos intervalos entre tarefas
        for (let i = 1; i < merged.length; i++) {
           const gapMs = merged[i].start - merged[i-1].end;
           if (gapMs > LIMITE_OCIOSIDADE_MS) {
@@ -198,24 +192,16 @@ export function useMotorRanking(
              user.decrescimo += penalidade; 
              user.pontos -= penalidade; 
              user.pointEvents.push({ 
-               time: merged[i-1].end + LIMITE_OCIOSIDADE_MS, 
-               delta: 0, 
-               label: '⏱️ Fim da Tolerância', 
-               detalhe: 'A pausa permitida acabou. Iniciando perda de pontos.', 
-               sourceType: 'calculado' 
+               time: merged[i-1].end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância (20 min)', detalhe: 'Iniciando decréscimo de pontuação', sourceType: 'calculado' 
              });
              user.pointEvents.push({ 
-               time: merged[i].start - 1000, 
-               delta: -penalidade, 
-               label: '❌ Multa Aplicada (Retorno)', 
-               detalhe: `Perdeu ${penalidade} pts`, 
-               sourceType: 'calculado' 
+               time: merged[i].start - 1000, delta: -penalidade, label: '❌ Multa de Ociosidade', detalhe: `Perdeu ${penalidade} pts (${Math.floor(excessoMs / 60000)} min ocioso)`, sourceType: 'calculado' 
              });
           }
        }
        
-       // Penalidade da ociosidade ativa (apenas se a última atividade terminou antes do tempo atual)
-       if (merged.length > 0 && isHoje) {
+       // Penalidade da ociosidade atual (se o dia foi iniciado e a última tarefa terminou)
+       if (merged.length > 0 && dadosExpediente?.status === 'aberto') {
           const ultimaTarefa = merged[merged.length - 1];
           if (ultimaTarefa.end < tempoReferencia) {
              const ociosidadeAtualMs = tempoReferencia - ultimaTarefa.end;
@@ -225,27 +211,18 @@ export function useMotorRanking(
                 user.decrescimo += penalidade;
                 user.pontos -= penalidade;
                 user.pointEvents.push({ 
-                  time: ultimaTarefa.end + LIMITE_OCIOSIDADE_MS, 
-                  delta: 0, 
-                  label: '⏱️ Fim da Tolerância', 
-                  detalhe: 'A pausa permitida acabou. Iniciando perda de pontos.', 
-                  sourceType: 'calculado' 
+                  time: ultimaTarefa.end + LIMITE_OCIOSIDADE_MS, delta: 0, label: '⏱️ Fim da Tolerância (20 min)', detalhe: 'Iniciando decréscimo de pontuação', sourceType: 'calculado' 
                 });
                 user.pointEvents.push({ 
-                  time: tempoReferencia, 
-                  delta: -penalidade, 
-                  label: '⚠️ Ociosidade Atual', 
-                  detalhe: `Parado até o corte (${Math.floor(ociosidadeAtualMs / 60000)} min de intervalo).`, 
-                  sourceType: 'calculado' 
+                  time: tempoReferencia, delta: -penalidade, label: '⚠️ Ociosidade Ativa', detalhe: `Perdendo ${penalidade} pts (${Math.floor(ociosidadeAtualMs / 60000)} min sem demandas)`, sourceType: 'calculado' 
                 });
              }
           }
        }
 
        user.eventosMesclados = merged;
-       if (user.pontos < 0) user.pontos = 0;
-       
-       // 5. Ajustes ADM (Busca flexível)
+
+       // 7. Ajustes ADM Manuais
        if (ajustesDoDia) {
          const ajustesDesteUsuario = ajustesDoDia.filter(a => 
            a.usuarioUid === user.uid ||
@@ -255,40 +232,59 @@ export function useMotorRanking(
          );
 
          ajustesDesteUsuario.forEach(ajuste => {
-           if (ajuste.tipo === 'bonus') {
-             user.pontos += ajuste.pontos;
-             let time = ajuste.createdAt?.toMillis ? ajuste.createdAt.toMillis() : tempoReferencia;
-             const motivoAdicional = ajuste.motivo ? ` - Motivo: ${ajuste.motivo}` : '';
-             if (ajuste.isPerdao) {
-               user.decrescimo = Math.max(0, user.decrescimo - ajuste.pontos);
-               user.pointEvents.push({ time, delta: ajuste.pontos, label: '🛡️ Perdão de Ociosidade', detalhe: `A liderança devolveu ${ajuste.pontos} pts${motivoAdicional}`, sourceId: ajuste.id, sourceType: 'ajuste' });
-             } else {
-               user.pointEvents.push({ time, delta: ajuste.pontos, label: '⭐ Bônus / Ajuste ADM', detalhe: `${ajuste.pontos > 0 ? '+' : ''}${ajuste.pontos} pts${motivoAdicional}`, sourceId: ajuste.id, sourceType: 'ajuste' });
-             }
+           user.pontos += (ajuste.pontos || 0);
+           let time = ajuste.createdAt?.toMillis ? ajuste.createdAt.toMillis() : tempoReferencia;
+           const motivoAdicional = ajuste.motivo ? ` (${ajuste.motivo})` : '';
+           
+           if (ajuste.isPerdao) {
+             user.decrescimo = Math.max(0, user.decrescimo - (ajuste.pontos || 0));
+             user.pointEvents.push({ 
+               time, delta: ajuste.pontos, label: '🛡️ Perdão de Ociosidade', detalhe: `A liderança anulou a perda de ${ajuste.pontos} pts${motivoAdicional}`, sourceId: ajuste.id, sourceType: 'ajuste' 
+             });
+           } else {
+             user.pointEvents.push({ 
+               time, delta: ajuste.pontos, label: '⭐ Ajuste ADM', detalhe: `${ajuste.pontos > 0 ? '+' : ''}${ajuste.pontos} pts${motivoAdicional}`, sourceId: ajuste.id, sourceType: 'ajuste' 
+             });
            }
          });
        }
 
-       // 6. Fechamento do Gráfico
+       // 8. Distanciamento Visual de 1 Minuto no Gráfico
        user.pointEvents.sort((a, b) => a.time - b.time);
+       for (let i = 1; i < user.pointEvents.length; i++) {
+         if (user.pointEvents[i].time <= user.pointEvents[i-1].time) {
+           user.pointEvents[i].time = user.pointEvents[i-1].time + 60000; // +1 minuto garantido
+         }
+       }
+
        let pontuacaoCorrente = 0;
        user.chartData = [];
+       
        if (user.pointEvents.length > 0) {
          const primeiroTempo = new Date(user.pointEvents[0].time - 60000);
-         user.chartData.push({ timeStr: `${String(primeiroTempo.getHours()).padStart(2,'0')}:${String(primeiroTempo.getMinutes()).padStart(2,'0')}`, timestamp: primeiroTempo.getTime(), score: 0, label: 'Início', detalhe: 'Início da contagem', delta: 0, isEvent: false });
+         user.chartData.push({ 
+           timeStr: `${String(primeiroTempo.getHours()).padStart(2,'0')}:${String(primeiroTempo.getMinutes()).padStart(2,'0')}`, 
+           timestamp: primeiroTempo.getTime(), score: 0, label: 'Início', detalhe: 'Início da jornada', delta: 0, isEvent: false 
+         });
        }
+
        user.pointEvents.forEach(ev => {
          pontuacaoCorrente = Math.max(0, pontuacaoCorrente + ev.delta);
          const d = new Date(ev.time);
-         user.chartData.push({ timeStr: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`, timestamp: ev.time, score: pontuacaoCorrente, label: ev.label, detalhe: ev.detalhe, delta: ev.delta, isEvent: true, sourceId: ev.sourceId, sourceType: ev.sourceType });
+         user.chartData.push({ 
+           timeStr: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`, 
+           timestamp: ev.time, score: pontuacaoCorrente, label: ev.label, detalhe: ev.detalhe, delta: ev.delta, isEvent: true, sourceId: ev.sourceId, sourceType: ev.sourceType 
+         });
        });
-       if (isHoje && user.chartData.length > 0) {
-         const agora = new Date(tempoReferencia);
-         user.chartData.push({ timeStr: `${String(agora.getHours()).padStart(2,'0')}:${String(agora.getMinutes()).padStart(2,'0')}`, timestamp: tempoReferencia, score: pontuacaoCorrente, label: 'Tempo Real', detalhe: 'Momento exato', delta: 0, isEvent: false });
-       }
+
+       if (user.pontos < 0) user.pontos = 0;
     });
 
-    return Object.values(userStats).filter(u => u.pontos > 0 || u.pedidos > 0 || u.op > 0).sort((a, b) => b.pontos - a.pontos).map((u, idx) => ({ ...u, posicao: idx + 1 }));
+    // 9. Ordenação Final
+    return Object.values(userStats)
+      .filter(u => u.pontos > 0 || u.pedidos > 0 || u.op > 0 || u.decrescimo > 0)
+      .sort((a, b) => b.pontos - a.pontos)
+      .map((u, idx) => ({ ...u, posicao: idx + 1 }));
 
-  }, [usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, horaReferenciaAtual]);
+  }, [usuarios, opsDoDia, pedidosProcessados, controlePausas, ajustesDoDia, dataOperacaoAtiva, horaReferenciaAtual, dadosExpediente]);
 }

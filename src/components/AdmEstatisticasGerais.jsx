@@ -90,7 +90,7 @@ export default function AdmEstatisticasGerais({ dados, pedidos = [] }) {
         }}>
           <div>
             <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              NFs / Minutas
+              Pedidos
             </span>
             <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#a78bfa', lineHeight: 1.1, marginTop: '2px' }}>
               {totalPedidosValidos}
