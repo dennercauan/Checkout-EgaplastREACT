@@ -22,7 +22,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      devTools: false
+      devTools: true 
     }
   });
 
@@ -30,6 +30,9 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     win.webContents.setZoomFactor(defaultZoom);
   });
+
+  // CORREÇÃO: Alterado de 'mainWindow' para 'win'
+  win.webContents.openDevTools({ mode: 'detach' });
 
   win.loadURL('https://checkoutegaplast-beta.web.app');
   win.setMenuBarVisibility(false);

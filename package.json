@@ -6,6 +6,7 @@
   "type": "module",
   "main": "main.cjs",
   "scripts": {
+    "start": "vite",
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
@@ -32,11 +33,11 @@
     "vite": "^8.1.1"
   },
   "build": {
-    "appId": "com.egaplast.checkout",
-    "productName": "Checkout Egaplast",
-    "directories": {
-      "output": "release"
-    },
+  "appId": "com.egaplast.checkout",
+  "productName": "Checkout Egaplast",
+  "directories": {
+    "output": "dist-electron"
+  },
     "win": {
       "icon": "build/icon.ico",
       "target": [

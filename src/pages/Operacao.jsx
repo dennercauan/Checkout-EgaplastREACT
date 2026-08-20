@@ -255,7 +255,14 @@ export default function Operacao({ isAdmin }) {
       });
 
       const refDia = doc(db, 'estatisticasDiarias', dataOperacaoAtiva);
-      await setDoc(refDia, { ranking: rankingMap }, { merge: true });
+      
+      // SUBSTITUIÇÃO: updateDoc sobrescreve e limpa as chaves antigas
+      try {
+        await updateDoc(refDia, { ranking: rankingMap });
+      } catch (e) {
+        // Fallback caso seja a primeira gravação do dia e o doc não exista
+        await setDoc(refDia, { ranking: rankingMap });
+      }
     } catch (error) {
       console.error("Falha ao sincronizar em tempo real:", error);
     }
@@ -667,50 +674,72 @@ export default function Operacao({ isAdmin }) {
     setIsTransferindo(true);
     try {
       const agora = Date.now();
-      
       const dataOrig = pedidoParaTransferir.dataOperacao || dataOperacaoAtiva;
-      const [anoO, mesO, diaO] = dataOrig.split('-');
-      const corteExpedienteOrig = new Date(Number(anoO), Number(mesO) - 1, Number(diaO), 17, 30, 0).getTime();
 
+      // Start real do romaneio original
       const startOriginal = pedidoParaTransferir.createdAt?.toMillis 
         ? pedidoParaTransferir.createdAt.toMillis() 
         : (typeof pedidoParaTransferir.createdAt === 'number' ? pedidoParaTransferir.createdAt : agora);
       
       const totalPausedOriginal = pedidoParaTransferir.totalPausedTime || 0;
       
+      // Resgata o tempo já acumulado em transferências prévias (se houver)
+      const tempoAnteriorJaAcumulado = pedidoParaTransferir.tempoTrabalhadoAnterior || 0;
+      
+      // Fim real no momento da transferência (sem trava de 17h30 para respeitar hora extra)
       let momentoFinalOriginal = agora;
       if (pedidoParaTransferir.isPaused && pedidoParaTransferir.lastPauseStart) {
         momentoFinalOriginal = pedidoParaTransferir.lastPauseStart;
-      } else {
-        momentoFinalOriginal = Math.min(agora, corteExpedienteOrig);
       }
 
-      const tempoTrabalhadoAcumulado = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
+      // Calcula o tempo líquido trabalhado hoje
+      const tempoTrabalhadoNesteDia = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
+      
+      // Soma com o tempo de dias passados
+      const novoTempoTrabalhadoAnterior = tempoAnteriorJaAcumulado + tempoTrabalhadoNesteDia;
 
+      // =========================================================
+      // 1. PROTEGER O TEMPO TRABALHADO NO DIA DE ORIGEM (RANKING)
+      // =========================================================
+      const refPausasOrigem = doc(db, 'controlePausas', dataOrig);
+      const snapPausas = await getDoc(refPausasOrigem);
+      const dadosPausas = snapPausas.exists() ? snapPausas.data() : {};
+      
+      const uidsEnvolvidos = (pedidoParaTransferir.uidsVinculados && pedidoParaTransferir.uidsVinculados.length > 0) 
+        ? pedidoParaTransferir.uidsVinculados 
+        : (pedidoParaTransferir.criadorUid ? [pedidoParaTransferir.criadorUid] : []);
+
+      uidsEnvolvidos.forEach(uid => {
+        const user = usuarios.find(u => u.uid === uid);
+        if (user) {
+          let userStatus = dadosPausas[uid] || { isPaused: false, history: [] };
+          if (!Array.isArray(userStatus.history)) userStatus.history = [];
+          
+          // Anexa a atividade na timeline de ontem para anular ociosidade
+          userStatus.history.push({ 
+            start: startOriginal, 
+            end: momentoFinalOriginal 
+          });
+
+          dadosPausas[uid] = userStatus;
+        }
+      });
+      
+      await setDoc(refPausasOrigem, dadosPausas, { merge: true });
+
+      // =========================================================
+      // 2. TRANSFERÊNCIA LIMPA PARA O NOVO DIA
+      // =========================================================
       const [anoD, mesD, diaD] = novaDataTransferencia.split('-');
-      const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 8, 0, 0).getTime();
+      const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 7, 30, 0).getTime();
+      const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(dataAlvoBase));
 
-      const novoCreatedAtMs = dataAlvoBase - tempoTrabalhadoAcumulado;
-      const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(novoCreatedAtMs));
-
-      let ref;
-      if (pedidoParaTransferir._isLegacy || (pedidoParaTransferir.criadorUid && pedidoParaTransferir.elementoIdOriginal)) {
-        ref = doc(
-          db, 
-          'usuarios', 
-          pedidoParaTransferir.criadorUid, 
-          'elementos', 
-          pedidoParaTransferir.elementoIdOriginal, 
-          'pedidosMultiDocumento', 
-          pedidoParaTransferir.id
-        );
-      } else {
-        ref = doc(db, 'pedidos', pedidoParaTransferir.id);
-      }
+      const ref = obterReferenciaDocumento(pedidoParaTransferir);
 
       await updateDoc(ref, {
         dataOperacao: novaDataTransferencia,
         createdAt: novoCreatedAtTimestamp,
+        tempoTrabalhadoAnterior: novoTempoTrabalhadoAnterior, // <- SALVA O BANCO DE TEMPO HERDADO
         isPaused: true,
         lastPauseStart: dataAlvoBase,
         totalPausedTime: 0,
@@ -978,9 +1007,13 @@ const pedidosProcessados = useMemo(() => {
   }, []);
 
   const formatarCronometro = (pedido) => {
-    if (!pedido.createdAt) return "00:00:00";
+    if (!pedido || !pedido.createdAt) return "00:00:00";
     const start = pedido.createdAt.toMillis ? pedido.createdAt.toMillis() : pedido.createdAt;
     const totalPaused = pedido.totalPausedTime || 0;
+    
+    // Resgata o tempo acumulado dos dias anteriores
+    const tempoAnterior = pedido.tempoTrabalhadoAnterior || 0;
+
     let end;
     if (pedido.efetivado && pedido.completedAt) {
       end = pedido.completedAt.toMillis ? pedido.completedAt.toMillis() : pedido.completedAt;
@@ -989,7 +1022,9 @@ const pedidosProcessados = useMemo(() => {
     } else {
       end = currentTime; 
     }
-    const diff = Math.max(0, end - start - totalPaused);
+
+    // Soma o tempo do dia atual com o banco herdado
+    const diff = Math.max(0, end - start - totalPaused) + tempoAnterior;
     const hh = String(Math.floor(diff / 3600000)).padStart(2, '0');
     const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
     const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
@@ -1847,7 +1882,6 @@ const pedidosProcessados = useMemo(() => {
           }
         });
 
-        // JSON.parse(JSON.stringify(...)) purga recursivamente qualquer propriedade undefined
         const payloadFinal = JSON.parse(JSON.stringify({
           ranking: rankingSanitizado,
           totalNfMinuta: totalPedidos || 0,
@@ -1855,7 +1889,13 @@ const pedidosProcessados = useMemo(() => {
           ultimaAtualizacao: Date.now()
         }));
 
-        await setDoc(refDia, payloadFinal, { merge: true });
+        // Tenta sobrescrever o mapa inteiro, eliminando as chaves velhas.
+        try {
+          await updateDoc(refDia, payloadFinal);
+        } catch (e) {
+          // Fallback: se for a primeira atualização do dia e o documento não existir
+          await setDoc(refDia, payloadFinal);
+        }
 
       } catch (error) {
         console.error("Falha na transmissão do ranking para a ADM:", error);

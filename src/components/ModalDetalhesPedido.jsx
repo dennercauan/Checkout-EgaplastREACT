@@ -255,7 +255,8 @@ export default function ModalDetalhesPedido({
                   
                   let totalVolumesGeral = 0;
                   let resumoTiposCaixa = {};
-                  const termoBuscaWms = (buscasDocumentos[dIdx] || '').toLowerCase();
+                  // CORREÇÃO: Força a busca como String para evitar crash com números
+                  const termoBuscaWms = String(buscasDocumentos[dIdx] || '').toLowerCase();
                   
                   const skusFiltrados = wmsSessions[dIdx] ? wmsSessions[dIdx].skus.filter(sku => {
                     if (sku.qtdPadrao > 0) {
@@ -269,9 +270,10 @@ export default function ModalDetalhesPedido({
                     
                     if (!termoBuscaWms) return true;
                     
-                    const ref = (sku.ref || '').toLowerCase();
-                    const desc = (sku.desc || '').toLowerCase();
-                    const caixa = (sku.caixaNome || '').toLowerCase();
+                    // CORREÇÃO: Converte todas as chaves em String
+                    const ref = String(sku.ref || '').toLowerCase();
+                    const desc = String(sku.desc || '').toLowerCase();
+                    const caixa = String(sku.caixaNome || '').toLowerCase();
                     
                     return ref.includes(termoBuscaWms) || desc.includes(termoBuscaWms) || caixa.includes(termoBuscaWms);
                   }) : [];
@@ -911,168 +913,184 @@ export default function ModalDetalhesPedido({
 
               {activeTab === 'caixas' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-                  {(pedidoModal.documentos || []).map((doc, dIdx) => {
-                    const caixas = doc.caixas || [];
+                  {/* CORREÇÃO: Fallback visual se o pedido não tiver documentos */}
+                  {(!pedidoModal.documentos || pedidoModal.documentos.length === 0) ? (
+                    <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-card)', border: '2px dashed var(--border-color)', borderRadius: '12px' }}>
+                      <FileText size={56} color="var(--text-muted)" style={{ marginBottom: '16px', opacity: 0.5 }} />
+                      <h3 style={{ margin: '0 0 10px 0', color: 'var(--text-main)', fontSize: '1.3rem', fontWeight: 800 }}>
+                        Nenhum Documento Vinculado
+                      </h3>
+                      <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+                        Este romaneio não possui notas fiscais ou minutas. <br/>
+                        Acesse a aba <strong style={{ color: 'var(--text-main)' }}>Resumo Geral</strong> e clique no botão <strong style={{ color: 'var(--text-main)' }}>+</strong> para adicionar documentos e iniciar o WMS.
+                      </p>
+                    </div>
+                  ) : (
+                    (pedidoModal.documentos || []).map((doc, dIdx) => {
+                      const caixas = doc.caixas || [];
 
-                    const skusAgrupados = caixas.reduce((acc, cx) => {
-                      (cx.produtos || []).forEach(p => {
-                        const ref = p.referencia || p.sku;
-                        if (!acc[ref]) {
-                          acc[ref] = { ref: ref, desc: p.descricao || p.desc, qtdTotal: 0, caixasDetalhadasMap: {} };
-                        }
-                        
-                        const qtd = parseInt(p.quantidade) || 0;
-                        acc[ref].qtdTotal += qtd;
-                        
-                        const chaveCaixa = cx.idExpedicao || cx.idUnico || cx.num || 'CX-S/N';
-                        
-                        if (!acc[ref].caixasDetalhadasMap[chaveCaixa]) {
-                          acc[ref].caixasDetalhadasMap[chaveCaixa] = {
-                            idUnico: cx.idExpedicao || cx.idUnico || '-',
-                            tipoCaixa: cx.num || 'CAIXA',
-                            peso: parseFloat(cx.peso) || 0,
-                            qtdNestaCaixa: qtd
-                          };
-                        } else {
-                          acc[ref].caixasDetalhadasMap[chaveCaixa].qtdNestaCaixa += qtd;
-                          acc[ref].caixasDetalhadasMap[chaveCaixa].peso = Math.max(
-                            acc[ref].caixasDetalhadasMap[chaveCaixa].peso, 
-                            parseFloat(cx.peso) || 0
-                          );
-                        }
-                      });
-                      return acc;
-                    }, {});
-
-                    const listaSkus = Object.values(skusAgrupados).map(sku => ({
-                      ...sku,
-                      caixasDetalhadas: Object.values(sku.caixasDetalhadasMap)
-                    }));
-
-                    const termoBusca = (buscasDocumentos[dIdx] || '').toLowerCase();
-                    const skusFiltrados = listaSkus.filter(sku => 
-                      (sku.ref && sku.ref.toLowerCase().includes(termoBusca)) || 
-                      (sku.desc && sku.desc.toLowerCase().includes(termoBusca))
-                    );
-
-                    return (
-                      <div key={`doc-card-${doc.id || doc.idTemp || dIdx}`} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
-                        
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-                          <h4 style={{ color: 'var(--text-highlight, #38bdf8)', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 800 }}>
-                            <Layers size={22} color="var(--text-highlight, #38bdf8)" /> {doc.tipo} 
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
-                          </h4>
+                      const skusAgrupados = caixas.reduce((acc, cx) => {
+                        (cx.produtos || []).forEach(p => {
+                          const ref = p.referencia || p.sku;
+                          if (!acc[ref]) {
+                            acc[ref] = { ref: ref, desc: p.descricao || p.desc, qtdTotal: 0, caixasDetalhadasMap: {} };
+                          }
                           
-                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                            
-                            {caixas.length > 0 && (
-                              <div style={{ position: 'relative', width: '260px' }}>
-                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }}/>
-                                <input 
-                                  type="text" 
-                                  placeholder="Buscar Produto ou SKU..." 
-                                  value={buscasDocumentos[dIdx] || ''}
-                                  onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
-                                  style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.85rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)', boxSizing: 'border-box' }}
-                                />
-                              </div>
-                            )}
+                          const qtd = parseInt(p.quantidade) || 0;
+                          acc[ref].qtdTotal += qtd;
+                          
+                          const chaveCaixa = cx.idExpedicao || cx.idUnico || cx.num || 'CX-S/N';
+                          
+                          if (!acc[ref].caixasDetalhadasMap[chaveCaixa]) {
+                            acc[ref].caixasDetalhadasMap[chaveCaixa] = {
+                              idUnico: cx.idExpedicao || cx.idUnico || '-',
+                              tipoCaixa: cx.num || 'CAIXA',
+                              peso: parseFloat(cx.peso) || 0,
+                              qtdNestaCaixa: qtd
+                            };
+                          } else {
+                            acc[ref].caixasDetalhadasMap[chaveCaixa].qtdNestaCaixa += qtd;
+                            acc[ref].caixasDetalhadasMap[chaveCaixa].peso = Math.max(
+                              acc[ref].caixasDetalhadasMap[chaveCaixa].peso, 
+                              parseFloat(cx.peso) || 0
+                            );
+                          }
+                        });
+                        return acc;
+                      }, {});
 
-                            <label style={{ background: '#0ea5e9', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {isUploading && docIndexSelecionado === dIdx ? <Loader2 size={16} className="fa-spin"/> : <UploadCloud size={16}/>}
-                              {isUploading && docIndexSelecionado === dIdx ? 'Importando...' : 'Importar WMS (CSV)'}
-                              <input type="file" accept=".csv" onChange={(e) => { setDocIndexSelecionado(dIdx); handleUploadWMSComum(e, dIdx); }} style={{ display: 'none' }} disabled={isUploading} />
-                            </label>
+                      const listaSkus = Object.values(skusAgrupados).map(sku => ({
+                        ...sku,
+                        caixasDetalhadas: Object.values(sku.caixasDetalhadasMap)
+                      }));
+
+                      // CORREÇÃO: Força a busca como String para evitar crash
+                      const termoBusca = String(buscasDocumentos[dIdx] || '').toLowerCase();
+                      const skusFiltrados = listaSkus.filter(sku => 
+                        // CORREÇÃO: Força a conversão das propriedades do objeto para String antes do toLowerCase()
+                        (sku.ref && String(sku.ref).toLowerCase().includes(termoBusca)) || 
+                        (sku.desc && String(sku.desc).toLowerCase().includes(termoBusca))
+                      );
+
+                      return (
+                        <div key={`doc-card-${doc.id || doc.idTemp || dIdx}`} style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '25px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}>
+                          
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+                            <h4 style={{ color: 'var(--text-highlight, #38bdf8)', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 800 }}>
+                              <Layers size={22} color="var(--text-highlight, #38bdf8)" /> {doc.tipo} 
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'normal' }}>({doc.responsavel?.split('@')[0]})</span>
+                            </h4>
                             
-                            <button 
-                              onClick={() => setShowCaixasEfetivadasModal(dIdx)} 
-                              style={{ background: caixas.length > 0 ? '#10b981' : 'var(--bg-input)', color: caixas.length > 0 ? '#fff' : '#10b981', border: caixas.length > 0 ? 'none' : '1px solid #10b981', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                            >
-                              <Boxes size={16}/> {caixas.length > 0 ? 'Ver Caixas e Resumo' : 'Criar Caixa Manual'}
-                            </button>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              
+                              {caixas.length > 0 && (
+                                <div style={{ position: 'relative', width: '260px' }}>
+                                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }}/>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Buscar Produto ou SKU..." 
+                                    value={buscasDocumentos[dIdx] || ''}
+                                    onChange={(e) => handleBuscaDocumento(dIdx, e.target.value)}
+                                    style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.85rem', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-main)', boxSizing: 'border-box' }}
+                                  />
+                                </div>
+                              )}
+
+                              <label style={{ background: '#0ea5e9', color: '#fff', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {isUploading && docIndexSelecionado === dIdx ? <Loader2 size={16} className="fa-spin"/> : <UploadCloud size={16}/>}
+                                {isUploading && docIndexSelecionado === dIdx ? 'Importando...' : 'Importar WMS (CSV)'}
+                                <input type="file" accept=".csv" onChange={(e) => { setDocIndexSelecionado(dIdx); handleUploadWMSComum(e, dIdx); }} style={{ display: 'none' }} disabled={isUploading} />
+                              </label>
+                              
+                              <button 
+                                onClick={() => setShowCaixasEfetivadasModal(dIdx)} 
+                                style={{ background: caixas.length > 0 ? '#10b981' : 'var(--bg-input)', color: caixas.length > 0 ? '#fff' : '#10b981', border: caixas.length > 0 ? 'none' : '1px solid #10b981', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                              >
+                                <Boxes size={16}/> {caixas.length > 0 ? 'Ver Caixas e Resumo' : 'Criar Caixa Manual'}
+                              </button>
+                            </div>
                           </div>
-                        </div>
 
-                        {caixas.length > 0 ? (
-                          <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                              <thead style={{ background: 'var(--bg-input)', position: 'sticky', top: 0, zIndex: 10 }}>
-                                <tr>
-                                  <th style={{ padding: '12px 20px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO</th>
-                                  <th style={{ padding: '12px 15px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD TOTAL</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {skusFiltrados.length === 0 ? (
+                          {caixas.length > 0 ? (
+                            <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                <thead style={{ background: 'var(--bg-input)', position: 'sticky', top: 0, zIndex: 10 }}>
                                   <tr>
-                                    <td colSpan="2" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                                      Nenhum produto encontrado para "{buscasDocumentos[dIdx]}".
-                                    </td>
+                                    <th style={{ padding: '12px 20px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>PRODUTO</th>
+                                    <th style={{ padding: '12px 15px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.75rem' }}>QTD TOTAL</th>
                                   </tr>
-                                ) : (
-                                  skusFiltrados.map((sku, i) => {
-                                    const isExpanded = skusExpandidosComum[`${dIdx}-${sku.ref}`];
-                                    return (
-                                      <React.Fragment key={`sku-comum-group-${sku.ref}-${i}`}>
-                                        <tr style={{ borderBottom: '1px solid var(--border-color)', background: isExpanded ? 'var(--bg-input)' : 'transparent' }}>
-                                          <td style={{ padding: '15px 20px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                              <div 
-                                                onClick={() => setSkusExpandidosComum(prev => ({...prev, [`${dIdx}-${sku.ref}`]: !prev[`${dIdx}-${sku.ref}`]}))}
-                                                style={{ marginTop: '2px', cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}
-                                              >
-                                                <ChevronDown size={18} color={isExpanded ? "var(--secondary)" : "var(--text-highlight, #38bdf8)"} />
-                                              </div>
-                                              <div>
-                                                <strong style={{ color: 'var(--text-highlight, #38bdf8)', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
-                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{sku.desc}</span>
-                                              </div>
-                                            </div>
-                                          </td>
-                                          <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: 'var(--text-main)' }}>{sku.qtdTotal}</td>
-                                        </tr>
-
-                                        {isExpanded && (
-                                          <tr style={{ background: 'var(--bg-input)', borderBottom: '2px solid var(--border-color)' }}>
-                                            <td colSpan="2" style={{ padding: '15px 25px' }}>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', color: '#10b981' }}>
-                                                <Package size={16} /> <strong style={{ fontSize: '0.85rem' }}>Embalagens Registradas</strong>
-                                              </div>
-                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
-                                                {sku.caixasDetalhadas.map((detalhe, cIdx) => (
-                                                  <div key={`box-detalhe-${detalhe.idUnico}-${cIdx}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: '4px solid #10b981', borderRadius: '8px', padding: '12px' }}>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={detalhe.idUnico}>
-                                                      <strong style={{ color: 'var(--text-muted)' }}>ID WMS:</strong> {detalhe.idUnico}
-                                                    </div>
-                                                    <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{detalhe.tipoCaixa}</div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '6px' }}>
-                                                      <div style={{ fontSize: '1.1rem', fontWeight: '900', color: 'var(--text-highlight, #38bdf8)' }}>{detalhe.qtdNestaCaixa} <span style={{fontSize: '0.7rem', fontWeight: 'normal', color: 'var(--text-muted)'}}>un</span></div>
-                                                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>{parseFloat(detalhe.peso).toFixed(1)}kg</div>
-                                                    </div>
-                                                  </div>
-                                                ))}
+                                </thead>
+                                <tbody>
+                                  {skusFiltrados.length === 0 ? (
+                                    <tr>
+                                      <td colSpan="2" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                                        Nenhum produto encontrado para "{buscasDocumentos[dIdx]}".
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    skusFiltrados.map((sku, i) => {
+                                      const isExpanded = skusExpandidosComum[`${dIdx}-${sku.ref}`];
+                                      return (
+                                        <React.Fragment key={`sku-comum-group-${sku.ref}-${i}`}>
+                                          <tr style={{ borderBottom: '1px solid var(--border-color)', background: isExpanded ? 'var(--bg-input)' : 'transparent' }}>
+                                            <td style={{ padding: '15px 20px' }}>
+                                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                                <div 
+                                                  onClick={() => setSkusExpandidosComum(prev => ({...prev, [`${dIdx}-${sku.ref}`]: !prev[`${dIdx}-${sku.ref}`]}))}
+                                                  style={{ marginTop: '2px', cursor: 'pointer', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}
+                                                >
+                                                  <ChevronDown size={18} color={isExpanded ? "var(--secondary)" : "var(--text-highlight, #38bdf8)"} />
+                                                </div>
+                                                <div>
+                                                  <strong style={{ color: 'var(--text-highlight, #38bdf8)', fontSize: '0.9rem' }}>{sku.ref}</strong><br/>
+                                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{sku.desc}</span>
+                                                </div>
                                               </div>
                                             </td>
+                                            <td style={{ padding: '15px', textAlign: 'center', fontWeight: '900', fontSize: '1.05rem', color: 'var(--text-main)' }}>{sku.qtdTotal}</td>
                                           </tr>
-                                        )}
-                                      </React.Fragment>
-                                    );
-                                  })
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-input)', border: '2px dashed var(--border-color)', borderRadius: '12px' }}>
-                            <FileText size={64} color="var(--text-muted)" style={{ marginBottom: '20px', opacity: 0.5 }} />
-                            <h3 style={{ color: 'var(--text-main)', margin: '0 0 10px 0', fontSize: '1.3rem', fontWeight: 800 }}>Nenhuma Caixa Registrada</h3>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0' }}>Importe o arquivo CSV do WMS, ou inicie criando uma caixa manualmente pelo botão superior.</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+
+                                          {isExpanded && (
+                                            <tr style={{ background: 'var(--bg-input)', borderBottom: '2px solid var(--border-color)' }}>
+                                              <td colSpan="2" style={{ padding: '15px 25px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', color: '#10b981' }}>
+                                                  <Package size={16} /> <strong style={{ fontSize: '0.85rem' }}>Embalagens Registradas</strong>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                                                  {sku.caixasDetalhadas.map((detalhe, cIdx) => (
+                                                    <div key={`box-detalhe-${detalhe.idUnico}-${cIdx}`} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: '4px solid #10b981', borderRadius: '8px', padding: '12px' }}>
+                                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={detalhe.idUnico}>
+                                                        <strong style={{ color: 'var(--text-muted)' }}>ID WMS:</strong> {detalhe.idUnico}
+                                                      </div>
+                                                      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{detalhe.tipoCaixa}</div>
+                                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '6px' }}>
+                                                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: 'var(--text-highlight, #38bdf8)' }}>{detalhe.qtdNestaCaixa} <span style={{fontSize: '0.7rem', fontWeight: 'normal', color: 'var(--text-muted)'}}>un</span></div>
+                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>{parseFloat(detalhe.peso).toFixed(1)}kg</div>
+                                                      </div>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </React.Fragment>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--bg-input)', border: '2px dashed var(--border-color)', borderRadius: '12px' }}>
+                              <FileText size={64} color="var(--text-muted)" style={{ marginBottom: '20px', opacity: 0.5 }} />
+                              <h3 style={{ color: 'var(--text-main)', margin: '0 0 10px 0', fontSize: '1.3rem', fontWeight: 800 }}>Nenhuma Caixa Registrada</h3>
+                              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0' }}>Importe o arquivo CSV do WMS, ou inicie criando uma caixa manualmente pelo botão superior.</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </>

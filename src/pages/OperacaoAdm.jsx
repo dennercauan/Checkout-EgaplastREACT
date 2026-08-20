@@ -133,28 +133,33 @@ export default function OperacaoAdm() {
     setIsTransferindo(true);
     try {
       const agora = Date.now();
-      
       const dataOrig = pedidoParaTransferir.dataOperacao || dataOperacaoAtiva;
-      const [anoO, mesO, diaO] = dataOrig.split('-');
-      const corteExpedienteOrig = new Date(Number(anoO), Number(mesO) - 1, Number(diaO), 17, 30, 0).getTime();
 
+      // Start real do romaneio original
       const startOriginal = pedidoParaTransferir.createdAt?.toMillis 
         ? pedidoParaTransferir.createdAt.toMillis() 
         : (typeof pedidoParaTransferir.createdAt === 'number' ? pedidoParaTransferir.createdAt : agora);
       
       const totalPausedOriginal = pedidoParaTransferir.totalPausedTime || 0;
       
+      // Resgata se já houve alguma transferência anterior neste mesmo romaneio
+      const tempoAnteriorJaAcumulado = pedidoParaTransferir.tempoTrabalhadoAnterior || 0;
+      
+      // Fim real no momento da transferência
       let momentoFinalOriginal = agora;
       if (pedidoParaTransferir.isPaused && pedidoParaTransferir.lastPauseStart) {
         momentoFinalOriginal = pedidoParaTransferir.lastPauseStart;
-      } else {
-        momentoFinalOriginal = Math.min(agora, corteExpedienteOrig);
-      }
+      } 
+      // REMOVIDA A TRAVA DE 17h30 AQUI. O romaneio ativo continua gerando tempo na hora extra.
 
-      const tempoTrabalhadoAcumulado = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
+      // Calcula o tempo limpo trabalhado APENAS hoje
+      const tempoTrabalhadoNesteDia = Math.max(0, momentoFinalOriginal - startOriginal - totalPausedOriginal);
+      
+      // Soma o que trabalhou hoje com o que já vinha de dias anteriores (se houver transferências múltiplas)
+      const novoTempoTrabalhadoAnterior = tempoAnteriorJaAcumulado + tempoTrabalhadoNesteDia;
 
       // =========================================================
-      // CORREÇÃO: PROTEGER O TEMPO TRABALHADO NO DIA DE HOJE
+      // 1. PROTEGER O TEMPO TRABALHADO NO DIA DE ORIGEM 
       // =========================================================
       const refPausasOrigem = doc(db, 'controlePausas', dataOrig);
       const snapPausas = await getDoc(refPausasOrigem);
@@ -167,53 +172,36 @@ export default function OperacaoAdm() {
       uidsEnvolvidos.forEach(uid => {
         const user = usuarios.find(u => u.uid === uid);
         if (user) {
-          const nomeUser = user.nickname || (user.email ? user.email.split('@')[0] : '');
-          const emailPrefix = user.email ? user.email.split('@')[0] : '';
-          
-          let userStatus = dadosPausas[uid] || dadosPausas[nomeUser] || dadosPausas[emailPrefix] || { isPaused: false, history: [] };
+          let userStatus = dadosPausas[uid] || { isPaused: false, history: [] };
           if (!Array.isArray(userStatus.history)) userStatus.history = [];
           
-          // Injeta o tempo que o conferente trabalhou hoje como "Pausa Protegida" para anular a ociosidade
+          // Anexa a atividade na timeline do dia passado
           userStatus.history.push({ 
             start: startOriginal, 
             end: momentoFinalOriginal 
           });
 
           dadosPausas[uid] = userStatus;
-          dadosPausas[nomeUser] = userStatus;
-          if (emailPrefix) dadosPausas[emailPrefix] = userStatus;
         }
       });
       
-      // Salva a proteção no banco de hoje antes de transferir o romaneio
       await setDoc(refPausasOrigem, dadosPausas, { merge: true });
+
       // =========================================================
-
-
+      // 2. TRANSFERÊNCIA LIMPA PARA O NOVO DIA
+      // =========================================================
       const [anoD, mesD, diaD] = novaDataTransferencia.split('-');
       const dataAlvoBase = new Date(Number(anoD), Number(mesD) - 1, Number(diaD), 7, 30, 0).getTime();
+      
+      // O pedido agora nasce limpo, pontualmente no início do novo dia
+      const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(dataAlvoBase));
 
-      const novoCreatedAtMs = dataAlvoBase - tempoTrabalhadoAcumulado;
-      const novoCreatedAtTimestamp = Timestamp.fromDate(new Date(novoCreatedAtMs));
-
-      let ref;
-      if (pedidoParaTransferir._isLegacy || (pedidoParaTransferir.criadorUid && pedidoParaTransferir.elementoIdOriginal)) {
-        ref = doc(
-          db, 
-          'usuarios', 
-          pedidoParaTransferir.criadorUid, 
-          'elementos', 
-          pedidoParaTransferir.elementoIdOriginal, 
-          'pedidosMultiDocumento', 
-          pedidoParaTransferir.id
-        );
-      } else {
-        ref = doc(db, 'pedidos', pedidoParaTransferir.id);
-      }
+      let ref = obterReferenciaDocumento(pedidoParaTransferir);
 
       await updateDoc(ref, {
         dataOperacao: novaDataTransferencia,
-        createdAt: novoCreatedAtTimestamp,
+        createdAt: novoCreatedAtTimestamp, 
+        tempoTrabalhadoAnterior: novoTempoTrabalhadoAnterior, // <- SALVA O BANCO DE HORAS AQUI
         isPaused: true,
         lastPauseStart: dataAlvoBase,
         totalPausedTime: 0,
@@ -1280,27 +1268,36 @@ export default function OperacaoAdm() {
     }
   };
 
-  const handleTogglePausaUsuario = async (nomeUsuario, isCurrentlyPaused) => {
-    try {
-      const refPausas = doc(db, 'controlePausas', dataOperacaoAtiva);
-      const snap = await getDoc(refPausas);
-      const agora = Date.now();
-      let userStatus = { isPaused: false, history: [] };
+  const handleTogglePausaUsuario = async (uid, isCurrentlyPaused) => {
+  try {
+    const refPausas = doc(db, 'controlePausas', dataOperacaoAtiva);
+    const snap = await getDoc(refPausas);
+    const agora = Date.now();
+    let userStatus = { isPaused: false, history: [] };
 
-      if (snap.exists() && snap.data()[nomeUsuario]) userStatus = JSON.parse(JSON.stringify(snap.data()[nomeUsuario]));
-      if (!Array.isArray(userStatus.history)) userStatus.history = [];
+    // Busca o status usando o UID do usuário para garantir exatidão
+    if (snap.exists() && snap.data()[uid]) {
+      userStatus = JSON.parse(JSON.stringify(snap.data()[uid]));
+    }
+    
+    if (!Array.isArray(userStatus.history)) userStatus.history = [];
 
-      if (isCurrentlyPaused) {
-        userStatus.isPaused = false;
-        if (userStatus.history.length > 0) userStatus.history[userStatus.history.length - 1].end = agora;
-      } else {
-        userStatus.isPaused = true;
-        userStatus.history.push({ start: agora });
+    if (isCurrentlyPaused) {
+      userStatus.isPaused = false;
+      if (userStatus.history.length > 0) {
+        userStatus.history[userStatus.history.length - 1].end = agora;
       }
-      await setDoc(refPausas, { [nomeUsuario]: userStatus }, { merge: true });
-    } catch (error) { alert(`Falha ao sincronizar pausa: ${error.message}`); }
-  };
-
+    } else {
+      userStatus.isPaused = true;
+      userStatus.history.push({ start: agora });
+    }
+    
+    // Salva no banco usando a chave correta
+    await setDoc(refPausas, { [uid]: userStatus }, { merge: true });
+  } catch (error) { 
+    alert(`Falha ao sincronizar pausa: ${error.message}`); 
+  }
+};
   const handleTogglePausaRomaneio = async (pedido) => {
     if (pedido.efetivado) return;
     try {
@@ -1361,12 +1358,15 @@ export default function OperacaoAdm() {
     const start = pedido.createdAt.toMillis ? pedido.createdAt.toMillis() : pedido.createdAt;
     const totalPaused = pedido.totalPausedTime || 0;
     
-    // Cronômetro do romaneio continua correndo normalmente mesmo após as 17h30 em hora extra
+    // Resgata o tempo de dias anteriores
+    const tempoAnterior = pedido.tempoTrabalhadoAnterior || 0;
+    
     let end = (pedido.efetivado && pedido.completedAt) 
       ? (pedido.completedAt.toMillis ? pedido.completedAt.toMillis() : pedido.completedAt) 
       : (pedido.isPaused && pedido.lastPauseStart ? pedido.lastPauseStart : currentTime);
       
-    const diff = Math.max(0, end - start - totalPaused);
+    // Soma o tempo limpo atual com o histórico herdado
+    const diff = Math.max(0, end - start - totalPaused) + tempoAnterior;
     return formatMsToTime(diff);
   };
 
@@ -1760,26 +1760,26 @@ export default function OperacaoAdm() {
                         {/* COLUNA 4: AÇÃO DE CONTROLE */}
                         {!isDiaConcluido && (
                           <button 
-                            onClick={() => handleTogglePausaUsuario(user, isPaused)}
-                            style={{
-                              background: isPaused ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-input)',
-                              color: isPaused ? '#fbbf24' : 'var(--text-muted)',
-                              border: `1px solid ${isPaused ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
-                              padding: '6px 12px',
-                              borderRadius: '8px',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              fontFamily: 'inherit',
-                              flexShrink: 0
-                            }}
-                          >
-                            {isPaused ? <Play size={12} color="#fbbf24" /> : <Pause size={12} />}
-                            <span>{isPaused ? 'Retomar' : 'Pausar'}</span>
-                          </button>
+  onClick={() => handleTogglePausaUsuario(user.uid, isPaused)} // <-- Correção aqui
+  style={{
+    background: isPaused ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-input)',
+    color: isPaused ? '#fbbf24' : 'var(--text-muted)',
+    border: `1px solid ${isPaused ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
+    padding: '6px 12px',
+    borderRadius: '8px',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontFamily: 'inherit',
+    flexShrink: 0
+  }}
+>
+  {isPaused ? <Play size={12} color="#fbbf24" /> : <Pause size={12} />}
+  <span>{isPaused ? 'Retomar' : 'Pausar'}</span>
+</button>
                         )}
                       </div>
                     );

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, Tag } from 'lucide-react';
+import { LOGO_EGAPLAST_BASE64 } from '../constants/logoEgaplast';
 
 export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
   if (!isOpen || !pedido) return null;
@@ -36,7 +37,6 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
   };
 
   const tamanhoFonteAtual = calcularTamanhoFonteLoja(loja);
-  const logoUrl = '/src/img/egaplast.png';
 
   const handleDispararImpressao = () => {
     const iframe = printIframeRef.current;
@@ -58,16 +58,13 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
 
       etiquetasHTML += `
         <div class="etiqueta-pagina">
-          <!-- CABEÇALHO COM LOGO MONOCROMÁTICA -->
           <div class="etiqueta-topo">
             <div class="etiqueta-logo-area">
               <img 
-                src="${logoUrl}" 
+                src="${LOGO_EGAPLAST_BASE64}" 
                 alt="EGAPLAST" 
                 class="logo-img" 
-                onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" 
               />
-              <span class="logo-fallback" style="display:none; font-weight:900; font-size:13pt; letter-spacing: -0.5px;">EGAPLAST</span>
             </div>
             
             <div class="etiqueta-uf-central">${String(uf).toUpperCase()}</div>
@@ -78,7 +75,6 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
             </div>
           </div>
 
-          <!-- CORPO COM NOME DA LOJA -->
           <div class="etiqueta-meio">
             <div class="etiqueta-loja" style="font-size: ${fontSizeLoja};">
               ${String(loja).toUpperCase()}
@@ -86,7 +82,6 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
             ${obsExtra ? `<div class="etiqueta-obs">OBS: ${String(obsExtra).toUpperCase()}</div>` : ''}
           </div>
 
-          <!-- RODAPÉ TÉCNICO -->
           <div class="etiqueta-rodape">
             <span>DATA: ${dataAtual}</span>
             <span class="etiqueta-vol-badge">${volumeTexto}</span>
@@ -143,12 +138,14 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
               height: 100%;
             }
             .logo-img {
-              max-height: 8mm;
+              max-height: 8.5mm;
               max-width: 28mm;
               object-fit: contain;
-              filter: grayscale(100%) contrast(250%);
+              filter: brightness(0) saturate(100%);
+              -webkit-filter: brightness(0) saturate(100%);
               image-rendering: -webkit-optimize-contrast;
               image-rendering: crisp-edges;
+              image-rendering: pixelated;
             }
             .etiqueta-uf-central {
               font-size: 20pt;
@@ -218,7 +215,7 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
     setTimeout(() => {
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
-    }, 300);
+    }, 150);
   };
 
   return createPortal(
@@ -298,20 +295,16 @@ export default function ModalImprimirEtiqueta({ pedido, isOpen, onClose }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', borderBottom: '2px solid #000', paddingBottom: '4px', height: '36px' }}>
               <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
                 <img 
-                  src={logoUrl} 
+                  src={LOGO_EGAPLAST_BASE64} 
                   alt="EGAPLAST" 
                   style={{ 
                     maxHeight: '30px', 
                     maxWidth: '105px', 
                     objectFit: 'contain',
-                    filter: 'grayscale(100%) contrast(250%)'
-                  }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextElementSibling.style.display = 'block';
+                    filter: 'brightness(0) saturate(100%)',
+                    WebkitFilter: 'brightness(0) saturate(100%)'
                   }}
                 />
-                <span style={{ display: 'none', fontWeight: 900, fontSize: '1.05rem', letterSpacing: '-0.5px' }}>EGAPLAST</span>
               </div>
 
               <div style={{ fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.5px', textAlign: 'center', lineHeight: 1 }}>
